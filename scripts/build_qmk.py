@@ -10,9 +10,11 @@ For every build, OUT_DIR receives <id>.<hex|bin|uf2> and <id>.json with
 details the app needs (size, MCU, bootloader, split).
 
 Environment:
-  QMK_HOME  an existing qmk_firmware checkout to use as is. When unset, the
-            QMK version from keyballer.json is cloned into WORK_DIR.
-  WORK_DIR  scratch directory for clones (default: ./.keyballer-work).
+  KEYBALLER_QMK_HOME  an existing qmk_firmware checkout to use as is. When
+                      unset, the QMK version from keyballer.json is cloned
+                      into WORK_DIR. (QMK_HOME is not used: the qmk_cli
+                      image already sets it to a directory that is empty.)
+  WORK_DIR            scratch directory for clones (default: ./.keyballer-work).
 
 Runs on Python 3.9 (the qmk_cli image).
 """
@@ -82,13 +84,20 @@ def load_config(config_dir):
     return cfg
 
 
-def run(cmd, cwd=None, capture=False):
+def qmk_env(qmk):
+    """Environment for qmk CLI commands, pointed at our checkout."""
+    env = dict(os.environ)
+    env["QMK_HOME"] = str(qmk)
+    return env
+
+
+def run(cmd, cwd=None, capture=False, env=None):
     print("+ " + " ".join(str(c) for c in cmd), flush=True)
     if not capture:
-        subprocess.run(cmd, cwd=cwd, check=True)
+        subprocess.run(cmd, cwd=cwd, check=True, env=env)
         return ""
     proc = subprocess.run(
-        cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+        cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env
     )
     print(proc.stdout, end="", flush=True)
     if proc.returncode != 0:
@@ -97,9 +106,12 @@ def run(cmd, cwd=None, capture=False):
 
 
 def ensure_qmk(version, work_dir):
-    home = os.environ.get("QMK_HOME")
+    home = os.environ.get("KEYBALLER_QMK_HOME")
     if home:
-        return Path(home).resolve()
+        qmk = Path(home).resolve()
+        if not (qmk / "keyboards").is_dir():
+            raise ConfigError("KEYBALLER_QMK_HOME={} is not a qmk_firmware checkout".format(home))
+        return qmk
     qmk = work_dir / "qmk_firmware"
     if not (qmk / ".git").is_dir():
         run([
@@ -143,6 +155,7 @@ def keyboard_info(qmk, keyboard):
     out = subprocess.run(
         ["qmk", "info", "-kb", keyboard, "-f", "json"],
         cwd=qmk, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+        env=qmk_env(qmk),
     ).stdout
     try:
         info = json.loads(out)
@@ -173,7 +186,8 @@ def build_one(build, config_dir, qmk, out_dir):
                 stale.unlink()
 
         log = ANSI.sub("", run(
-            ["qmk", "compile", "-kb", keyboard, "-km", keymap], cwd=qmk, capture=True
+            ["qmk", "compile", "-kb", keyboard, "-km", keymap],
+            cwd=qmk, capture=True, env=qmk_env(qmk),
         ))
     finally:
         print("::endgroup::", flush=True)

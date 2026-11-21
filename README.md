@@ -107,6 +107,7 @@ docker run --rm \
   -v "$PWD/keyballer:/keyballer:ro" \
   -v "$PWD/keyballer-config:/config:ro" \
   -v "$PWD/out:/out" \
+  -e WORK_DIR=/tmp/keyballer-work \
   ghcr.io/qmk/qmk_cli@sha256:2dc05fc9f32efebd6b05c2b8676ee548358bc7e151e9dbf4dac6b6eed4513b07 \
   python3 /keyballer/scripts/build_qmk.py /config /out
 ```
