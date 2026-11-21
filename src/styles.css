@@ -20,6 +20,7 @@
   --busy-soft: #f8ecd2;
   --err: #ae2416;
   --err-soft: #fbe3df;
+  --scrim: #1c2228;
   --radius: 10px;
   --font: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Noto Sans JP", system-ui, sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -46,6 +47,7 @@
     --busy-soft: #3d3119;
     --err: #ff9b8c;
     --err-soft: #43231f;
+    --scrim: #0b0d0f;
     color-scheme: dark;
   }
 }
@@ -359,7 +361,7 @@ dialog.line[open] {
 }
 
 dialog.line::backdrop {
-  background: color-mix(in srgb, var(--text) 35%, transparent);
+  background: color-mix(in srgb, var(--scrim) 45%, transparent);
 }
 
 dialog.line input {
@@ -460,7 +462,7 @@ dialog.help {
 }
 
 dialog.help::backdrop {
-  background: color-mix(in srgb, var(--text) 35%, transparent);
+  background: color-mix(in srgb, var(--scrim) 45%, transparent);
 }
 
 dialog.help > * + * {

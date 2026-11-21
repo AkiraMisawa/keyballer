@@ -34,6 +34,7 @@ The reasoning and sources are in [docs/research/keymap-editor-design.md](docs/re
 | `--ok` / `--ok-soft` | `#1a6e40` / `#dcf0e3` | `#7fd8a2` / `#1f3a2a` | Success |
 | `--busy` / `--busy-soft` | `#7d5200` / `#f8ecd2` | `#f0bf6a` / `#3d3119` | In progress, unsaved |
 | `--err` / `--err-soft` | `#ae2416` / `#fbe3df` | `#ff9b8c` / `#43231f` | Errors |
+| `--scrim` | `#1c2228` | `#0b0d0f` | Behind modal dialogs, at 45% |
 
 ### Rules
 

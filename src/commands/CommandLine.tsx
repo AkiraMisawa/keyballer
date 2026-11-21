@@ -78,10 +78,13 @@ export function CommandLine({ open, commands, onClose }: Props) {
   const more = all.length - items.length;
   const chosen = at === NONE ? undefined : items[at];
 
-  // Typing a query puts the best match first in line for Enter; the empty line chooses nothing.
+  // Typing puts the best match first in line for Enter: a command while one is being chosen, and
+  // the first value once part of a value is typed. The empty line chooses nothing.
   useEffect(() => {
     const q = text.trim();
-    setAt(reading.kind === 'choosing' && q !== '' && q !== '?' && listedCommands.length > 0 ? 0 : NONE);
+    const typingCommand = reading.kind === 'choosing' && q !== '' && q !== '?' && listedCommands.length > 0;
+    const typingValue = reading.kind === 'arguments' && reading.typed !== '' && values.length > 0;
+    setAt(typingCommand || typingValue ? 0 : NONE);
     // Only when the text changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text]);
@@ -171,7 +174,7 @@ export function CommandLine({ open, commands, onClose }: Props) {
   const optionId = (i: number) => `line-option-${i}`;
   const head =
     reading.kind === 'arguments' ? reading.command : chosen && 'words' in chosen ? chosen : undefined;
-  const ex = examples(listed('', commands, usageScore));
+  const ex = examples(listed('', commands, usageScore), 2);
   const placeholder =
     ex.length > 0 ? t('line.placeholder', { examples: ex.join(', ') }) : t('line.placeholderEmpty');
 
