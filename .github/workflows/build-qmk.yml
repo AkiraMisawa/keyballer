@@ -1,0 +1,106 @@
+# Reusable workflow that builds the QMK firmware described by a config
+# repository's keyballer.json and publishes it on its `firmware` branch,
+# where the Keyballer app reads it.
+#
+# In the config repository:
+#
+#   jobs:
+#     build:
+#       uses: AkiraMisawa/keyballer/.github/workflows/build-qmk.yml@main
+#       permissions:
+#         contents: write
+
+name: Build QMK firmware
+
+on:
+  workflow_call:
+    inputs:
+      keyballer_ref:
+        description: Ref of AkiraMisawa/keyballer that provides the build scripts. Keep it equal to the ref in `uses:`.
+        type: string
+        default: main
+
+jobs:
+  plan:
+    name: Read keyballer.json
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      ids: ${{ steps.plan.outputs.ids }}
+      image: ${{ steps.plan.outputs.image }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: config
+      - uses: actions/checkout@v7
+        with:
+          repository: AkiraMisawa/keyballer
+          ref: ${{ inputs.keyballer_ref }}
+          path: keyballer
+      - id: plan
+        run: |
+          echo "ids=$(python3 keyballer/scripts/build_qmk.py config --list)" >> "$GITHUB_OUTPUT"
+          echo "image=$(python3 keyballer/scripts/build_qmk.py config --image)" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.id }}
+    needs: plan
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    container:
+      image: ${{ needs.plan.outputs.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        id: ${{ fromJSON(needs.plan.outputs.ids) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: config
+      - uses: actions/checkout@v7
+        with:
+          repository: AkiraMisawa/keyballer
+          ref: ${{ inputs.keyballer_ref }}
+          path: keyballer
+      - name: Build
+        env:
+          WORK_DIR: ${{ runner.temp }}/keyballer-work
+        run: python3 keyballer/scripts/build_qmk.py config out --only "${{ matrix.id }}"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: firmware-${{ matrix.id }}
+          path: out/
+          if-no-files-found: error
+
+  publish:
+    name: Publish to the firmware branch
+    needs: [plan, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          repository: AkiraMisawa/keyballer
+          ref: ${{ inputs.keyballer_ref }}
+          path: keyballer
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: firmware-*
+          merge-multiple: true
+          path: out
+      - name: Write manifest.json
+        run: python3 keyballer/scripts/make_manifest.py out '${{ needs.plan.outputs.ids }}'
+      - name: Push the firmware branch
+        working-directory: out
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git init -q -b firmware
+          git add -A
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -q -m "Firmware for ${GITHUB_SHA::7}"
+          git push -q --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:firmware

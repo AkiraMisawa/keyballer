@@ -1,0 +1,128 @@
+// Read-only access to a config repository through the GitHub REST API.
+// api.github.com allows cross-origin requests, so this runs in the browser.
+
+import { parseManifest, type FirmwareManifest } from './manifest';
+
+export interface RepoRef {
+  owner: string;
+  repo: string;
+}
+
+export interface WorkflowRun {
+  id: number;
+  status: 'queued' | 'in_progress' | 'completed' | 'waiting' | 'requested' | 'pending';
+  conclusion: 'success' | 'failure' | 'cancelled' | 'skipped' | 'timed_out' | null;
+  head_sha: string;
+  html_url: string;
+  created_at: string;
+  display_title: string;
+}
+
+export class GitHubError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
+const NAME = /^[A-Za-z0-9_.-]+$/;
+
+/** Accepts "owner/repo" or a github.com URL. */
+export function parseRepo(input: string): RepoRef | null {
+  const text = input.trim().replace(/\.git$/, '');
+  const m = text.match(/^(?:https?:\/\/github\.com\/)?([^/\s]+)\/([^/\s#?]+)/);
+  if (!m || !NAME.test(m[1]) || !NAME.test(m[2])) return null;
+  return { owner: m[1], repo: m[2] };
+}
+
+export const repoName = (r: RepoRef) => `${r.owner}/${r.repo}`;
+
+async function request(path: string, token: string, accept: string): Promise<Response> {
+  const headers: Record<string, string> = {
+    Accept: accept,
+    'X-GitHub-Api-Version': '2022-11-28',
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(`https://api.github.com${path}`, { headers, cache: 'no-store' });
+  if (res.ok) return res;
+
+  if (res.status === 401) throw new GitHubError('トークンが無効です', 401);
+  if ((res.status === 403 || res.status === 429) && res.headers.get('x-ratelimit-remaining') === '0') {
+    throw new GitHubError(
+      'GitHub API の利用回数の上限に達しました。しばらく待つか、トークンを設定してください',
+      res.status,
+    );
+  }
+  if (res.status === 404) throw new GitHubError('見つかりません', 404);
+  throw new GitHubError(`GitHub API がエラーを返しました（${res.status}）`, res.status);
+}
+
+const repoPath = (r: RepoRef) => `/repos/${r.owner}/${r.repo}`;
+
+export async function checkRepo(r: RepoRef, token: string): Promise<void> {
+  try {
+    await request(repoPath(r), token, 'application/vnd.github+json');
+  } catch (e) {
+    if (e instanceof GitHubError && e.status === 404) {
+      throw new GitHubError(
+        `${repoName(r)} が見つかりません。非公開リポジトリならトークンを設定してください`,
+        404,
+      );
+    }
+    throw e;
+  }
+}
+
+/** Commit SHA at the head of the `firmware` branch, or null before the first build. */
+export async function getFirmwareHead(r: RepoRef, token: string): Promise<string | null> {
+  try {
+    const res = await request(`${repoPath(r)}/branches/firmware`, token, 'application/vnd.github+json');
+    const body = (await res.json()) as { commit: { sha: string } };
+    return body.commit.sha;
+  } catch (e) {
+    if (e instanceof GitHubError && e.status === 404) return null;
+    throw e;
+  }
+}
+
+async function getRaw(r: RepoRef, path: string, ref: string, token: string): Promise<Response> {
+  const encoded = path.split('/').map(encodeURIComponent).join('/');
+  return request(
+    `${repoPath(r)}/contents/${encoded}?ref=${encodeURIComponent(ref)}`,
+    token,
+    'application/vnd.github.raw+json',
+  );
+}
+
+export async function getManifest(r: RepoRef, ref: string, token: string): Promise<FirmwareManifest> {
+  const res = await getRaw(r, 'manifest.json', ref, token);
+  return parseManifest(await res.json());
+}
+
+export async function getFirmwareText(
+  r: RepoRef,
+  ref: string,
+  file: string,
+  token: string,
+): Promise<string> {
+  const res = await getRaw(r, file, ref, token);
+  return res.text();
+}
+
+/** Recent runs of the config repo's build workflow (.github/workflows/build.yml). */
+export async function getBuildRuns(r: RepoRef, token: string): Promise<WorkflowRun[]> {
+  try {
+    const res = await request(
+      `${repoPath(r)}/actions/workflows/build.yml/runs?per_page=5`,
+      token,
+      'application/vnd.github+json',
+    );
+    const body = (await res.json()) as { workflow_runs: WorkflowRun[] };
+    return body.workflow_runs;
+  } catch (e) {
+    if (e instanceof GitHubError && e.status === 404) return [];
+    throw e;
+  }
+}
