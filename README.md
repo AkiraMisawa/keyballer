@@ -129,6 +129,8 @@ npm run build   # type check and build
 
 Pushing to `main` runs the tests and the build, then publishes to GitHub Pages.
 
+Design rules (colours, type, keycaps, words, accessibility, and what never to do) are in [DESIGN.md](DESIGN.md); `npm test` checks the colour contrast it requires.
+
 All UI text is in `src/i18n/messages.ts`. English is the source; the type check fails if a Japanese string is missing, and a test fails if the two languages use different placeholders. The app opens in English unless `?lang=ja` or a saved choice says otherwise.
 
 ## Roadmap

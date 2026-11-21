@@ -135,8 +135,14 @@ export function App() {
   return (
     <div className="app">
       <header className="top">
-        <div>
-          <h1>Keyballer</h1>
+        <div className="stack">
+          <div className="brand">
+            <svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true">
+              <rect x="2" y="9" width="20" height="14" rx="3" fill="var(--text)" />
+              <circle cx="24" cy="16" r="7" fill="var(--ball)" />
+            </svg>
+            <h1>Keyballer</h1>
+          </div>
           <p className="tagline">{t('app.tagline')}</p>
         </div>
         <div className="top-links">
