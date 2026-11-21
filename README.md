@@ -1,8 +1,10 @@
 # Keyballer
 
+日本語 | [English](README.en.md)
+
 GitHub Actions でキーボードのファームウェアをビルドし、ブラウザからそのまま書き込むアプリです。
 
-**アプリ：** https://akiramisawa.github.io/keyballer/
+**アプリ：** https://akiramisawa.github.io/keyballer/（日本語・英語）
 
 ```
 設定リポジトリ（キーマップなど） ──push──▶ GitHub Actions がビルド
@@ -114,6 +116,8 @@ docker run --rm \
 
 出来上がった `out/*.hex` は、アプリの「手元の hex ファイルを書き込む」から書き込めます。
 
+Apple Silicon の Mac では arm64 版のイメージが使われ、GitHub Actions（x86 版）より古い avr-gcc（5.4.0 と 8.3.0）が入っています。そのため、手元でビルドしたほうが数百バイト大きくなります。
+
 ## 開発
 
 ```sh
@@ -124,6 +128,8 @@ npm run build   # 型チェックとビルド
 ```
 
 `main` に push すると、テストとビルドのあと GitHub Pages に公開されます。
+
+画面の文言はすべて `src/i18n/messages.ts` にあります。英語の訳が足りないと型チェックで、日英で差し込む値が食い違うとテストで失敗します。
 
 ## これから
 
