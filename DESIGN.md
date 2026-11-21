@@ -12,6 +12,7 @@ The reasoning and sources are in [docs/research/keymap-editor-design.md](docs/re
 4. **State shows in form, not only in colour.** Every state has a shape, mark or word as well as a colour.
 5. **Plain words in both languages.** English is the source. Japanese says the same thing in natural Japanese.
 6. **Calm by default.** No motion, gradient or effect that does not carry information.
+7. **Keyboard first.** People who use this app live on their keyboards. The usual path through any screen never needs the mouse.
 
 ## 2. Colour
 
@@ -104,13 +105,57 @@ The keycap is the core component and is drawn the same way everywhere.
 - Click targets are at least 24×24px (WCAG 2.5.8), and keycaps at least 36px.
 - Nothing works only by dragging. Every drag has a button alternative (WCAG 2.5.7).
 
-## 8. Motion
+## 8. Keyboard
+
+### Rules
+
+- **Focus moves on.** When an action finishes, focus goes to the action that usually comes next, so pressing Enter carries you through the flow. When a panel closes, focus returns to the control that opened it.
+- **Single-key shortcuts** cover the frequent actions. They only fire when focus is not in a text field and no IME composition is in progress, and never together with ⌘, Ctrl or Alt, which belong to the browser and the OS.
+- **Modifier shortcuts** are kept to the standard editing set: undo, redo, copy, paste and save. Show ⌘ on Mac and Ctrl elsewhere.
+- **Esc** closes the topmost panel or goes back one step. It never throws away work without asking.
+- **?** lists every shortcut on the current screen. The list is built from the registered shortcuts ([src/shortcuts.tsx](src/shortcuts.tsx)), so it is always accurate.
+- A button that has a shortcut shows it as a small keycap and sets `aria-keyshortcuts`.
+- A new shortcut is one letter, chosen as an English mnemonic (R for Refresh, P for Port, O for Open), and not already taken on that screen. Digits pick the nth item in a list.
+
+### Flow pages (now)
+
+| Key | Action |
+| --- | --- |
+| `/` | Go to the repository field |
+| `R` | Refresh the build status |
+| `1`–`9` | Flash the nth firmware |
+| `O` | Flash a hex file from your computer |
+| `P` | Choose the port (while waiting for the reset) |
+| `Esc` | Close the panel or go back a step |
+| `?` | Show the shortcuts |
+
+### Keymap editor (planned)
+
+| Key | Action |
+| --- | --- |
+| `←` `↑` `→` `↓` | Move to the nearest key in that direction on the drawing, following the stagger and the thumb rotation |
+| `Enter` | Edit the selected key: the key picker opens with its search field focused |
+| `/` | Search for a keycode |
+| `K` | Press a key to assign: the next physical key you press is assigned (by `KeyboardEvent.code`; ignored during IME composition) |
+| `Delete` / `Backspace` | Make the selected key transparent (▽) |
+| `[` / `]` | Previous / next layer |
+| `0`–`9` | Go to layer n |
+| `A` | Show all layers side by side |
+| `B` | Select the trackball |
+| ⌘Z / Ctrl+Z, ⇧⌘Z / Ctrl+Y | Undo / redo |
+| ⌘C ⌘V / Ctrl+C Ctrl+V | Copy / paste the selected key |
+| ⌘S / Ctrl+S | Review the changes and commit |
+| `Esc` | Close the picker, then clear the selection |
+
+Inside the key picker, typing searches, `↑` `↓` move through the results, `Tab` switches between the tap and hold actions, and `Enter` assigns the result and moves on to the next key, so a whole row can be filled without leaving the keyboard.
+
+## 9. Motion
 
 - Motion only shows a change of state: at most 150ms, ease-out. A progress bar may animate its width. Nothing animates on page load.
 - No hover zoom, parallax, entrance animations or shimmering placeholders.
 - With `prefers-reduced-motion`, transitions are off.
 
-## 9. Words
+## 10. Words
 
 - All text is in [src/i18n/messages.ts](src/i18n/messages.ts). English is the source, and Japanese must use the same placeholders.
 - Buttons say what happens ("Flash", "Choose port"). Results confirm it ("Flashed.").
@@ -119,7 +164,7 @@ The keycap is the core component and is drawn the same way everywhere.
 - Call things what the user calls them: keyboard, half, reset button. Protocol names (CDC, AVR109) appear only in the detailed log.
 - No trailing "→" on buttons or links, and no "A · B · C" separators used as decoration.
 
-## 10. Accessibility
+## 11. Accessibility
 
 - Target WCAG 2.2 AA.
 - Everything works from the keyboard. The board follows the WAI-ARIA layout grid pattern with a roving tabindex. Layer tabs follow the tabs pattern. Key search follows the combobox and listbox patterns.
@@ -127,7 +172,7 @@ The keycap is the core component and is drawn the same way everywhere.
 - Flashing progress and build status are announced (`role="progressbar"`, `role="alert"` for failures).
 - `<html lang>` follows the chosen language. Text in the other language (the language switch) carries its own `lang`.
 
-## 11. Before and after building a screen
+## 12. Before and after building a screen
 
 **Before:** In the pull request, list every state the screen can be in (empty, loading, error, unsupported browser, long names in both languages, 1 layer and 12 layers, and so on) and which tokens each state uses. Ask a generic AI prompt for the same screen and compare. Anything that looks the same needs a reason from the subject or the task.
 
@@ -135,7 +180,8 @@ The keycap is the core component and is drawn the same way everywhere.
 
 - [ ] Nothing from the "Never" list below
 - [ ] `npm test` passes, including the contrast check
-- [ ] Every action works with the keyboard alone
+- [ ] Every action works with the keyboard alone, and the usual path needs only Enter, Esc and the shortcuts: focus lands on the next action at each step
+- [ ] `?` lists every shortcut on the screen, and each button with a shortcut shows it
 - [ ] Checked against the WAI-ARIA patterns named above and WCAG 2.2 AA
 - [ ] At 400px width and at 200% zoom, the page does not scroll sideways
 - [ ] Both languages fit without overflow or clipping
@@ -143,7 +189,7 @@ The keycap is the core component and is drawn the same way everywhere.
 - [ ] Real data: open the owner's `am338` keymap and save without changes; the diff is empty
 - [ ] Changes to flashing are tried on a real board
 
-## 12. Never
+## 13. Never
 
 - Gradients, glass or blur effects, glows
 - Emoji, icon-only buttons
@@ -154,7 +200,8 @@ The keycap is the core component and is drawn the same way everywhere.
 - Red anywhere except the trackball, the selected key and the logo
 - A different colour for each layer
 - Raw keycode strings on keycaps
-- Actions that only work by dragging
+- Actions that only work by dragging, or only with the mouse
+- Single-letter shortcuts that fire while the user is typing in a field
 - Web fonts for UI text
 - A near-black background with a single bright accent
 - Marketing copy, exclamation marks, trailing arrows

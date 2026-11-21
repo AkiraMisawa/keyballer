@@ -1,6 +1,7 @@
 import type { MessageKey } from '../i18n/messages';
 import { useI18n } from '../i18n/react';
 import { formatDateTime, shortSha } from '../lib/format';
+import { Kbd } from '../shortcuts';
 import type { WorkflowRun } from '../lib/github';
 import type { FirmwareManifest } from '../lib/manifest';
 
@@ -37,8 +38,15 @@ export function BuildStatus({ repoUrl, manifest, runs, refreshing, onRefresh }: 
     <section className="panel" aria-labelledby="status-title">
       <div className="panel-head">
         <h2 id="status-title">{t('status.title')}</h2>
-        <button type="button" className="ghost" onClick={onRefresh} disabled={refreshing}>
+        <button
+          type="button"
+          className="ghost"
+          onClick={onRefresh}
+          disabled={refreshing}
+          aria-keyshortcuts="r"
+        >
           {refreshing ? t('status.refreshing') : t('status.refresh')}
+          <Kbd>R</Kbd>
         </button>
       </div>
 

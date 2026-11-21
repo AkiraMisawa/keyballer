@@ -4,7 +4,7 @@ import { FirmwareCard } from './components/FirmwareCard';
 import { FlashPanel } from './components/FlashPanel';
 import { LanguageSwitch } from './components/LanguageSwitch';
 import { LocalFirmware } from './components/LocalFirmware';
-import { LocalizedError } from './i18n/core';
+import { LocalizedError, msg } from './i18n/core';
 import { useI18n } from './i18n/react';
 import {
   checkRepo,
@@ -21,6 +21,7 @@ import { parseIntelHex } from './lib/ihex';
 import type { FirmwareBuild, FirmwareManifest } from './lib/manifest';
 import { isWebSerialSupported } from './lib/serial';
 import { load, save } from './lib/storage';
+import { Kbd, useShortcut } from './shortcuts';
 
 interface FlashTarget {
   title: string;
@@ -43,7 +44,7 @@ function initialRepo(): string {
 }
 
 export function App() {
-  const { t, err } = useI18n();
+  const { t, rich, err } = useI18n();
   const serialOk = isWebSerialSupported();
   const [repoInput, setRepoInput] = useState(initialRepo);
   const [token, setToken] = useState(() => load('keyballer.token'));
@@ -55,6 +56,9 @@ export function App() {
   const [target, setTarget] = useState<FlashTarget | null>(null);
   const tokenRef = useRef(token);
   tokenRef.current = token;
+  const repoField = useRef<HTMLInputElement>(null);
+  // Where focus goes back to when the flash panel closes.
+  const returnFocus = useRef<HTMLElement | null>(null);
 
   const fetchState = useCallback(async (ref: RepoRef): Promise<RepoState> => {
     const tk = tokenRef.current;
@@ -115,6 +119,20 @@ export function App() {
     return () => clearInterval(timer);
   }, [building, refresh]);
 
+  const openTarget = (next: FlashTarget) => {
+    returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setTarget(next);
+  };
+
+  const closeTarget = () => {
+    setTarget(null);
+    const el = returnFocus.current;
+    if (el?.isConnected) requestAnimationFrame(() => el.focus());
+  };
+
+  useShortcut('/', msg('shortcut.focusRepo'), () => repoField.current?.focus());
+  useShortcut('r', msg('shortcut.refresh'), () => void refresh(), !!repo && !refreshing && !target);
+
   const openBuild = async (build: FirmwareBuild) => {
     if (!repo?.firmwareSha) return;
     setLoadingBuild(build.id);
@@ -122,7 +140,7 @@ export function App() {
     try {
       const text = await getFirmwareText(repo.ref, repo.firmwareSha, build.file, tokenRef.current);
       const { data } = parseIntelHex(text);
-      setTarget({ title: build.name, image: data, split: build.split });
+      openTarget({ title: build.name, image: data, split: build.split });
     } catch (e) {
       setError(e);
     } finally {
@@ -172,6 +190,7 @@ export function App() {
             {t('repo.title')}
           </label>
           <input
+            ref={repoField}
             id="repo"
             type="text"
             value={repoInput}
@@ -222,10 +241,11 @@ export function App() {
             <section aria-labelledby="fw-title" className="stack">
               <h2 id="fw-title">{t('firmware.title')}</h2>
               <div className="cards">
-                {repo.manifest.builds.map((b) => (
+                {repo.manifest.builds.map((b, i) => (
                   <FirmwareCard
                     key={b.id}
                     build={b}
+                    index={i}
                     canStart={serialOk && !target}
                     loading={loadingBuild === b.id}
                     onFlash={() => void openBuild(b)}
@@ -243,18 +263,21 @@ export function App() {
           title={target.title}
           image={target.image}
           split={target.split}
-          onClose={() => setTarget(null)}
+          onClose={closeTarget}
         />
       )}
 
       {serialOk && (
         <LocalFirmware
           disabled={!!target}
-          onReady={(name, image, split) => setTarget({ title: name, image, split })}
+          onReady={(name, image, split) => openTarget({ title: name, image, split })}
         />
       )}
 
-      <footer className="muted">{t('app.footer')}</footer>
+      <footer className="muted stack">
+        <p>{rich('shortcut.hint', { key: <Kbd>?</Kbd> })}</p>
+        <p>{t('app.footer')}</p>
+      </footer>
     </div>
   );
 }

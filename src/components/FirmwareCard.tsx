@@ -1,16 +1,24 @@
+import { msg } from '../i18n/core';
 import { useI18n } from '../i18n/react';
 import { bootloaderLabel, formatBytes, processorLabel } from '../lib/format';
 import { canFlash, type FirmwareBuild } from '../lib/manifest';
+import { Kbd, useShortcut } from '../shortcuts';
 
 interface Props {
   build: FirmwareBuild;
+  /** Position in the list; the first nine get the shortcuts 1–9. */
+  index: number;
   canStart: boolean;
   loading: boolean;
   onFlash: () => void;
 }
 
-export function FirmwareCard({ build, canStart, loading, onFlash }: Props) {
+export function FirmwareCard({ build, index, canStart, loading, onFlash }: Props) {
   const { t, lang } = useI18n();
+  const shortcut = index < 9 ? String(index + 1) : '';
+  const flashable = canFlash(build);
+  useShortcut(shortcut, msg('shortcut.flashBuild', { name: build.name }), onFlash,
+    !!shortcut && flashable && canStart && !loading);
   const unknown = t('common.unknown');
   const ratio = build.size && build.max_size ? build.size / build.max_size : null;
   const level = ratio === null ? '' : ratio > 0.97 ? 'err' : ratio > 0.9 ? 'warn' : '';
@@ -45,9 +53,16 @@ export function FirmwareCard({ build, canStart, loading, onFlash }: Props) {
         </div>
       )}
 
-      {canFlash(build) ? (
-        <button type="button" className="primary" onClick={onFlash} disabled={!canStart || loading}>
+      {flashable ? (
+        <button
+          type="button"
+          className="primary"
+          onClick={onFlash}
+          disabled={!canStart || loading}
+          aria-keyshortcuts={shortcut || undefined}
+        >
           {loading ? t('card.loading') : t('card.flash')}
+          {shortcut && <Kbd>{shortcut}</Kbd>}
         </button>
       ) : (
         <p className="note">

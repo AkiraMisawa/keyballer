@@ -4,6 +4,7 @@ import type { MessageKey } from '../i18n/messages';
 import { useI18n } from '../i18n/react';
 import { flashCaterina, type FlashPhase, type FlashProgress } from '../lib/caterina';
 import { findGrantedBootloader, pickBootloader } from '../lib/serial';
+import { Kbd, useShortcut } from '../shortcuts';
 
 type Step = 'ready' | 'waiting' | 'flashing' | 'done' | 'error';
 
@@ -49,6 +50,11 @@ export function FlashPanel({ title, image, split, onClose }: Props) {
   const [error, setError] = useState<unknown>(null);
   const [doneCount, setDoneCount] = useState(0);
   const busy = useRef(false);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const startRef = useRef<HTMLButtonElement>(null);
+  const pickRef = useRef<HTMLButtonElement>(null);
+  const otherRef = useRef<HTMLButtonElement>(null);
+  const retryRef = useRef<HTMLButtonElement>(null);
 
   const log = useCallback((m: Localized) => setLogs((l) => [...l, m]), []);
 
@@ -116,14 +122,43 @@ export function FlashPanel({ title, image, split, onClose }: Props) {
   };
 
   const halvesLeft = split ? 2 - doneCount : 1 - doneCount;
+
+  // Each step focuses the action that usually comes next, so Enter keeps
+  // the whole flow going without the mouse.
+  useEffect(() => {
+    const next = {
+      ready: startRef,
+      waiting: pickRef,
+      flashing: headingRef,
+      done: halvesLeft > 0 ? otherRef : headingRef,
+      error: retryRef,
+    }[step];
+    next.current?.focus();
+  }, [step, halvesLeft]);
+
+  useShortcut('p', msg('shortcut.pickPort'), () => void choose(false), step === 'waiting');
+  useShortcut(
+    'Escape',
+    msg('shortcut.back'),
+    () => (step === 'waiting' ? setStep('ready') : onClose()),
+    step !== 'flashing',
+  );
   const pct = step === 'done' ? 100 : percent(progress, eraseEeprom);
   const phase = progress ? PHASES.find((p) => p.phase === progress.phase)?.label : undefined;
 
   return (
     <section className="panel flash" aria-labelledby="flash-title">
       <div className="panel-head">
-        <h2 id="flash-title">{t('flash.title', { name: title })}</h2>
-        <button type="button" className="ghost" onClick={onClose} disabled={step === 'flashing'}>
+        <h2 id="flash-title" ref={headingRef} tabIndex={-1}>
+          {t('flash.title', { name: title })}
+        </h2>
+        <button
+          type="button"
+          className="ghost"
+          onClick={onClose}
+          disabled={step === 'flashing'}
+          aria-keyshortcuts="Escape"
+        >
           {t('common.close')}
         </button>
       </div>
@@ -159,7 +194,7 @@ export function FlashPanel({ title, image, split, onClose }: Props) {
             </span>
           </label>
           <div>
-            <button type="button" className="primary" onClick={() => setStep('waiting')}>
+            <button ref={startRef} type="button" className="primary" onClick={() => setStep('waiting')}>
               {t('flash.start')}
             </button>
           </div>
@@ -171,8 +206,15 @@ export function FlashPanel({ title, image, split, onClose }: Props) {
           <p className="lead">{t('flash.waiting')}</p>
           <p className="note">{t('flash.waitingNote')}</p>
           <div className="row">
-            <button type="button" className="primary" onClick={() => void choose(false)}>
+            <button
+              ref={pickRef}
+              type="button"
+              className="primary"
+              onClick={() => void choose(false)}
+              aria-keyshortcuts="p"
+            >
               {t('flash.pickPort')}
+              <Kbd>P</Kbd>
             </button>
             <button type="button" className="ghost" onClick={() => setStep('ready')}>
               {t('common.cancel')}
@@ -210,7 +252,7 @@ export function FlashPanel({ title, image, split, onClose }: Props) {
             <>
               <p>{t('flash.otherHalf')}</p>
               <div>
-                <button type="button" className="primary" onClick={() => setStep('waiting')}>
+                <button ref={otherRef} type="button" className="primary" onClick={() => setStep('waiting')}>
                   {t('flash.flashOther')}
                 </button>
               </div>
@@ -228,7 +270,7 @@ export function FlashPanel({ title, image, split, onClose }: Props) {
           </p>
           <p className="note">{t('flash.failedNote')}</p>
           <div>
-            <button type="button" className="primary" onClick={() => setStep('waiting')}>
+            <button ref={retryRef} type="button" className="primary" onClick={() => setStep('waiting')}>
               {t('flash.retry')}
             </button>
           </div>
