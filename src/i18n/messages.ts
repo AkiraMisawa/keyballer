@@ -1,8 +1,147 @@
-// Every user-facing string, in Japanese and English. `{name}` is a
-// placeholder filled from params. Adding a key to `ja` without adding it to
-// `en` fails the type check.
+// Every user-facing string, in English and Japanese. English is the source:
+// `{name}` is a placeholder filled from params, and adding a key to `en`
+// without adding it to `ja` fails the type check.
 
-export const ja = {
+export const en = {
+  'app.tagline': 'Flash keyboard firmware built on GitHub, right from your browser.',
+  'app.noSerial':
+    'This browser cannot flash over USB. Open this page in Chrome or Edge on a computer.',
+  'app.footer':
+    'Flashing uses Web Serial in Chrome / Edge. The firmware goes straight from this page to your keyboard and is not sent anywhere else.',
+  'app.language': 'Language',
+
+  'common.close': 'Close',
+  'common.cancel': 'Cancel',
+  'common.unknown': 'Unknown',
+
+  'repo.title': 'Config repository',
+  'repo.placeholder': 'owner/repo (e.g. AkiraMisawa/keyballer-config)',
+  'repo.connect': 'Connect',
+  'repo.connecting': 'Connecting…',
+  'repo.invalid': 'Enter it as "owner/repo" (e.g. AkiraMisawa/keyballer-config)',
+  'token.summary': 'Use a private repository (token)',
+  'token.note':
+    'Paste a fine-grained token limited to this repository, with read access to Contents and Actions. It is stored only in this browser.',
+
+  'status.title': 'Build',
+  'status.refresh': 'Refresh',
+  'status.refreshing': 'Checking…',
+  'status.current': 'The current firmware was built from {commit} on {date}.',
+  'status.none':
+    'There is no firmware yet. Push to the config repository and GitHub Actions will build it.',
+  'status.latest': 'Latest build: {title} ({commit}, {date})',
+  'status.building': 'Building your new settings. The result shows up here when it finishes.',
+  'status.failedNewer':
+    'The build of your new settings failed, so the firmware below is the previous one. Open the link to see the error.',
+  'run.busy': 'Building',
+  'run.ok': 'Succeeded',
+  'run.cancelled': 'Cancelled',
+  'run.failed': 'Failed',
+
+  'firmware.title': 'Firmware',
+  'card.specs': 'Specs',
+  'card.split': 'Split',
+  'card.size': '{size} / {max} bytes ({free} free)',
+  'card.flash': 'Flash',
+  'card.loading': 'Loading…',
+  'card.unsupported': 'Flashing this way ({bootloader} / {format}) is not supported yet',
+
+  'local.summary': 'Flash a hex file from your computer',
+  'local.note':
+    'Flash firmware you built yourself. Supported: .hex files for Pro Micro (ATmega32U4 / Caterina).',
+  'local.split': 'Split keyboard (flash each half)',
+
+  'flash.title': 'Flash {name}',
+  'flash.halves': 'Progress on each half',
+  'flash.first': 'First half',
+  'flash.second': 'Second half',
+  'flash.plug': 'Connect the USB cable to the keyboard.',
+  'flash.plugSplit': 'Connect the USB cable to either half of the keyboard.',
+  'flash.trsNote':
+    'You can leave the cable between the halves (TRS / TRRS) connected. Always unplug USB before plugging or unplugging it.',
+  'flash.pressReset': 'Press "Start flashing", then press the reset button on the keyboard.',
+  'flash.eeprom': 'Also clear saved settings (EEPROM)',
+  'flash.eepromNote':
+    'Turn this on when replacing different firmware, such as Keyball Link or REMAP.',
+  'flash.start': 'Start flashing',
+  'flash.waiting': 'Press the reset button. If nothing happens, press it twice quickly.',
+  'flash.waitingNote':
+    'The keyboard accepts new firmware for about 8 seconds after the reset. Choose its port with the button below. From the second time on, flashing may start by itself.',
+  'flash.pickPort': 'Choose port',
+  'flash.pickAny': 'Not in the list? Choose from all devices',
+  'flash.progress': '{phase}… ({percent}%)',
+  'flash.finished': 'Flashing finished',
+  'flash.dontUnplug': 'Keep the USB cable connected until flashing finishes.',
+  'flash.otherHalf':
+    'Now flash the other half. Unplug the USB cable and connect it to the other half. Both halves get the same firmware.',
+  'flash.flashOther': 'Flash the other half',
+  'flash.doneSplit': 'Both halves are flashed. The keyboard is ready to use.',
+  'flash.doneSingle': 'Flashed. The keyboard is ready to use.',
+  'flash.failed': 'Flashing failed: {error}',
+  'flash.failedNote':
+    'Press the reset button on the keyboard again and retry. Flashing fails while another app (such as QMK Toolbox) is using the port.',
+  'flash.retry': 'Try again',
+  'flash.log': 'Detailed log',
+
+  'phase.preparing': 'Preparing',
+  'phase.connect': 'Connecting to the bootloader',
+  'phase.erase': 'Erasing flash',
+  'phase.eeprom': 'Clearing EEPROM',
+  'phase.write': 'Writing',
+  'phase.verify': 'Verifying',
+  'phase.finish': 'Restarting',
+
+  'step.identify': 'Identifying the bootloader',
+  'step.signature': 'Reading the MCU signature',
+  'step.progMode': 'Entering programming mode',
+  'step.erase': 'Erasing flash',
+  'step.eeprom': 'Clearing EEPROM',
+  'step.address': 'Setting the address',
+  'step.write': 'Writing {addr}',
+  'step.read': 'Reading {addr}',
+  'step.leave': 'Leaving programming mode',
+  'step.exit': 'Leaving the bootloader',
+
+  'flash.err.disconnected': '{step}: the connection was lost',
+  'flash.err.noResponse': '{step}: no response',
+  'flash.err.unexpected': '{step}: unexpected response {byte}',
+  'flash.err.tooLarge': 'The firmware is too large ({size} bytes; the limit is {max} bytes)',
+  'flash.err.openFailed': 'Could not open the serial port',
+  'flash.err.wrongMcu': 'This MCU is not an ATmega32U4 (signature {sig}). Flashing was stopped',
+  'flash.err.mismatch': 'Data at {addr} does not match (expected {expected}, got {actual})',
+
+  'flash.log.found': 'Found the bootloader',
+  'flash.log.stale': 'Discarded {count} bytes received before connecting',
+  'flash.log.bootloader': 'Bootloader: {id}',
+  'flash.log.mcu': 'MCU: ATmega32U4 ({sig})',
+  'flash.log.erased': 'Erased the flash',
+  'flash.log.eepromErased': 'Cleared the EEPROM',
+  'flash.log.written': 'Wrote {pages} pages ({bytes} bytes)',
+  'flash.log.drained': 'Discarded {count} unexpected bytes',
+  'flash.log.rewrite': '{addr} does not match (expected {expected}, got {actual}). Rewriting it',
+  'flash.log.verified': 'Verified the written data',
+  'flash.log.restarted': 'Restarted the keyboard',
+
+  'hex.err.afterEof': 'Line {line}: data after the end record',
+  'hex.err.format': 'Line {line}: not in Intel HEX format',
+  'hex.err.notHex': 'Line {line}: contains a character that is not hexadecimal',
+  'hex.err.length': 'Line {line}: the length does not match',
+  'hex.err.checksum': 'Line {line}: the checksum does not match',
+  'hex.err.recordType': 'Line {line}: record type {type} is not supported',
+  'hex.err.noEof': 'The file is cut off (it has no end record)',
+  'hex.err.empty': 'There is no data to write',
+
+  'gh.err.badToken': 'The token is not valid',
+  'gh.err.rateLimit': 'You have reached the GitHub API rate limit. Wait a while or set a token',
+  'gh.err.notFound': 'Not found',
+  'gh.err.status': 'GitHub API returned an error ({status})',
+  'gh.err.repoNotFound': '{repo} was not found. If it is private, set a token',
+  'manifest.err.format': 'manifest.json is not in the expected format',
+} as const;
+
+export type MessageKey = keyof typeof en;
+
+export const ja: Record<MessageKey, string> = {
   'app.tagline': 'GitHub でビルドしたキーボードのファームウェアを、ブラウザから書き込みます。',
   'app.noSerial':
     'このブラウザは USB での書き込みに対応していません。パソコンの Chrome か Edge で開いてください。',
@@ -138,143 +277,4 @@ export const ja = {
   'gh.err.status': 'GitHub API がエラーを返しました（{status}）',
   'gh.err.repoNotFound': '{repo} が見つかりません。非公開リポジトリならトークンを設定してください',
   'manifest.err.format': 'manifest.json の形式が想定と違います',
-} as const;
-
-export type MessageKey = keyof typeof ja;
-
-export const en: Record<MessageKey, string> = {
-  'app.tagline': 'Flash keyboard firmware built on GitHub, right from your browser.',
-  'app.noSerial':
-    'This browser cannot flash over USB. Open this page in Chrome or Edge on a computer.',
-  'app.footer':
-    'Flashing uses Web Serial in Chrome / Edge. The firmware goes straight from this page to your keyboard and is not sent anywhere else.',
-  'app.language': 'Language',
-
-  'common.close': 'Close',
-  'common.cancel': 'Cancel',
-  'common.unknown': 'Unknown',
-
-  'repo.title': 'Config repository',
-  'repo.placeholder': 'owner/repo (e.g. AkiraMisawa/keyballer-config)',
-  'repo.connect': 'Connect',
-  'repo.connecting': 'Connecting…',
-  'repo.invalid': 'Enter it as "owner/repo" (e.g. AkiraMisawa/keyballer-config)',
-  'token.summary': 'Use a private repository (token)',
-  'token.note':
-    'Paste a fine-grained token limited to this repository, with read access to Contents and Actions. It is stored only in this browser.',
-
-  'status.title': 'Build',
-  'status.refresh': 'Refresh',
-  'status.refreshing': 'Checking…',
-  'status.current': 'The current firmware was built from {commit} on {date}.',
-  'status.none':
-    'There is no firmware yet. Push to the config repository and GitHub Actions will build it.',
-  'status.latest': 'Latest build: {title} ({commit}, {date})',
-  'status.building': 'Building your new settings. The result shows up here when it finishes.',
-  'status.failedNewer':
-    'The build of your new settings failed, so the firmware below is the previous one. Open the link to see the error.',
-  'run.busy': 'Building',
-  'run.ok': 'Succeeded',
-  'run.cancelled': 'Cancelled',
-  'run.failed': 'Failed',
-
-  'firmware.title': 'Firmware',
-  'card.specs': 'Specs',
-  'card.split': 'Split',
-  'card.size': '{size} / {max} bytes ({free} free)',
-  'card.flash': 'Flash',
-  'card.loading': 'Loading…',
-  'card.unsupported': 'Flashing this way ({bootloader} / {format}) is not supported yet',
-
-  'local.summary': 'Flash a hex file from your computer',
-  'local.note':
-    'Flash firmware you built yourself. Supported: .hex files for Pro Micro (ATmega32U4 / Caterina).',
-  'local.split': 'Split keyboard (flash each half)',
-
-  'flash.title': 'Flash {name}',
-  'flash.halves': 'Progress on each half',
-  'flash.first': 'First half',
-  'flash.second': 'Second half',
-  'flash.plug': 'Connect the USB cable to the keyboard.',
-  'flash.plugSplit': 'Connect the USB cable to either half of the keyboard.',
-  'flash.trsNote':
-    'You can leave the cable between the halves (TRS / TRRS) connected. Always unplug USB before plugging or unplugging it.',
-  'flash.pressReset': 'Press "Start flashing", then press the reset button on the keyboard.',
-  'flash.eeprom': 'Also clear saved settings (EEPROM)',
-  'flash.eepromNote':
-    'Turn this on when replacing different firmware, such as Keyball Link or REMAP.',
-  'flash.start': 'Start flashing',
-  'flash.waiting': 'Press the reset button. If nothing happens, press it twice quickly.',
-  'flash.waitingNote':
-    'The keyboard accepts new firmware for about 8 seconds after the reset. Choose its port with the button below. From the second time on, flashing may start by itself.',
-  'flash.pickPort': 'Choose port',
-  'flash.pickAny': 'Not in the list? Choose from all devices',
-  'flash.progress': '{phase}… ({percent}%)',
-  'flash.finished': 'Flashing finished',
-  'flash.dontUnplug': 'Keep the USB cable connected until flashing finishes.',
-  'flash.otherHalf':
-    'Now flash the other half. Unplug the USB cable and connect it to the other half. Both halves get the same firmware.',
-  'flash.flashOther': 'Flash the other half',
-  'flash.doneSplit': 'Both halves are flashed. The keyboard is ready to use.',
-  'flash.doneSingle': 'Flashed. The keyboard is ready to use.',
-  'flash.failed': 'Flashing failed: {error}',
-  'flash.failedNote':
-    'Press the reset button on the keyboard again and retry. Flashing fails while another app (such as QMK Toolbox) is using the port.',
-  'flash.retry': 'Try again',
-  'flash.log': 'Detailed log',
-
-  'phase.preparing': 'Preparing',
-  'phase.connect': 'Connecting to the bootloader',
-  'phase.erase': 'Erasing flash',
-  'phase.eeprom': 'Clearing EEPROM',
-  'phase.write': 'Writing',
-  'phase.verify': 'Verifying',
-  'phase.finish': 'Restarting',
-
-  'step.identify': 'Identifying the bootloader',
-  'step.signature': 'Reading the MCU signature',
-  'step.progMode': 'Entering programming mode',
-  'step.erase': 'Erasing flash',
-  'step.eeprom': 'Clearing EEPROM',
-  'step.address': 'Setting the address',
-  'step.write': 'Writing {addr}',
-  'step.read': 'Reading {addr}',
-  'step.leave': 'Leaving programming mode',
-  'step.exit': 'Leaving the bootloader',
-
-  'flash.err.disconnected': '{step}: the connection was lost',
-  'flash.err.noResponse': '{step}: no response',
-  'flash.err.unexpected': '{step}: unexpected response {byte}',
-  'flash.err.tooLarge': 'The firmware is too large ({size} bytes; the limit is {max} bytes)',
-  'flash.err.openFailed': 'Could not open the serial port',
-  'flash.err.wrongMcu': 'This MCU is not an ATmega32U4 (signature {sig}). Flashing was stopped',
-  'flash.err.mismatch': 'Data at {addr} does not match (expected {expected}, got {actual})',
-
-  'flash.log.found': 'Found the bootloader',
-  'flash.log.stale': 'Discarded {count} bytes received before connecting',
-  'flash.log.bootloader': 'Bootloader: {id}',
-  'flash.log.mcu': 'MCU: ATmega32U4 ({sig})',
-  'flash.log.erased': 'Erased the flash',
-  'flash.log.eepromErased': 'Cleared the EEPROM',
-  'flash.log.written': 'Wrote {pages} pages ({bytes} bytes)',
-  'flash.log.drained': 'Discarded {count} unexpected bytes',
-  'flash.log.rewrite': '{addr} does not match (expected {expected}, got {actual}). Rewriting it',
-  'flash.log.verified': 'Verified the written data',
-  'flash.log.restarted': 'Restarted the keyboard',
-
-  'hex.err.afterEof': 'Line {line}: data after the end record',
-  'hex.err.format': 'Line {line}: not in Intel HEX format',
-  'hex.err.notHex': 'Line {line}: contains a character that is not hexadecimal',
-  'hex.err.length': 'Line {line}: the length does not match',
-  'hex.err.checksum': 'Line {line}: the checksum does not match',
-  'hex.err.recordType': 'Line {line}: record type {type} is not supported',
-  'hex.err.noEof': 'The file is cut off (it has no end record)',
-  'hex.err.empty': 'There is no data to write',
-
-  'gh.err.badToken': 'The token is not valid',
-  'gh.err.rateLimit': 'You have reached the GitHub API rate limit. Wait a while or set a token',
-  'gh.err.notFound': 'Not found',
-  'gh.err.status': 'GitHub API returned an error ({status})',
-  'gh.err.repoNotFound': '{repo} was not found. If it is private, set a token',
-  'manifest.err.format': 'manifest.json is not in the expected format',
 };

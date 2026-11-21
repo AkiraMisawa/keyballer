@@ -19,7 +19,7 @@ const STORAGE_KEY = 'keyballer.lang';
 
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Lang>(() =>
-    detectLang(load(STORAGE_KEY), typeof navigator === 'undefined' ? [] : navigator.languages),
+    detectLang(new URLSearchParams(location.search).get('lang'), load(STORAGE_KEY)),
   );
 
   useEffect(() => {

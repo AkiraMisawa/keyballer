@@ -4,7 +4,10 @@
 import { en, ja, type MessageKey } from './messages';
 
 export type Lang = 'ja' | 'en';
-export const LANGS: Lang[] = ['ja', 'en'];
+export const LANGS: Lang[] = ['en', 'ja'];
+
+export const isLang = (value: string | null | undefined): value is Lang =>
+  value === 'en' || value === 'ja';
 
 export type Param = string | number | Localized;
 export type Params = Record<string, Param>;
@@ -47,7 +50,9 @@ export function errorText(lang: Lang, e: unknown): string {
   return String(e);
 }
 
-export function detectLang(saved: string, languages: readonly string[]): Lang {
-  if (saved === 'ja' || saved === 'en') return saved;
-  return languages.some((l) => l.toLowerCase().startsWith('ja')) ? 'ja' : 'en';
+/** English unless `?lang=` or a saved choice says otherwise. */
+export function detectLang(fromUrl: string | null, saved: string): Lang {
+  if (isLang(fromUrl)) return fromUrl;
+  if (isLang(saved)) return saved;
+  return 'en';
 }

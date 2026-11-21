@@ -4,7 +4,7 @@ English | [日本語](README.ja.md)
 
 Keyballer builds keyboard firmware with GitHub Actions and flashes it straight from your browser.
 
-**App:** https://akiramisawa.github.io/keyballer/ (Japanese and English)
+**App:** https://akiramisawa.github.io/keyballer/ (English and Japanese; add `?lang=ja` to open it in Japanese)
 
 ```
 Config repository (keymaps etc.) ──push──▶ GitHub Actions builds
@@ -129,7 +129,7 @@ npm run build   # type check and build
 
 Pushing to `main` runs the tests and the build, then publishes to GitHub Pages.
 
-All UI text is in `src/i18n/messages.ts`. The type check fails if an English string is missing, and a test fails if the Japanese and English strings use different placeholders.
+All UI text is in `src/i18n/messages.ts`. English is the source; the type check fails if a Japanese string is missing, and a test fails if the two languages use different placeholders. The app opens in English unless `?lang=ja` or a saved choice says otherwise.
 
 ## Roadmap
 

@@ -6,13 +6,13 @@ const placeholders = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1
 
 describe('messages', () => {
   it('uses the same placeholders in Japanese and English', () => {
-    for (const key of Object.keys(ja) as MessageKey[]) {
+    for (const key of Object.keys(en) as MessageKey[]) {
       expect(placeholders(en[key]), key).toEqual(placeholders(ja[key]));
     }
   });
 
   it('has no empty translations', () => {
-    for (const key of Object.keys(ja) as MessageKey[]) {
+    for (const key of Object.keys(en) as MessageKey[]) {
       expect(ja[key].trim(), key).not.toBe('');
       expect(en[key].trim(), key).not.toBe('');
     }
@@ -41,13 +41,21 @@ describe('translate', () => {
 });
 
 describe('detectLang', () => {
-  it('prefers the saved choice', () => {
-    expect(detectLang('en', ['ja-JP'])).toBe('en');
+  it('opens in English by default', () => {
+    expect(detectLang(null, '')).toBe('en');
   });
 
-  it('falls back to the browser languages', () => {
-    expect(detectLang('', ['ja-JP', 'en-US'])).toBe('ja');
-    expect(detectLang('', ['en-GB', 'ja'])).toBe('ja');
-    expect(detectLang('', ['fr-FR'])).toBe('en');
+  it('uses a saved choice', () => {
+    expect(detectLang(null, 'ja')).toBe('ja');
+  });
+
+  it('lets ?lang= override the saved choice', () => {
+    expect(detectLang('ja', 'en')).toBe('ja');
+    expect(detectLang('en', 'ja')).toBe('en');
+  });
+
+  it('ignores languages it does not have', () => {
+    expect(detectLang('fr', '')).toBe('en');
+    expect(detectLang(null, 'fr')).toBe('en');
   });
 });

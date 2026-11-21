@@ -4,7 +4,7 @@
 
 GitHub Actions でキーボードのファームウェアをビルドし、ブラウザからそのまま書き込むアプリです。
 
-**アプリ：** https://akiramisawa.github.io/keyballer/（日本語・英語）
+**アプリ：** https://akiramisawa.github.io/keyballer/?lang=ja（英語・日本語。`?lang=ja` を付けると日本語で開きます）
 
 ```
 設定リポジトリ（キーマップなど） ──push──▶ GitHub Actions がビルド
@@ -129,7 +129,7 @@ npm run build   # 型チェックとビルド
 
 `main` に push すると、テストとビルドのあと GitHub Pages に公開されます。
 
-画面の文言はすべて `src/i18n/messages.ts` にあります。英語の訳が足りないと型チェックで、日英で差し込む値が食い違うとテストで失敗します。
+画面の文言はすべて `src/i18n/messages.ts` にあります。英語が基準で、日本語の訳が足りないと型チェックで、日英で差し込む値が食い違うとテストで失敗します。アプリは、`?lang=ja` か保存された選択がない限り英語で開きます。
 
 ## これから
 
