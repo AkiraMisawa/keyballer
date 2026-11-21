@@ -152,6 +152,7 @@ frontend-design 2026 版の手順をキーマップ編集に当てはめると�
 - **画面構成**：機能ごとにトップレベルのタブがある。Keymap、Layout、Macros、Lighting、Tap Dance、Combos、Key Overrides、Alt Repeat Key、QMK Settings、Matrix tester、Firmware updater（[`main_window.py` L89-93](https://github.com/vial-kb/vial-gui/blob/aef8222a2d0429a183b2ed692d5f9efcfd383f08/src/main/python/main_window.py#L89-L93)）。
 - **キー一覧のタブ**：Basic、ISO/JIS、Layers、Quantum、Backlight、App, Media and Mouse、MIDI、Tap Dance、User、Macro（[`tabbed_keycodes.py` L163-185](https://github.com/vial-kb/vial-gui/blob/aef8222a2d0429a183b2ed692d5f9efcfd383f08/src/main/python/tabbed_keycodes.py#L163-L185)）。
 - **Mod-Tap の描き方**：キーを上下に分け、上に外側（例 `RSft_T`）、下の窪み（mask）に内側のキー（例 `KC_A`）を描く（[`widgets/keyboard_widget.py` L85-100](https://github.com/vial-kb/vial-gui/blob/aef8222a2d0429a183b2ed692d5f9efcfd383f08/src/main/python/widgets/keyboard_widget.py#L85-L100)）。
+- **キー一覧には検索欄がない**（`tabbed_keycodes.py` に入力欄がない）。割り当てると選択が次のキーへ進む（[`editor/keymap_editor.py` L202](https://github.com/vial-kb/vial-gui/blob/aef8222a2d0429a183b2ed692d5f9efcfd383f08/src/main/python/editor/keymap_editor.py#L202)、`select_next` は [`widgets/keyboard_widget.py` L504](https://github.com/vial-kb/vial-gui/blob/aef8222a2d0429a183b2ed692d5f9efcfd383f08/src/main/python/widgets/keyboard_widget.py#L504)）。
 - **コンボとタップダンス**：配列とは別のタブ。コンボは番号付きのタブごとに「Key 1〜4」と「Output key」（[`editor/combos.py` L35-44, L96](https://github.com/vial-kb/vial-gui/blob/aef8222a2d0429a183b2ed692d5f9efcfd383f08/src/main/python/editor/combos.py#L35-L44)）。タップダンスは「On tap / On hold / On double tap / On tap + hold / Tapping term (ms)」で、「Use `TD(n)` to set up this action in the keymap.」と案内する（[`editor/tap_dance.py` L37-61](https://github.com/vial-kb/vial-gui/blob/aef8222a2d0429a183b2ed692d5f9efcfd383f08/src/main/python/editor/tap_dance.py#L37-L61)）。
 - **キーボード操作**：レイヤーボタンに `Qt.NoFocus` を設定しており、キーボードではフォーカスできない（[`editor/keymap_editor.py` L91, L99](https://github.com/vial-kb/vial-gui/blob/aef8222a2d0429a183b2ed692d5f9efcfd383f08/src/main/python/editor/keymap_editor.py#L91-L99)）。
 - **不満**：
@@ -188,6 +189,7 @@ frontend-design 2026 版の手順をキーマップ編集に当てはめると�
   - 「キャンセルが OK に近すぎる」「OK では曖昧」（[#328, 2025-08-14](https://github.com/nickcoutsos/keymap-editor/issues/328)）。
   - 編集中の配列を試し打ちしたい（[#224](https://github.com/nickcoutsos/keymap-editor/issues/224)）。
   - 保存に失敗する（[#131](https://github.com/nickcoutsos/keymap-editor/issues/131)、[#140](https://github.com/nickcoutsos/keymap-editor/issues/140)）。
+  - main に直接 commit するのではなく、pull request を作る設定がほしい（[#120, 2023-07-07](https://github.com/nickcoutsos/keymap-editor/issues/120)）。
 
 ### 2.6 ZSA Oryx（configure.zsa.io）
 
@@ -198,6 +200,8 @@ frontend-design 2026 版の手順をキーマップ編集に当てはめると�
 - **キーの表示名と、元の打鍵の切り替え**：Cmd+S を送るキーに「Save」と書ける。アイコンも使える。すべての表示名を一度に消して、元の打鍵を見るスイッチがある（[Oryx Changes: I18n, Custom Labels…, 2020-08-25](https://blog.zsa.io/2008-oryx-changes/)）。レイアウトの解説付き公開（Layout Tours）もある（同）。
 - **各国語**：Advanced Settings → International で言語のキーコードを有効にする。言語固有のキーは右上に小さく言語名（例「fr」）が付く。キー選択で言語名を検索すると、その言語のカテゴリが出る（[Setting Up International Layouts, 2023-03-07](https://blog.zsa.io/international-setup/)）。
 - **コンボ**：サイドバーに一覧があり、項目に乗るとそのキーが配列上で強調される（[Introducing Combos, 2022-12-20](https://blog.zsa.io/2212-combos/)）。当初は「キーが送るもの」でコンボを判定したため、別のレイヤーでも発動した。2026-11 に、物理位置で判定し、効くレイヤーを選べる「Layer-independent Combos」が加わった（[Layer-Independent Combos, 2026-11-09](https://blog.zsa.io/layer-independent-combos/)）。
+- **透過キーに、実際に効くキーを見せる**：2019-04 から、透過キーには下のレイヤーで割り当てたキーを表示している。理由は「そのレイヤーでタップしたとき何が起きるかを見やすくするため」（[Introducing Transparent Keys, Dynamic Macros, and More, 2019-04-18](https://blog.zsa.io/introducing-transparent-keys-dynamic-macros-and-more/)）。同じ記事で、レイヤータブのドラッグによる並べ替えをメニュー項目に置き換えている。
+- **キーの入れ替えはクリック 2 回**：「Swap keys」は入れ替え元と入れ替え先をクリックする。ドラッグ＆ドロップにしなかった理由は「ブラウザ間でうまく動かない」こと（[Swap keys, 2020-09-22](https://blog.zsa.io/2009-swap-keys/)）。
 - **履歴の教訓**：2023-06 にキー単位の履歴（「See past edits made to this key」「Restore Layers」）を入れた。しかし 2023-10 に止めている。理由は、あまり使われなかったこと（既存の「layout revisions」で足りた）と、全操作の記録が全員の性能を落としたことだ（[Introducing Per-Key History, 2023-06-22, 2023-10 更新](https://blog.zsa.io/history/)）。
 - **利用者の不満**：公開の課題管理が見当たらず、今回は一次情報を集めていない（未確認）。
 
@@ -211,7 +215,10 @@ frontend-design 2026 版の手順をキーマップ編集に当てはめると�
 - **押して名前を調べる**：Karabiner-EventViewer は押したキーのイベントを表示し、キー名を調べられる。表示は変換後の値なので、元のイベントを見る「Capture Raw Input Events」もある（[docs「EventViewer」](https://karabiner-elements.pqrs.org/docs/manual/operation/eventviewer/)）。
 - **JIS では刻印とキー名がずれる**：キー名は HID の用途名で、ANSI 配列の物理位置に近い。そのため JIS の「@」は `open_bracket`、「`[`」は `close_bracket`、「_」は `international1` になる。公式は「意図した動作」とし、自分の配列に合うキー名を使うよう求めている（[docs「Input symbols are different from the key code name on non-ANSI keyboards」](https://karabiner-elements.pqrs.org/docs/help/troubleshooting/symbols-with-non-ansi-keyboard/)）。
 - **Complex Modifications**：条件付きのルールを、コミュニティのルール集から取り込むか、自分で書いて有効にする（[docs「Use more complex modifications」](https://karabiner-elements.pqrs.org/docs/manual/configuration/configure-complex-modifications/)）。
-- **不満**：ISO 配列の設定で ^ と < が入れ替わり、ANSI や JIS にすると直るという報告（[#4070, 2024-12-20](https://github.com/pqrs-org/Karabiner-Elements/issues/4070)）。刻印・OS の配列設定・キー名の三者がずれると、利用者には原因が見えない。
+- **同じキーが二つの名前で並ぶ**：`japanese_eisuu` の実体は HID の `lang2`、`japanese_kana` は `lang1` だ（[`src/share/types/momentary_switch_event_details/key_code.hpp` L14-15](https://github.com/pqrs-org/Karabiner-Elements/blob/e37fd624d00e3f3bd7c84797f683fbf9a46ab7ef/src/share/types/momentary_switch_event_details/key_code.hpp#L14-L15)）。それでもメニューでは「日本語」と「各国語のキー」の二か所に別の名前で出ており、同じものだという説明はない。
+- **不満**：
+  - キー選択に検索欄がほしい。頭文字を打っても入れ子の中に飛ばない（[#4616, 2026-11-16](https://github.com/pqrs-org/Karabiner-Elements/issues/4616)）。
+  - ISO 配列の設定で ^ と < が入れ替わり、ANSI や JIS にすると直る（[#4070, 2024-12-20](https://github.com/pqrs-org/Karabiner-Elements/issues/4070)）。刻印・OS の配列設定・キー名の三者がずれると、利用者には原因が見えない。
 
 ### 2.8 Keyball Link（[Yowkees/keyball-link](https://github.com/Yowkees/keyball-link) `6f6b1fb`）
 
@@ -314,7 +321,7 @@ frontend-design 2026 版の手順をキーマップ編集に当てはめると�
 
 - **中央にタップ、下にホールド**。ホールドは役割の言葉で書く（`Ctrl`、`⌥`、`L1 記号`）。レイヤーには番号ではなく名前を使い、keymap-drawer の `layer_legend_map` と同じ考え方をとる（[`CONFIGURATION.md` L304-312](https://github.com/caksoylar/keymap-drawer/blob/467abe2a2fee3a1ec1658d8c3fe33d1cc562b53c/CONFIGURATION.md#L304-L312)）。
 - **JIS 記号は上段にシフト時の文字**。Keyball Link と同じ二段表示にする。
-- **透過キーは `▽` に加え、実際に落ちていく先のキーを薄く描く**。ふつうは下のレイヤーのキーで、計算で求められる。「何もしない」（`KC_NO`）は `▽` と区別し、別の印にする。
+- **透過キーは `▽` に加え、実際に落ちていく先のキーを薄く描く**。ふつうは下のレイヤーのキーで、計算で求められる。Oryx は 2019 年からこの表示をしている（2.6）。「何もしない」（`KC_NO`）は `▽` と区別し、別の印にする。
 - **行き先レイヤーには、押さえているキーの印を付ける**。keymap-drawer の `held` と同じ意味にする。色だけに頼らず、輪郭の形も変える（WCAG 1.4.1。4.3 参照）。
 - **色は状態だけに使う**。修飾、レイヤー、マウスなどのキーの種類は、色ではなく凡例の位置と言葉で示す。色を使うのは「選択中」「差分あり」「held」の 3 状態に限る。
 
@@ -326,7 +333,7 @@ frontend-design 2026 版の手順をキーマップ編集に当てはめると�
 
 **Keyballer への示唆**
 
-- タブには名前を表示する。並べ替えには、ドラッグに加えて「上へ／下へ」のボタンを付ける（WCAG 2.5.7）。
+- タブには名前を表示する。並べ替えには、ドラッグに加えて「上へ／下へ」のボタンを付ける（WCAG 2.5.7）。Oryx はタブのドラッグをメニュー項目に置き換え、キーの入れ替えもクリック 2 回にしている（2.6）。ドラッグを主にしない前例がある。
 - 「このキー位置を全レイヤーで見る」縦の帯を用意する。選んだキーの、レイヤーごとの割り当てを並べる。
 - タブの横に、そのレイヤーへの入り方（例「親指 Tab 長押し」）を書く。
 
@@ -343,9 +350,9 @@ frontend-design 2026 版の手順をキーマップ編集に当てはめると�
   - Vial：表で見る（#354）。
   - Keyball Link：マウス操作をコンボにしたい（#21）。
 - **Oryx**：一覧の項目に乗ると、そのコンボのキーが配列上で光る。2026-11 には、判定を「キーが送るもの」から「物理位置」に変え、効くレイヤーを選べる設定が加わった（2.6）。QMK の `COMBO_ONLY_FROM_LAYER`（他のレイヤーが有効でも、コンボのキーを常に指定のレイヤーで判定する。[QMK docs `features/combo.md` L366](https://github.com/qmk/qmk_firmware/blob/80973aa0b5413e9a5bbbf9293507f39e870f9aa3/docs/features/combo.md#L366)）と同じ問題意識だ。
-- **所有者のキーマップ**：
-  - コメントに「`COMBO_ONLY_FROM_LAYER` makes them position based」とある（`keymap.c` L84）。
-  - 隣り合うキーのコンボを右手に 3 つ持つ（`M`＋`BTN1`→`,`、`BTN1`＋`BTN2`→`.`、`BTN2`＋`RSFT_T(/)`→`\`）。マウスボタン自体が基本レイヤーのキーだ（ローカルの `AkiraMisawa/keyball` ブランチ `am338` `683f8fc`、`qmk_firmware/keyboards/keyball/keyball39/keymaps/am338/keymap.c` L83-92、L53）。
+- **所有者のキーマップ**（[`AkiraMisawa/keyballer-config@a202a35` `keymaps/am338/keymap.c`](https://github.com/AkiraMisawa/keyballer-config/blob/a202a35a56cade9cf3002d83a44e58c9805fb30e/keymaps/am338/keymap.c)。以下 `keymap.c` の行番号はこのファイル）：
+  - コメントに「`COMBO_ONLY_FROM_LAYER` makes them position based」とある（[L84](https://github.com/AkiraMisawa/keyballer-config/blob/a202a35a56cade9cf3002d83a44e58c9805fb30e/keymaps/am338/keymap.c#L84)）。
+  - 隣り合うキーのコンボを右手に 3 つ持つ（`M`＋`BTN1`→`,`、`BTN1`＋`BTN2`→`.`、`BTN2`＋`RSFT_T(/)`→`\`）。マウスボタン自体が基本レイヤーのキーだ（[L83-92](https://github.com/AkiraMisawa/keyballer-config/blob/a202a35a56cade9cf3002d83a44e58c9805fb30e/keymaps/am338/keymap.c#L83-L92)、[L53](https://github.com/AkiraMisawa/keyballer-config/blob/a202a35a56cade9cf3002d83a44e58c9805fb30e/keymaps/am338/keymap.c#L53)）。
   - タップホールドはキーごとに調整している。`LT(1,KC_TAB)` などは hold-on-other-key-press（同 L102-114）。Windows では英数／かなキーの tapping term を 0 にする（同 L116-125）。
 
 **Keyballer への示唆**
@@ -379,6 +386,7 @@ frontend-design 2026 版の手順をキーマップ編集に当てはめると�
 
 **Keyballer への示唆**
 
+- 同じキーは一行にまとめる。Karabiner は同じ HID キーを「日本語」と「各国語のキー」に別名で並べている（2.7）。Keyballer では `KC_LNG2`／`LANG2`／英数（Mac）を一行に出し、別名をすべて検索に掛ける。
 - 検索の対象：刻印（`ろ`、`¥`）、日本語名（英数、かな、変換、無変換、半角/全角）、ローマ字読み（eisu、kana、henkan）、QMK／ZMK の名前と別名（`JP_EISU`、`KC_LNG2`、`LANG2`）、英語名。
 - 結果の各行：凡例、日本語の説明、ファームウェアごとの正式名、OS ごとの注意（例「Mac では英数」「Windows では CapsLock」）を一行に出す。
 - 表示の切り替え：凡例は JIS／US、Mac／Windows を上部で切り替える。Keyball Link と同じく「表示だけが変わる」と書く。
@@ -432,7 +440,8 @@ frontend-design 2026 版の手順をキーマップ編集に当てはめると�
    - 右：`keymap.c`（または `.keymap`）の統一差分。データ部分以外に差分がないことを一目で確かめられるようにする。
 3. コミットメッセージは変更内容から下書きし、編集できるようにする（例「L0: Q を Alt/Q に、親指 2 番を ⌥/英数 に」）。ボタンの名前は最後まで同じにする（「commit する」→「commit しました」。[frontend-design L67](https://github.com/anthropics/skills/blob/41bbe19d1a1a7eaab5e7bb9050a417e5c6cffc8f/skills/frontend-design/SKILL.md#L67)）。
 4. 読み込んだときの commit SHA と、ブランチの今の先頭を比べる。違えば止め、取り込み直すかどうかを聞く。
-5. commit した後は、既存のビルド状態の表示につなげる（「ビルド中」→「書き込む」）。
+5. 既定の branch に直接 commit するか、別の branch に commit して pull request にするかを選べるようにする（keymap-editor #120 の要望）。
+6. commit した後は、既存のビルド状態の表示につなげる（「ビルド中」→「書き込む」）。
 
 ---
 
@@ -539,10 +548,10 @@ frontend-design の二段階の手順（1.4）を、この画面向けに具体�
 - Vial [`vial-kb/vial-gui@aef8222`](https://github.com/vial-kb/vial-gui/tree/aef8222a2d0429a183b2ed692d5f9efcfd383f08)、Issues #232 #354 #373 #389
 - ZMK Studio [`zmkfirmware/zmk-studio@1bb6bb8`](https://github.com/zmkfirmware/zmk-studio/tree/1bb6bb84a370c8917d8e4db15207087b26b3a844)、Issues #17 #93 #124 #147 #148 #151
 - ZMK ドキュメント「ZMK Studio」[`zmk@4de3133` docs/docs/features/studio.md](https://github.com/zmkfirmware/zmk/blob/4de313367288aad5aeaa1243890e40dc813f7008/docs/docs/features/studio.md)
-- nickcoutsos/keymap-editor [`@e794679`](https://github.com/nickcoutsos/keymap-editor/tree/e7946792cf674db20ab72ab67fea759fff4c3ccc)、Issues #131 #140 #224 #226 #328 #378
+- nickcoutsos/keymap-editor [`@e794679`](https://github.com/nickcoutsos/keymap-editor/tree/e7946792cf674db20ab72ab67fea759fff4c3ccc)、Issues #120 #131 #140 #224 #226 #328 #378
 - Keyball Link [`Yowkees/keyball-link@6f6b1fb`](https://github.com/Yowkees/keyball-link/tree/6f6b1fbe70f91d682fefe0946309f4500d0c7637)、Issues #13 #20 #21、Discussions #5 #7 #11。本番 JS バンドルの写し（依頼者から提供、`app.js` 587,907 バイト）
-- ZSA 公式ブログ：[Introducing Combos (2022-12-20)](https://blog.zsa.io/2212-combos/)、[Setting Up International Layouts (2023-03-07)](https://blog.zsa.io/international-setup/)、[Introducing Per-Key History (2023-06-22、2023-10 更新)](https://blog.zsa.io/history/)、[Tap and Hold Keys Explained (2024-04-01、2025-05 更新)](https://blog.zsa.io/tap-hold-explained/)、[Dual-function keys now make sense (2025-05-19)](https://blog.zsa.io/tap-hold-update/)、[Layer-Independent Combos (2026-11-09)](https://blog.zsa.io/layer-independent-combos/)、[Oryx Changes: I18n, Custom Labels… (2020-08-25)](https://blog.zsa.io/2008-oryx-changes/)
-- Karabiner-Elements [`pqrs-org/Karabiner-Elements@e37fd62`](https://github.com/pqrs-org/Karabiner-Elements/tree/e37fd624d00e3f3bd7c84797f683fbf9a46ab7ef)（SimpleModificationPickerView.swift、simple_modifications.json、key_picker.json）、公式文書（[Simple Modifications](https://karabiner-elements.pqrs.org/docs/manual/configuration/configure-simple-modifications/)、[EventViewer](https://karabiner-elements.pqrs.org/docs/manual/operation/eventviewer/)、[Complex Modifications](https://karabiner-elements.pqrs.org/docs/manual/configuration/configure-complex-modifications/)、[non-ANSI keyboards](https://karabiner-elements.pqrs.org/docs/help/troubleshooting/symbols-with-non-ansi-keyboard/)）、Issue #4070
+- ZSA 公式ブログ：[Introducing Transparent Keys, Dynamic Macros, and More (2019-04-18)](https://blog.zsa.io/introducing-transparent-keys-dynamic-macros-and-more/)、[Swap keys (2020-09-22)](https://blog.zsa.io/2009-swap-keys/)、[Introducing Combos (2022-12-20)](https://blog.zsa.io/2212-combos/)、[Setting Up International Layouts (2023-03-07)](https://blog.zsa.io/international-setup/)、[Introducing Per-Key History (2023-06-22、2023-10 更新)](https://blog.zsa.io/history/)、[Tap and Hold Keys Explained (2024-04-01、2025-05 更新)](https://blog.zsa.io/tap-hold-explained/)、[Dual-function keys now make sense (2025-05-19)](https://blog.zsa.io/tap-hold-update/)、[Layer-Independent Combos (2026-11-09)](https://blog.zsa.io/layer-independent-combos/)、[Oryx Changes: I18n, Custom Labels… (2020-08-25)](https://blog.zsa.io/2008-oryx-changes/)
+- Karabiner-Elements [`pqrs-org/Karabiner-Elements@e37fd62`](https://github.com/pqrs-org/Karabiner-Elements/tree/e37fd624d00e3f3bd7c84797f683fbf9a46ab7ef)（SimpleModificationPickerView.swift、simple_modifications.json、key_picker.json）、公式文書（[Simple Modifications](https://karabiner-elements.pqrs.org/docs/manual/configuration/configure-simple-modifications/)、[EventViewer](https://karabiner-elements.pqrs.org/docs/manual/operation/eventviewer/)、[Complex Modifications](https://karabiner-elements.pqrs.org/docs/manual/configuration/configure-complex-modifications/)、[non-ANSI keyboards](https://karabiner-elements.pqrs.org/docs/help/troubleshooting/symbols-with-non-ansi-keyboard/)）、Issues #4070 #4616
 
 **配列・キーコードの仕様と慣習**
 
@@ -550,7 +559,7 @@ frontend-design の二段階の手順（1.4）を、この画面向けに具体�
 - QMK docs [`qmk_firmware@80973aa`](https://github.com/qmk/qmk_firmware/tree/80973aa0b5413e9a5bbbf9293507f39e870f9aa3/docs)：reference_info_json.md、feature_layers.md、mod_tap.md、keycodes.md。quantum/keymap_extras/keymap_japanese.h
 - ZMK [`zmk@4de3133`](https://github.com/zmkfirmware/zmk/tree/4de313367288aad5aeaa1243890e40dc813f7008)：docs/docs/hardware-integration/physical-layouts.md、app/include/dt-bindings/zmk/keys.h
 - Keyball39 の配列定義 [`Yowkees/keyball@4664de9` keyball39/info.json, via.json](https://github.com/Yowkees/keyball/tree/4664de991d14da34bd42e7031ac7406b6ccb02af/qmk_firmware/keyboards/keyball/keyball39)
-- 所有者のキーマップ：ローカルの `AkiraMisawa/keyball`、ブランチ `am338`、`683f8fc`、`qmk_firmware/keyboards/keyball/keyball39/keymaps/am338/keymap.c`
+- 所有者のキーマップ [`AkiraMisawa/keyballer-config@a202a35` keymaps/am338/keymap.c](https://github.com/AkiraMisawa/keyballer-config/blob/a202a35a56cade9cf3002d83a44e58c9805fb30e/keymaps/am338/keymap.c)（Keyball39 と Keyball+ で共有）
 - Keyballer [`AkiraMisawa/keyballer@a963c8b`](https://github.com/AkiraMisawa/keyballer/tree/a963c8b5256cc8060ab7c7979215953a6dbc8059)：src/styles.css、README.md
 
 **Web 標準とアクセシビリティ**
