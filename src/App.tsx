@@ -2,7 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { BuildStatus } from './components/BuildStatus';
 import { FirmwareCard } from './components/FirmwareCard';
 import { FlashPanel } from './components/FlashPanel';
+import { LanguageSwitch } from './components/LanguageSwitch';
 import { LocalFirmware } from './components/LocalFirmware';
+import { LocalizedError } from './i18n/core';
+import { useI18n } from './i18n/react';
 import {
   checkRepo,
   getBuildRuns,
@@ -40,22 +43,23 @@ function initialRepo(): string {
 }
 
 export function App() {
+  const { t, err } = useI18n();
   const serialOk = isWebSerialSupported();
   const [repoInput, setRepoInput] = useState(initialRepo);
   const [token, setToken] = useState(() => load('keyballer.token'));
   const [repo, setRepo] = useState<RepoState | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<unknown>(null);
   const [loadingBuild, setLoadingBuild] = useState('');
   const [target, setTarget] = useState<FlashTarget | null>(null);
   const tokenRef = useRef(token);
   tokenRef.current = token;
 
   const fetchState = useCallback(async (ref: RepoRef): Promise<RepoState> => {
-    const t = tokenRef.current;
-    const [firmwareSha, runs] = await Promise.all([getFirmwareHead(ref, t), getBuildRuns(ref, t)]);
-    const manifest = firmwareSha ? await getManifest(ref, firmwareSha, t) : null;
+    const tk = tokenRef.current;
+    const [firmwareSha, runs] = await Promise.all([getFirmwareHead(ref, tk), getBuildRuns(ref, tk)]);
+    const manifest = firmwareSha ? await getManifest(ref, firmwareSha, tk) : null;
     return { ref, firmwareSha, manifest, runs };
   }, []);
 
@@ -63,18 +67,18 @@ export function App() {
     async (input: string) => {
       const ref = parseRepo(input);
       if (!ref) {
-        setError('「owner/repo」の形で入力してください（例：AkiraMisawa/keyballer-config）');
+        setError(new LocalizedError('repo.invalid'));
         return;
       }
       setConnecting(true);
-      setError('');
+      setError(null);
       try {
         await checkRepo(ref, tokenRef.current);
         setRepo(await fetchState(ref));
         save('keyballer.repo', repoName(ref));
       } catch (e) {
         setRepo(null);
-        setError(e instanceof Error ? e.message : String(e));
+        setError(e);
       } finally {
         setConnecting(false);
       }
@@ -85,11 +89,11 @@ export function App() {
   const refresh = useCallback(async () => {
     if (!repo) return;
     setRefreshing(true);
-    setError('');
+    setError(null);
     try {
       setRepo(await fetchState(repo.ref));
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(e);
     } finally {
       setRefreshing(false);
     }
@@ -114,13 +118,13 @@ export function App() {
   const openBuild = async (build: FirmwareBuild) => {
     if (!repo?.firmwareSha) return;
     setLoadingBuild(build.id);
-    setError('');
+    setError(null);
     try {
       const text = await getFirmwareText(repo.ref, repo.firmwareSha, build.file, tokenRef.current);
       const { data } = parseIntelHex(text);
       setTarget({ title: build.name, image: data, split: build.split });
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(e);
     } finally {
       setLoadingBuild('');
     }
@@ -132,24 +136,25 @@ export function App() {
     <div className="app">
       <header className="top">
         <div>
-          <h1>
-            Keyballer
-          </h1>
-          <p className="tagline">GitHub でビルドしたキーボードのファームウェアを、ブラウザから書き込みます。</p>
+          <h1>Keyballer</h1>
+          <p className="tagline">{t('app.tagline')}</p>
         </div>
-        <a className="muted" href="https://github.com/AkiraMisawa/keyballer" target="_blank" rel="noreferrer">
-          GitHub
-        </a>
+        <div className="top-links">
+          <LanguageSwitch />
+          <a className="muted" href="https://github.com/AkiraMisawa/keyballer" target="_blank" rel="noreferrer">
+            GitHub
+          </a>
+        </div>
       </header>
 
       {!serialOk && (
         <p className="banner err" role="alert">
-          このブラウザは USB での書き込みに対応していません。パソコンの Chrome か Edge で開いてください。
+          {t('app.noSerial')}
         </p>
       )}
 
       <section className="panel" aria-labelledby="repo-title">
-        <h2 id="repo-title">設定リポジトリ</h2>
+        <h2 id="repo-title">{t('repo.title')}</h2>
         <form
           className="repo-form"
           onSubmit={(e) => {
@@ -158,27 +163,25 @@ export function App() {
           }}
         >
           <label htmlFor="repo" className="sr-only">
-            設定リポジトリ
+            {t('repo.title')}
           </label>
           <input
             id="repo"
             type="text"
             value={repoInput}
             onChange={(e) => setRepoInput(e.target.value)}
-            placeholder="owner/repo（例：AkiraMisawa/keyballer-config）"
+            placeholder={t('repo.placeholder')}
             autoComplete="off"
             spellCheck={false}
           />
           <button type="submit" className="primary" disabled={connecting}>
-            {connecting ? '接続中…' : '接続'}
+            {connecting ? t('repo.connecting') : t('repo.connect')}
           </button>
         </form>
         <details className="token">
-          <summary>非公開リポジトリを使う（トークン）</summary>
+          <summary>{t('token.summary')}</summary>
           <div className="stack">
-            <p className="note">
-              対象のリポジトリだけを選び、Contents と Actions を「読み取り」にした fine-grained token を貼り付けてください。このブラウザの中にだけ保存されます。
-            </p>
+            <p className="note">{t('token.note')}</p>
             <input
               id="token"
               type="password"
@@ -192,9 +195,9 @@ export function App() {
             />
           </div>
         </details>
-        {error && (
+        {error !== null && (
           <p className="err" role="alert">
-            {error}
+            {err(error)}
           </p>
         )}
       </section>
@@ -211,13 +214,13 @@ export function App() {
 
           {repo.manifest && (
             <section aria-labelledby="fw-title" className="stack">
-              <h2 id="fw-title">ファームウェア</h2>
+              <h2 id="fw-title">{t('firmware.title')}</h2>
               <div className="cards">
                 {repo.manifest.builds.map((b) => (
                   <FirmwareCard
                     key={b.id}
                     build={b}
-                    canFlash={serialOk && !target}
+                    canStart={serialOk && !target}
                     loading={loadingBuild === b.id}
                     onFlash={() => void openBuild(b)}
                   />
@@ -245,9 +248,7 @@ export function App() {
         />
       )}
 
-      <footer className="muted">
-        書き込みには Chrome / Edge の Web Serial を使います。ファームウェアはこのページから直接キーボードに送られ、外部には送信されません。
-      </footer>
+      <footer className="muted">{t('app.footer')}</footer>
     </div>
   );
 }

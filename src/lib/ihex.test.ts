@@ -24,7 +24,7 @@ describe('parseIntelHex', () => {
   });
 
   it('rejects a file without an end record', () => {
-    expect(() => parseIntelHex(':020000000102FB\n')).toThrow(/終端/);
+    expect(() => parseIntelHex(':020000000102FB\n')).toThrow(expect.objectContaining({ key: 'hex.err.noEof' }));
   });
 
   it('rejects text that is not Intel HEX', () => {

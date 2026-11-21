@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useI18n } from '../i18n/react';
 import { parseIntelHex } from '../lib/ihex';
 
 interface Props {
@@ -7,30 +8,29 @@ interface Props {
 }
 
 export function LocalFirmware({ disabled, onReady }: Props) {
-  const [error, setError] = useState('');
+  const { t, err } = useI18n();
+  const [error, setError] = useState<unknown>(null);
   const [split, setSplit] = useState(true);
 
   const onFile = async (file: File | undefined) => {
-    setError('');
+    setError(null);
     if (!file) return;
     try {
       const { data } = parseIntelHex(await file.text());
       onReady(file.name, data, split);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(e);
     }
   };
 
   return (
     <details className="panel local">
-      <summary>手元の hex ファイルを書き込む</summary>
+      <summary>{t('local.summary')}</summary>
       <div className="stack">
-        <p className="note">
-          自分でビルドしたファームウェアを書き込めます。対応しているのは Pro Micro（ATmega32U4 / Caterina）用の .hex です。
-        </p>
+        <p className="note">{t('local.note')}</p>
         <label className="check">
           <input id="local-split" type="checkbox" checked={split} onChange={(e) => setSplit(e.target.checked)} />
-          <span>左右分割のキーボード（左右それぞれに書き込む）</span>
+          <span>{t('local.split')}</span>
         </label>
         <input
           id="local-file"
@@ -39,9 +39,9 @@ export function LocalFirmware({ disabled, onReady }: Props) {
           disabled={disabled}
           onChange={(e) => void onFile(e.target.files?.[0])}
         />
-        {error && (
+        {error !== null && (
           <p className="err" role="alert">
-            {error}
+            {err(error)}
           </p>
         )}
       </div>

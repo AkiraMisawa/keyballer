@@ -1,6 +1,8 @@
 // The manifest.json that the build workflow publishes on the `firmware`
 // branch of a config repository. Written by scripts/make_manifest.py.
 
+import { LocalizedError } from '../i18n/core';
+
 export interface FirmwareBuild {
   id: string;
   name: string;
@@ -26,16 +28,12 @@ export interface FirmwareManifest {
 export function parseManifest(value: unknown): FirmwareManifest {
   const m = value as Partial<FirmwareManifest> | null;
   if (!m || m.schema !== 1 || !Array.isArray(m.builds) || !m.source?.sha) {
-    throw new Error('manifest.json の形式が想定と違います');
+    throw new LocalizedError('manifest.err.format');
   }
   return m as FirmwareManifest;
 }
 
-/** Whether this app can flash the build, and why not if it cannot. */
-export function flashSupport(build: FirmwareBuild): { ok: true } | { ok: false; reason: string } {
-  if (build.bootloader === 'caterina' && build.format === 'hex') return { ok: true };
-  return {
-    ok: false,
-    reason: `この書き込み方式（${build.bootloader ?? '不明'} / ${build.format}）にはまだ対応していません`,
-  };
+/** Whether this app can flash the build. */
+export function canFlash(build: FirmwareBuild): boolean {
+  return build.bootloader === 'caterina' && build.format === 'hex';
 }

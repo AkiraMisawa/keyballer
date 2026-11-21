@@ -1,6 +1,8 @@
 // Read-only access to a config repository through the GitHub REST API.
 // api.github.com allows cross-origin requests, so this runs in the browser.
 
+import { LocalizedError } from '../i18n/core';
+import type { MessageKey } from '../i18n/messages';
 import { parseManifest, type FirmwareManifest } from './manifest';
 
 export interface RepoRef {
@@ -18,12 +20,13 @@ export interface WorkflowRun {
   display_title: string;
 }
 
-export class GitHubError extends Error {
+export class GitHubError extends LocalizedError {
   constructor(
-    message: string,
+    key: MessageKey,
     readonly status: number,
+    params?: Record<string, string | number>,
   ) {
-    super(message);
+    super(key, params);
   }
 }
 
@@ -48,15 +51,12 @@ async function request(path: string, token: string, accept: string): Promise<Res
   const res = await fetch(`https://api.github.com${path}`, { headers, cache: 'no-store' });
   if (res.ok) return res;
 
-  if (res.status === 401) throw new GitHubError('トークンが無効です', 401);
+  if (res.status === 401) throw new GitHubError('gh.err.badToken', 401);
   if ((res.status === 403 || res.status === 429) && res.headers.get('x-ratelimit-remaining') === '0') {
-    throw new GitHubError(
-      'GitHub API の利用回数の上限に達しました。しばらく待つか、トークンを設定してください',
-      res.status,
-    );
+    throw new GitHubError('gh.err.rateLimit', res.status);
   }
-  if (res.status === 404) throw new GitHubError('見つかりません', 404);
-  throw new GitHubError(`GitHub API がエラーを返しました（${res.status}）`, res.status);
+  if (res.status === 404) throw new GitHubError('gh.err.notFound', 404);
+  throw new GitHubError('gh.err.status', res.status, { status: String(res.status) });
 }
 
 const repoPath = (r: RepoRef) => `/repos/${r.owner}/${r.repo}`;
@@ -66,10 +66,7 @@ export async function checkRepo(r: RepoRef, token: string): Promise<void> {
     await request(repoPath(r), token, 'application/vnd.github+json');
   } catch (e) {
     if (e instanceof GitHubError && e.status === 404) {
-      throw new GitHubError(
-        `${repoName(r)} が見つかりません。非公開リポジトリならトークンを設定してください`,
-        404,
-      );
+      throw new GitHubError('gh.err.repoNotFound', 404, { repo: repoName(r) });
     }
     throw e;
   }

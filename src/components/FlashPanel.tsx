@@ -1,16 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { msg, type Localized } from '../i18n/core';
+import type { MessageKey } from '../i18n/messages';
+import { useI18n } from '../i18n/react';
 import { flashCaterina, type FlashPhase, type FlashProgress } from '../lib/caterina';
 import { findGrantedBootloader, pickBootloader } from '../lib/serial';
 
 type Step = 'ready' | 'waiting' | 'flashing' | 'done' | 'error';
 
-const PHASES: { phase: FlashPhase; label: string; weight: number }[] = [
-  { phase: 'connect', label: 'ブートローダーに接続', weight: 2 },
-  { phase: 'erase', label: 'フラッシュを消去', weight: 5 },
-  { phase: 'eeprom', label: 'EEPROM を消去', weight: 15 },
-  { phase: 'write', label: '書き込み', weight: 50 },
-  { phase: 'verify', label: '書き込んだ内容を確認', weight: 25 },
-  { phase: 'finish', label: '再起動', weight: 3 },
+const PHASES: { phase: FlashPhase; label: MessageKey; weight: number }[] = [
+  { phase: 'connect', label: 'phase.connect', weight: 2 },
+  { phase: 'erase', label: 'phase.erase', weight: 5 },
+  { phase: 'eeprom', label: 'phase.eeprom', weight: 15 },
+  { phase: 'write', label: 'phase.write', weight: 50 },
+  { phase: 'verify', label: 'phase.verify', weight: 25 },
+  { phase: 'finish', label: 'phase.finish', weight: 3 },
 ];
 
 function percent(p: FlashProgress | null, withEeprom: boolean): number {
@@ -38,15 +41,16 @@ interface Props {
 }
 
 export function FlashPanel({ title, image, split, onClose }: Props) {
+  const { t, show, err } = useI18n();
   const [step, setStep] = useState<Step>('ready');
   const [eraseEeprom, setEraseEeprom] = useState(false);
   const [progress, setProgress] = useState<FlashProgress | null>(null);
-  const [logs, setLogs] = useState<string[]>([]);
-  const [error, setError] = useState('');
+  const [logs, setLogs] = useState<Localized[]>([]);
+  const [error, setError] = useState<unknown>(null);
   const [doneCount, setDoneCount] = useState(0);
   const busy = useRef(false);
 
-  const log = useCallback((m: string) => setLogs((l) => [...l, m]), []);
+  const log = useCallback((m: Localized) => setLogs((l) => [...l, m]), []);
 
   const flash = useCallback(
     async (port: SerialPort) => {
@@ -54,8 +58,8 @@ export function FlashPanel({ title, image, split, onClose }: Props) {
       busy.current = true;
       setStep('flashing');
       setProgress(null);
-      setError('');
-      log('ブートローダーが見つかりました');
+      setError(null);
+      log(msg('flash.log.found'));
       try {
         // The port can need a moment after the board resets.
         for (let attempt = 0; ; attempt++) {
@@ -71,7 +75,7 @@ export function FlashPanel({ title, image, split, onClose }: Props) {
         setDoneCount((n) => n + 1);
         setStep('done');
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
+        setError(e);
         setStep('error');
       } finally {
         busy.current = false;
@@ -106,28 +110,30 @@ export function FlashPanel({ title, image, split, onClose }: Props) {
       const port = await pickBootloader(anyDevice);
       if (port) await flash(port);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(e);
       setStep('error');
     }
   };
 
   const halvesLeft = split ? 2 - doneCount : 1 - doneCount;
   const pct = step === 'done' ? 100 : percent(progress, eraseEeprom);
-  const phaseLabel = progress ? PHASES.find((p) => p.phase === progress.phase)?.label : '準備中';
+  const phase = progress ? PHASES.find((p) => p.phase === progress.phase)?.label : undefined;
 
   return (
     <section className="panel flash" aria-labelledby="flash-title">
       <div className="panel-head">
-        <h2 id="flash-title">{title} に書き込む</h2>
+        <h2 id="flash-title">{t('flash.title', { name: title })}</h2>
         <button type="button" className="ghost" onClick={onClose} disabled={step === 'flashing'}>
-          閉じる
+          {t('common.close')}
         </button>
       </div>
 
       {split && (
-        <ol className="halves" aria-label="左右の書き込み状況">
-          <li className={doneCount >= 1 ? 'done' : 'current'}>1台目</li>
-          <li className={doneCount >= 2 ? 'done' : doneCount === 1 ? 'current' : ''}>2台目</li>
+        <ol className="halves" aria-label={t('flash.halves')}>
+          <li className={doneCount >= 1 ? 'done' : 'current'}>{t('flash.first')}</li>
+          <li className={doneCount >= 2 ? 'done' : doneCount === 1 ? 'current' : ''}>
+            {t('flash.second')}
+          </li>
         </ol>
       )}
 
@@ -135,14 +141,10 @@ export function FlashPanel({ title, image, split, onClose }: Props) {
         <div className="stack">
           <ol className="steps">
             <li>
-              USB ケーブルを{split ? '左右どちらか片方の' : ''}キーボードにつなぎます。
-              {split && (
-                <span className="note">
-                  左右をつなぐケーブル（TRS / TRRS）はつないだままで大丈夫です。抜き差しするときは必ず先に USB を抜いてください。
-                </span>
-              )}
+              {t(split ? 'flash.plugSplit' : 'flash.plug')}
+              {split && <span className="note">{t('flash.trsNote')}</span>}
             </li>
-            <li>「書き込みを始める」を押してから、キーボードのリセットボタンを押します。</li>
+            <li>{t('flash.pressReset')}</li>
           </ol>
           <label className="check">
             <input
@@ -152,15 +154,13 @@ export function FlashPanel({ title, image, split, onClose }: Props) {
               onChange={(e) => setEraseEeprom(e.target.checked)}
             />
             <span>
-              保存されている設定（EEPROM）も消す
-              <span className="note">
-                Keyball Link や REMAP など、別のファームウェアから書き換えるときはオンにしてください。
-              </span>
+              {t('flash.eeprom')}
+              <span className="note">{t('flash.eepromNote')}</span>
             </span>
           </label>
           <div>
             <button type="button" className="primary" onClick={() => setStep('waiting')}>
-              書き込みを始める
+              {t('flash.start')}
             </button>
           </div>
         </div>
@@ -168,37 +168,39 @@ export function FlashPanel({ title, image, split, onClose }: Props) {
 
       {step === 'waiting' && (
         <div className="stack">
-          <p className="lead">
-            リセットボタンを押してください。反応しないときは素早く2回押します。
-          </p>
-          <p className="note">
-            押してから約8秒のあいだ、書き込みを受け付けます。押したら下のボタンでポートを選んでください。2回目以降は自動で始まることがあります。
-          </p>
+          <p className="lead">{t('flash.waiting')}</p>
+          <p className="note">{t('flash.waitingNote')}</p>
           <div className="row">
             <button type="button" className="primary" onClick={() => void choose(false)}>
-              ポートを選ぶ
+              {t('flash.pickPort')}
             </button>
             <button type="button" className="ghost" onClick={() => setStep('ready')}>
-              やめる
+              {t('common.cancel')}
             </button>
           </div>
           <button type="button" className="link" onClick={() => void choose(true)}>
-            一覧に出てこないとき（すべてのデバイスから選ぶ）
+            {t('flash.pickAny')}
           </button>
         </div>
       )}
 
       {(step === 'flashing' || step === 'done') && (
         <div className="stack">
-          <div className="progress" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+          <div
+            className="progress"
+            role="progressbar"
+            aria-valuenow={pct}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
             <div className="bar" style={{ width: `${pct}%` }} />
           </div>
           <p className="lead">
-            {step === 'flashing' ? `${phaseLabel}…（${pct}%）` : '書き込みが終わりました'}
+            {step === 'flashing'
+              ? t('flash.progress', { phase: t(phase ?? 'phase.preparing'), percent: String(pct) })
+              : t('flash.finished')}
           </p>
-          {step === 'flashing' && (
-            <p className="note">書き込みが終わるまで USB ケーブルを抜かないでください。</p>
-          )}
+          {step === 'flashing' && <p className="note">{t('flash.dontUnplug')}</p>}
         </div>
       )}
 
@@ -206,17 +208,15 @@ export function FlashPanel({ title, image, split, onClose }: Props) {
         <div className="stack">
           {halvesLeft > 0 ? (
             <>
-              <p>
-                反対側も書き込みます。USB ケーブルを抜いて反対側につなぎ替えてください。左右とも同じファームウェアを書き込みます。
-              </p>
+              <p>{t('flash.otherHalf')}</p>
               <div>
                 <button type="button" className="primary" onClick={() => setStep('waiting')}>
-                  反対側を書き込む
+                  {t('flash.flashOther')}
                 </button>
               </div>
             </>
           ) : (
-            <p className="ok">{split ? '左右とも書き込みました。' : '書き込みました。'}キーボードはそのまま使えます。</p>
+            <p className="ok">{t(split ? 'flash.doneSplit' : 'flash.doneSingle')}</p>
           )}
         </div>
       )}
@@ -224,14 +224,12 @@ export function FlashPanel({ title, image, split, onClose }: Props) {
       {step === 'error' && (
         <div className="stack">
           <p className="err" role="alert">
-            書き込めませんでした：{error}
+            {t('flash.failed', { error: err(error) })}
           </p>
-          <p className="note">
-            キーボードのリセットボタンを押し直してから、もう一度試してください。ほかのアプリ（QMK Toolbox など）がポートを使っていると書き込めません。
-          </p>
+          <p className="note">{t('flash.failedNote')}</p>
           <div>
             <button type="button" className="primary" onClick={() => setStep('waiting')}>
-              もう一度試す
+              {t('flash.retry')}
             </button>
           </div>
         </div>
@@ -239,8 +237,8 @@ export function FlashPanel({ title, image, split, onClose }: Props) {
 
       {logs.length > 0 && (
         <details className="log">
-          <summary>詳しいログ</summary>
-          <pre>{logs.join('\n')}</pre>
+          <summary>{t('flash.log')}</summary>
+          <pre>{logs.map(show).join('\n')}</pre>
         </details>
       )}
     </section>

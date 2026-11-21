@@ -1,15 +1,17 @@
+import { useI18n } from '../i18n/react';
 import { bootloaderLabel, formatBytes, processorLabel } from '../lib/format';
-import { flashSupport, type FirmwareBuild } from '../lib/manifest';
+import { canFlash, type FirmwareBuild } from '../lib/manifest';
 
 interface Props {
   build: FirmwareBuild;
-  canFlash: boolean;
+  canStart: boolean;
   loading: boolean;
   onFlash: () => void;
 }
 
-export function FirmwareCard({ build, canFlash, loading, onFlash }: Props) {
-  const support = flashSupport(build);
+export function FirmwareCard({ build, canStart, loading, onFlash }: Props) {
+  const { t, lang } = useI18n();
+  const unknown = t('common.unknown');
   const ratio = build.size && build.max_size ? build.size / build.max_size : null;
   const level = ratio === null ? '' : ratio > 0.97 ? 'err' : ratio > 0.9 ? 'warn' : '';
 
@@ -22,10 +24,10 @@ export function FirmwareCard({ build, canFlash, loading, onFlash }: Props) {
         </code>
       </div>
 
-      <ul className="chips" aria-label="仕様">
-        <li>{processorLabel(build.processor)}</li>
-        <li>{bootloaderLabel(build.bootloader)}</li>
-        {build.split && <li>左右分割</li>}
+      <ul className="chips" aria-label={t('card.specs')}>
+        <li>{processorLabel(build.processor, unknown)}</li>
+        <li>{bootloaderLabel(build.bootloader, unknown)}</li>
+        {build.split && <li>{t('card.split')}</li>}
       </ul>
 
       {ratio !== null && (
@@ -34,18 +36,26 @@ export function FirmwareCard({ build, canFlash, loading, onFlash }: Props) {
             <div style={{ width: `${Math.min(100, ratio * 100)}%` }} />
           </div>
           <span className="num">
-            {formatBytes(build.size!)} / {formatBytes(build.max_size!)} バイト（残り{' '}
-            {formatBytes(build.max_size! - build.size!)}）
+            {t('card.size', {
+              size: formatBytes(build.size!, lang),
+              max: formatBytes(build.max_size!, lang),
+              free: formatBytes(build.max_size! - build.size!, lang),
+            })}
           </span>
         </div>
       )}
 
-      {support.ok ? (
-        <button type="button" className="primary" onClick={onFlash} disabled={!canFlash || loading}>
-          {loading ? '読み込み中…' : '書き込む'}
+      {canFlash(build) ? (
+        <button type="button" className="primary" onClick={onFlash} disabled={!canStart || loading}>
+          {loading ? t('card.loading') : t('card.flash')}
         </button>
       ) : (
-        <p className="note">{support.reason}</p>
+        <p className="note">
+          {t('card.unsupported', {
+            bootloader: build.bootloader ?? unknown,
+            format: build.format,
+          })}
+        </p>
       )}
     </article>
   );

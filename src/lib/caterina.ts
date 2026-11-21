@@ -2,6 +2,9 @@
 // friends) over Web Serial. Caterina speaks the AVR109 ("butterfly")
 // protocol on its USB CDC serial port for about 8 seconds after a reset.
 
+import { LocalizedError, msg, type Localized, type Params } from '../i18n/core';
+import type { MessageKey } from '../i18n/messages';
+
 /** USB IDs of Caterina bootloaders, from QMK's udev rules. */
 export const CATERINA_USB_IDS: { usbVendorId: number; usbProductId: number }[] = [
   { usbVendorId: 0x2341, usbProductId: 0x0036 }, // Arduino Leonardo
@@ -47,15 +50,20 @@ export interface FlashOptions {
   /** Fill the whole EEPROM with 0xFF, which QMK treats as "not initialised". */
   eraseEeprom?: boolean;
   onProgress?: (progress: FlashProgress) => void;
-  onLog?: (message: string) => void;
+  onLog?: (message: Localized) => void;
 }
 
-export class FlashError extends Error {}
+export class FlashError extends LocalizedError {
+  constructor(key: MessageKey, params?: Params) {
+    super(key, params);
+  }
+}
 
 const CR = 0x0d;
 const ch = (c: string) => c.charCodeAt(0);
 const hex = (bytes: ArrayLike<number>) =>
   Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join(' ');
+const addrText = (addr: number) => `0x${addr.toString(16)}`;
 
 /** Byte-oriented reads with timeouts on top of a ReadableStream. */
 class Link {
@@ -77,26 +85,30 @@ class Link {
     await this.writer.write(Uint8Array.from(bytes));
   }
 
-  async read(count: number, timeoutMs: number, what: string): Promise<Uint8Array> {
+  /** Waits up to `ms` for the next chunk. Returns null on timeout. */
+  private async next(ms: number): Promise<ReadableStreamReadResult<Uint8Array> | null> {
+    this.pending ??= this.reader.read();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), ms);
+    });
+    const result = await Promise.race([this.pending, timeout]);
+    clearTimeout(timer);
+    if (result) this.pending = null;
+    return result;
+  }
+
+  async read(count: number, timeoutMs: number, step: Localized): Promise<Uint8Array> {
     const deadline = Date.now() + timeoutMs;
     while (this.buffer.length < count) {
       const left = deadline - Date.now();
       if (left <= 0) break;
-      this.pending ??= this.reader.read();
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const timeout = new Promise<'timeout'>((resolve) => {
-        timer = setTimeout(() => resolve('timeout'), left);
-      });
-      const result = await Promise.race([this.pending, timeout]);
-      clearTimeout(timer);
-      if (result === 'timeout') break;
-      this.pending = null;
-      if (result.done) throw new FlashError(`${what}: 接続が切れました`);
+      const result = await this.next(left);
+      if (!result) break;
+      if (result.done) throw new FlashError('flash.err.disconnected', { step });
       this.buffer.push(...result.value);
     }
-    if (this.buffer.length < count) {
-      throw new FlashError(`${what}: 応答がありません`);
-    }
+    if (this.buffer.length < count) throw new FlashError('flash.err.noResponse', { step });
     return Uint8Array.from(this.buffer.splice(0, count));
   }
 
@@ -112,24 +124,16 @@ class Link {
     for (;;) {
       const left = deadline - Date.now();
       if (left <= 0) break;
-      this.pending ??= this.reader.read();
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const timeout = new Promise<'timeout'>((resolve) => {
-        timer = setTimeout(() => resolve('timeout'), left);
-      });
-      const result = await Promise.race([this.pending, timeout]);
-      clearTimeout(timer);
-      if (result === 'timeout') break;
-      this.pending = null;
-      if (result.done) break;
+      const result = await this.next(left);
+      if (!result || result.done) break;
       dropped += result.value.length;
     }
     return dropped;
   }
 
-  async expectCR(timeoutMs: number, what: string): Promise<void> {
-    const [b] = await this.read(1, timeoutMs, what);
-    if (b !== CR) throw new FlashError(`${what}: 想定外の応答 0x${b.toString(16)} です`);
+  async expectCR(timeoutMs: number, step: Localized): Promise<void> {
+    const [b] = await this.read(1, timeoutMs, step);
+    if (b !== CR) throw new FlashError('flash.err.unexpected', { step, byte: `0x${b.toString(16)}` });
   }
 
   /** Stops reading and unlocks both streams so the port can be closed. */
@@ -152,7 +156,7 @@ class Link {
 
 async function setAddress(link: Link, wordOrByteAddress: number): Promise<void> {
   await link.send('A', (wordOrByteAddress >> 8) & 0xff, wordOrByteAddress & 0xff);
-  await link.expectCR(1000, 'アドレス設定');
+  await link.expectCR(1000, msg('step.address'));
 }
 
 function isBlank(page: Uint8Array): boolean {
@@ -162,13 +166,13 @@ function isBlank(page: Uint8Array): boolean {
 async function writePage(link: Link, addr: number, data: Uint8Array): Promise<void> {
   await setAddress(link, addr >> 1);
   await link.send('B', 0, data.length, 'F', data);
-  await link.expectCR(2000, `書き込み (0x${addr.toString(16)})`);
+  await link.expectCR(2000, msg('step.write', { addr: addrText(addr) }));
 }
 
 async function readPage(link: Link, addr: number, size: number): Promise<Uint8Array> {
   await setAddress(link, addr >> 1);
   await link.send('g', 0, size, 'F');
-  return link.read(size, 2000, `読み出し (0x${addr.toString(16)})`);
+  return link.read(size, 2000, msg('step.read', { addr: addrText(addr) }));
 }
 
 function firstDifference(a: Uint8Array, b: Uint8Array): number {
@@ -191,9 +195,7 @@ export async function flashCaterina(
     options.onProgress?.({ phase, done, total });
 
   if (image.length > appSize) {
-    throw new FlashError(
-      `ファームウェアが大きすぎます（${image.length} バイト、上限 ${appSize} バイト）`,
-    );
+    throw new FlashError('flash.err.tooLarge', { size: image.length, max: appSize });
   }
 
   const pages: { addr: number; data: Uint8Array }[] = [];
@@ -207,38 +209,36 @@ export async function flashCaterina(
   await port.open({ baudRate: 57600 });
   if (!port.readable || !port.writable) {
     await port.close().catch(() => {});
-    throw new FlashError('シリアルポートを開けませんでした');
+    throw new FlashError('flash.err.openFailed');
   }
   const link = new Link(port.readable.getReader(), port.writable.getWriter());
 
   try {
     const stale = await link.drain(50);
-    if (stale > 0) log(`接続前に届いていた ${stale} バイトを読み捨てました`);
+    if (stale > 0) log(msg('flash.log.stale', { count: stale }));
 
     await link.send('S');
-    const id = new TextDecoder().decode(await link.read(7, 2000, 'ブートローダーの確認'));
-    log(`ブートローダー: ${id}`);
+    const id = new TextDecoder().decode(await link.read(7, 2000, msg('step.identify')));
+    log(msg('flash.log.bootloader', { id }));
 
     await link.send('s');
-    const sig = await link.read(3, 1000, 'マイコンの確認');
+    const sig = await link.read(3, 1000, msg('step.signature'));
     if (sig.some((b, i) => b !== signature[i])) {
-      throw new FlashError(
-        `ATmega32U4 ではないマイコンです（signature ${hex(sig)}）。書き込みを中止しました`,
-      );
+      throw new FlashError('flash.err.wrongMcu', { sig: hex(sig) });
     }
-    log(`マイコン: ATmega32U4 (${hex(sig)})`);
+    log(msg('flash.log.mcu', { sig: hex(sig) }));
 
     await link.send('P');
-    await link.expectCR(1000, '書き込みモードへの切り替え');
+    await link.expectCR(1000, msg('step.progMode'));
     progress('connect', 1, 1);
 
     // Erasing the application also stops Caterina's 8 second timeout,
     // because it only counts down while a sketch is present.
     progress('erase', 0, 1);
     await link.send('e');
-    await link.expectCR(10000, 'フラッシュの消去');
+    await link.expectCR(10000, msg('step.erase'));
     progress('erase', 1, 1);
-    log('フラッシュを消去しました');
+    log(msg('flash.log.erased'));
 
     if (options.eraseEeprom) {
       const blank = new Uint8Array(pageSize).fill(0xff);
@@ -247,10 +247,10 @@ export async function flashCaterina(
         progress('eeprom', i, blocks);
         await setAddress(link, i * pageSize);
         await link.send('B', 0, pageSize, 'E', blank);
-        await link.expectCR(5000, 'EEPROM の消去');
+        await link.expectCR(5000, msg('step.eeprom'));
       }
       progress('eeprom', blocks, blocks);
-      log('EEPROM を消去しました');
+      log(msg('flash.log.eepromErased'));
     }
 
     for (let i = 0; i < pages.length; i++) {
@@ -258,12 +258,12 @@ export async function flashCaterina(
       await writePage(link, pages[i].addr, pages[i].data);
     }
     progress('write', pages.length, pages.length);
-    log(`${pages.length} ページ（${image.length} バイト）を書き込みました`);
+    log(msg('flash.log.written', { pages: pages.length, bytes: image.length }));
 
     // Every response so far was one CR. Anything still waiting would shift
     // every read below by that many bytes.
     const extra = await link.drain(100);
-    if (extra > 0) log(`想定外の応答 ${extra} バイトを読み捨てました`);
+    if (extra > 0) log(msg('flash.log.drained', { count: extra }));
 
     for (let i = 0; i < pages.length; i++) {
       progress('verify', i, pages.length);
@@ -272,32 +272,36 @@ export async function flashCaterina(
       let bad = firstDifference(read, data);
       if (bad >= 0) {
         log(
-          `0x${(addr + bad).toString(16)} が一致しません（期待 ${hex(data.subarray(bad, bad + 8))}、` +
-            `実際 ${hex(read.subarray(bad, bad + 8))}）。書き直します`,
+          msg('flash.log.rewrite', {
+            addr: addrText(addr + bad),
+            expected: hex(data.subarray(bad, bad + 8)),
+            actual: hex(read.subarray(bad, bad + 8)),
+          }),
         );
         const dropped = await link.drain(50);
-        if (dropped > 0) log(`想定外の応答 ${dropped} バイトを読み捨てました`);
+        if (dropped > 0) log(msg('flash.log.drained', { count: dropped }));
         await writePage(link, addr, data);
         read = await readPage(link, addr, pageSize);
         bad = firstDifference(read, data);
       }
       if (bad >= 0) {
-        throw new FlashError(
-          `0x${(addr + bad).toString(16)} の内容が一致しません` +
-            `（期待 ${hex(data.subarray(bad, bad + 8))}、実際 ${hex(read.subarray(bad, bad + 8))}）`,
-        );
+        throw new FlashError('flash.err.mismatch', {
+          addr: addrText(addr + bad),
+          expected: hex(data.subarray(bad, bad + 8)),
+          actual: hex(read.subarray(bad, bad + 8)),
+        });
       }
     }
     progress('verify', pages.length, pages.length);
-    log('書き込んだ内容を確認しました');
+    log(msg('flash.log.verified'));
 
     progress('finish', 0, 1);
     await link.send('L');
-    await link.expectCR(1000, '書き込みモードの終了');
+    await link.expectCR(1000, msg('step.leave'));
     await link.send('E');
-    await link.expectCR(1000, 'ブートローダーの終了');
+    await link.expectCR(1000, msg('step.exit'));
     progress('finish', 1, 1);
-    log('キーボードを再起動しました');
+    log(msg('flash.log.restarted'));
   } finally {
     await link.release();
     await port.close().catch(() => {});

@@ -1,5 +1,7 @@
 // Intel HEX parser for AVR firmware images.
 
+import { LocalizedError } from '../i18n/core';
+
 export interface FirmwareImage {
   /** Bytes from address 0 up to the last programmed byte. Gaps are 0xFF. */
   data: Uint8Array;
@@ -12,7 +14,7 @@ const START_SEGMENT = 0x03;
 const EXT_LINEAR = 0x04;
 const START_LINEAR = 0x05;
 
-export class HexError extends Error {}
+export class HexError extends LocalizedError {}
 
 export function parseIntelHex(text: string): FirmwareImage {
   const chunks: { addr: number; bytes: Uint8Array }[] = [];
@@ -25,23 +27,23 @@ export function parseIntelHex(text: string): FirmwareImage {
     const line = lines[i].trim();
     if (line === '') continue;
     const lineNo = i + 1;
-    if (sawEof) throw new HexError(`${lineNo} 行目: 終端のあとにデータがあります`);
+    if (sawEof) throw new HexError('hex.err.afterEof', { line: lineNo });
     if (line[0] !== ':' || line.length < 11 || line.length % 2 === 0) {
-      throw new HexError(`${lineNo} 行目: Intel HEX の形式ではありません`);
+      throw new HexError('hex.err.format', { line: lineNo });
     }
 
     const raw = new Uint8Array((line.length - 1) / 2);
     for (let j = 0; j < raw.length; j++) {
       const byte = Number.parseInt(line.substr(1 + j * 2, 2), 16);
-      if (Number.isNaN(byte)) throw new HexError(`${lineNo} 行目: 16 進数でない文字があります`);
+      if (Number.isNaN(byte)) throw new HexError('hex.err.notHex', { line: lineNo });
       raw[j] = byte;
     }
 
     const count = raw[0];
-    if (raw.length !== count + 5) throw new HexError(`${lineNo} 行目: 長さが合いません`);
+    if (raw.length !== count + 5) throw new HexError('hex.err.length', { line: lineNo });
     let sum = 0;
     for (const b of raw) sum = (sum + b) & 0xff;
-    if (sum !== 0) throw new HexError(`${lineNo} 行目: チェックサムが合いません`);
+    if (sum !== 0) throw new HexError('hex.err.checksum', { line: lineNo });
 
     const offset = (raw[1] << 8) | raw[2];
     const type = raw[3];
@@ -67,12 +69,12 @@ export function parseIntelHex(text: string): FirmwareImage {
       case START_LINEAR:
         break;
       default:
-        throw new HexError(`${lineNo} 行目: 未対応のレコード種別 ${type} です`);
+        throw new HexError('hex.err.recordType', { line: lineNo, type });
     }
   }
 
-  if (!sawEof) throw new HexError('ファイルが途中で切れています（終端レコードがありません）');
-  if (chunks.length === 0) throw new HexError('書き込むデータがありません');
+  if (!sawEof) throw new HexError('hex.err.noEof');
+  if (chunks.length === 0) throw new HexError('hex.err.empty');
 
   const data = new Uint8Array(end).fill(0xff);
   for (const { addr, bytes } of chunks) data.set(bytes, addr);
