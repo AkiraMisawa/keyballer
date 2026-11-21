@@ -4,7 +4,8 @@ import type { MessageKey } from '../i18n/messages';
 import { useI18n } from '../i18n/react';
 import { flashCaterina, type FlashPhase, type FlashProgress } from '../lib/caterina';
 import { findGrantedBootloader, pickBootloader } from '../lib/serial';
-import { Kbd, useShortcut } from '../shortcuts';
+import { Kbd } from '../commands/keys';
+import { useCommand } from '../commands/react';
 
 type Step = 'ready' | 'waiting' | 'flashing' | 'done' | 'error';
 
@@ -136,13 +137,43 @@ export function FlashPanel({ title, image, split, onClose }: Props) {
     next.current?.focus();
   }, [step, halvesLeft]);
 
-  useShortcut('p', msg('shortcut.pickPort'), () => void choose(false), step === 'waiting');
-  useShortcut(
-    'Escape',
-    msg('shortcut.back'),
-    () => (step === 'waiting' ? setStep('ready') : onClose()),
-    step !== 'flashing',
-  );
+  const busyReason = step === 'flashing' ? msg('why.busy') : undefined;
+  const startable = step === 'ready' || step === 'error' || (step === 'done' && halvesLeft > 0);
+  useCommand({
+    id: 'flash.start',
+    words: 'start',
+    title: msg('cmd.start'),
+    group: 'group.flash',
+    page: true,
+    unavailable:
+      busyReason ??
+      (startable
+        ? undefined
+        : step === 'done'
+          ? msg(split ? 'flash.doneSplit' : 'flash.doneSingle')
+          : msg('why.started')),
+    run: () => setStep('waiting'),
+  });
+  useCommand({
+    id: 'flash.port',
+    words: 'port',
+    title: msg('shortcut.pickPort'),
+    group: 'group.flash',
+    page: true,
+    shortcut: 'p',
+    unavailable: busyReason ?? (step === 'waiting' ? undefined : msg('why.notWaiting')),
+    run: () => void choose(false),
+  });
+  useCommand({
+    id: 'flash.close',
+    words: 'close',
+    title: msg('shortcut.back'),
+    group: 'group.flash',
+    page: true,
+    shortcut: 'Escape',
+    unavailable: busyReason,
+    run: () => (step === 'waiting' ? setStep('ready') : onClose()),
+  });
   const pct = step === 'done' ? 100 : percent(progress, eraseEeprom);
   const phase = progress ? PHASES.find((p) => p.phase === progress.phase)?.label : undefined;
 

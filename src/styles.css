@@ -340,6 +340,115 @@ button .key {
   margin-left: 8px;
 }
 
+/* Command line, opened with ⌘K / Ctrl+K or "/" (DESIGN.md §8). */
+dialog.line {
+  margin: 12vh auto auto;
+  width: min(640px, calc(100vw - 32px));
+  max-height: 76vh;
+  padding: 12px;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+}
+
+dialog.line[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+dialog.line::backdrop {
+  background: color-mix(in srgb, var(--text) 35%, transparent);
+}
+
+dialog.line input {
+  min-height: 40px;
+  font-family: var(--mono);
+  font-size: 1rem;
+}
+
+.line-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: baseline;
+  padding: 0 8px;
+  font-size: 0.88rem;
+}
+
+.line-problems {
+  padding: 0 8px;
+  font-size: 0.88rem;
+}
+
+.line-options {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.line-heading {
+  padding: 8px 8px 4px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.line-option {
+  display: grid;
+  grid-template-columns: minmax(0, 15em) minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: baseline;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.line-option[aria-selected="true"] {
+  background: var(--sunken);
+  box-shadow: inset 2px 0 0 var(--ink);
+}
+
+.line-option[aria-disabled="true"] .line-words,
+.line-option[aria-disabled="true"] .line-title {
+  color: var(--muted);
+}
+
+.line-words code {
+  font-size: 0.88rem;
+  overflow-wrap: anywhere;
+}
+
+.line-title {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.88rem;
+}
+
+.line-title .note {
+  font-size: 0.8rem;
+}
+
+dialog.line > .note {
+  padding: 0 8px;
+}
+
+@media (max-width: 520px) {
+  .line-option {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .line-title {
+    grid-column: 1;
+  }
+}
+
+.shortcut-row.muted {
+  color: var(--muted);
+}
+
 /* Keyboard shortcut list, opened with "?". */
 dialog.help {
   width: min(520px, calc(100vw - 32px));

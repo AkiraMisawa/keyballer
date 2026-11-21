@@ -1,25 +1,35 @@
-import { msg } from '../i18n/core';
+import { Kbd } from '../commands/keys';
+import { useCommand } from '../commands/react';
+import { msg, type Localized } from '../i18n/core';
 import { useI18n } from '../i18n/react';
 import { bootloaderLabel, formatBytes, processorLabel } from '../lib/format';
 import { canFlash, type FirmwareBuild } from '../lib/manifest';
-import { Kbd, useShortcut } from '../shortcuts';
 
 interface Props {
   build: FirmwareBuild;
   /** Position in the list; the first nine get the shortcuts 1–9. */
   index: number;
-  canStart: boolean;
+  /** Why flashing cannot start now; absent when it can. */
+  blocked: Localized | undefined;
   loading: boolean;
   onFlash: () => void;
 }
 
-export function FirmwareCard({ build, index, canStart, loading, onFlash }: Props) {
+export function FirmwareCard({ build, index, blocked, loading, onFlash }: Props) {
   const { t, lang } = useI18n();
   const shortcut = index < 9 ? String(index + 1) : '';
   const flashable = canFlash(build);
-  useShortcut(shortcut, msg('shortcut.flashBuild', { name: build.name }), onFlash,
-    !!shortcut && flashable && canStart && !loading);
   const unknown = t('common.unknown');
+  const unsupported = msg('card.unsupported', { bootloader: build.bootloader ?? unknown, format: build.format });
+  useCommand({
+    id: `flash:${build.id}`,
+    words: `flash ${build.id}`,
+    title: msg('shortcut.flashBuild', { name: build.name }),
+    group: 'group.firmware',
+    shortcut: shortcut || undefined,
+    unavailable: !flashable ? unsupported : (blocked ?? (loading ? msg('why.loading') : undefined)),
+    run: onFlash,
+  });
   const ratio = build.size && build.max_size ? build.size / build.max_size : null;
   const level = ratio === null ? '' : ratio > 0.97 ? 'err' : ratio > 0.9 ? 'warn' : '';
 
@@ -58,19 +68,14 @@ export function FirmwareCard({ build, index, canStart, loading, onFlash }: Props
           type="button"
           className="primary"
           onClick={onFlash}
-          disabled={!canStart || loading}
+          disabled={!!blocked || loading}
           aria-keyshortcuts={shortcut || undefined}
         >
           {loading ? t('card.loading') : t('card.flash')}
           {shortcut && <Kbd>{shortcut}</Kbd>}
         </button>
       ) : (
-        <p className="note">
-          {t('card.unsupported', {
-            bootloader: build.bootloader ?? unknown,
-            format: build.format,
-          })}
-        </p>
+        <p className="note">{t(unsupported.key, unsupported.params)}</p>
       )}
     </article>
   );

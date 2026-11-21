@@ -4,7 +4,10 @@ import { FirmwareCard } from './components/FirmwareCard';
 import { FlashPanel } from './components/FlashPanel';
 import { LanguageSwitch } from './components/LanguageSwitch';
 import { LocalFirmware } from './components/LocalFirmware';
-import { LocalizedError, msg } from './i18n/core';
+import { Kbd, lineChord } from './commands/keys';
+import { CommandRefused } from './commands/model';
+import { useCommand, useCommandLine } from './commands/react';
+import { LocalizedError, msg, type Lang, type Localized } from './i18n/core';
 import { useI18n } from './i18n/react';
 import {
   checkRepo,
@@ -21,7 +24,6 @@ import { parseIntelHex } from './lib/ihex';
 import type { FirmwareBuild, FirmwareManifest } from './lib/manifest';
 import { isWebSerialSupported } from './lib/serial';
 import { load, save } from './lib/storage';
-import { Kbd, useShortcut } from './shortcuts';
 
 interface FlashTarget {
   title: string;
@@ -38,13 +40,22 @@ interface RepoState {
 
 const POLL_MS = 30_000;
 
+/** english / japanese (and en, ja, 英語, 日本語) as a language. */
+function toLang(value: string): Lang | undefined {
+  const v = value.trim().toLowerCase();
+  if (['english', 'en', '英語'].includes(v)) return 'en';
+  if (['japanese', 'ja', '日本語'].includes(v)) return 'ja';
+  return undefined;
+}
+
 function initialRepo(): string {
   const fromUrl = new URLSearchParams(location.search).get('repo');
   return fromUrl ?? load('keyballer.repo');
 }
 
 export function App() {
-  const { t, rich, err } = useI18n();
+  const { t, rich, err, setLang } = useI18n();
+  const { openLine, openHelp } = useCommandLine();
   const serialOk = isWebSerialSupported();
   const [repoInput, setRepoInput] = useState(initialRepo);
   const [token, setToken] = useState(() => load('keyballer.token'));
@@ -130,8 +141,98 @@ export function App() {
     if (el?.isConnected) requestAnimationFrame(() => el.focus());
   };
 
-  useShortcut('/', msg('shortcut.focusRepo'), () => repoField.current?.focus());
-  useShortcut('r', msg('shortcut.refresh'), () => void refresh(), !!repo && !refreshing && !target);
+  const repoUrl = repo ? `https://github.com/${repoName(repo.ref)}` : '';
+  const noRepo: Localized | undefined = repo ? undefined : msg('why.noRepo');
+  const latestRun = repo?.runs[0];
+  // Why a firmware cannot be flashed right now, if it cannot.
+  const flashBlocked: Localized | undefined = !serialOk
+    ? msg('app.noSerial')
+    : target
+      ? msg('why.flashing')
+      : undefined;
+
+  useCommand({
+    id: 'repo.connect',
+    words: 'connect',
+    title: msg('cmd.connect'),
+    group: 'group.repo',
+    args: [
+      {
+        name: 'repo',
+        required: true,
+        hint: msg('cmd.connect.hint'),
+        complete: () =>
+          [...new Set([load('keyballer.repo'), repoInput.trim()])].filter(Boolean).map((value) => ({ value })),
+        check: (value) => (parseRepo(value) ? undefined : msg('repo.invalid')),
+      },
+    ],
+    run: ({ repo: value }) => {
+      setRepoInput(value);
+      void connect(value);
+    },
+  });
+  useCommand({
+    id: 'repo.field',
+    words: 'repo',
+    title: msg('shortcut.focusRepo'),
+    group: 'group.repo',
+    run: () => repoField.current?.focus(),
+  });
+  useCommand({
+    id: 'repo.refresh',
+    words: 'refresh',
+    title: msg('shortcut.refresh'),
+    group: 'group.repo',
+    shortcut: 'r',
+    unavailable: noRepo,
+    run: () => void refresh(),
+  });
+  useCommand({
+    id: 'repo.open',
+    words: 'open repo',
+    title: msg('cmd.openRepo'),
+    group: 'group.repo',
+    unavailable: noRepo,
+    run: () => window.open(repoUrl, '_blank', 'noopener'),
+  });
+  useCommand({
+    id: 'build.open',
+    words: 'open build',
+    title: msg('cmd.openBuild'),
+    group: 'group.repo',
+    unavailable: noRepo ?? (latestRun ? undefined : msg('why.noRun')),
+    run: () => window.open(latestRun!.html_url, '_blank', 'noopener'),
+  });
+  useCommand({
+    id: 'app.language',
+    words: 'language',
+    title: msg('cmd.language'),
+    group: 'group.app',
+    args: [
+      {
+        name: 'language',
+        required: true,
+        hint: msg('cmd.language.hint'),
+        complete: () => [
+          { value: 'english', detail: 'English' },
+          { value: 'japanese', detail: '日本語' },
+        ],
+        check: (value) => (toLang(value) ? undefined : msg('cmd.language.bad')),
+      },
+    ],
+    run: ({ language }) => {
+      const next = toLang(language);
+      if (!next) throw new CommandRefused(msg('cmd.language.bad'));
+      setLang(next);
+    },
+  });
+  useCommand({
+    id: 'app.shortcuts',
+    words: 'shortcuts',
+    title: msg('cmd.shortcuts'),
+    group: 'group.app',
+    run: openHelp,
+  });
 
   const openBuild = async (build: FirmwareBuild) => {
     if (!repo?.firmwareSha) return;
@@ -148,8 +249,6 @@ export function App() {
     }
   };
 
-  const repoUrl = repo ? `https://github.com/${repoName(repo.ref)}` : '';
-
   return (
     <div className="app">
       <header className="top">
@@ -164,6 +263,10 @@ export function App() {
           <p className="tagline">{t('app.tagline')}</p>
         </div>
         <div className="top-links">
+          <button type="button" onClick={openLine} aria-keyshortcuts="Meta+K Control+K /">
+            {t('line.open')}
+            <Kbd>{lineChord()}</Kbd>
+          </button>
           <LanguageSwitch />
           <a className="muted" href="https://github.com/AkiraMisawa/keyballer" target="_blank" rel="noreferrer">
             GitHub
@@ -246,7 +349,7 @@ export function App() {
                     key={b.id}
                     build={b}
                     index={i}
-                    canStart={serialOk && !target}
+                    blocked={flashBlocked}
                     loading={loadingBuild === b.id}
                     onFlash={() => void openBuild(b)}
                   />
@@ -275,7 +378,13 @@ export function App() {
       )}
 
       <footer className="muted stack">
-        <p>{rich('shortcut.hint', { key: <Kbd>?</Kbd> })}</p>
+        <p>
+          {rich('shortcut.hint', {
+            slash: <Kbd>/</Kbd>,
+            chord: <Kbd>{lineChord()}</Kbd>,
+            key: <Kbd>?</Kbd>,
+          })}
+        </p>
         <p>{t('app.footer')}</p>
       </footer>
     </div>

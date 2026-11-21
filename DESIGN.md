@@ -47,7 +47,7 @@ The reasoning and sources are in [docs/research/keymap-editor-design.md](docs/re
 
 | Pair | Minimum |
 | --- | --- |
-| `--text`, `--muted` on `--bg`, `--surface`, `--cap` | 4.5:1 |
+| `--text`, `--muted` on `--bg`, `--surface`, `--cap`, `--sunken` | 4.5:1 |
 | `--ink-text` on `--ink` | 4.5:1 |
 | `--ok` / `--busy` / `--err` on their soft colour; `--err` on `--bg` and `--surface` | 4.5:1 |
 | `--edge`, `--ball`, `--focus` on `--bg`, `--surface` (and `--cap` for `--edge` and `--ball`) | 3:1 |
@@ -110,6 +110,9 @@ The keycap is the core component and is drawn the same way everywhere.
 ### Rules
 
 - **Focus moves on.** When an action finishes, focus goes to the action that usually comes next, so pressing Enter carries you through the flow. When a panel closes, focus returns to the control that opened it.
+- **Every action is a command.** ⌘K / Ctrl+K anywhere, or `/` outside a text field, opens the command line. A command is English words, a verb and its object, followed by its values (`connect AkiraMisawa/keyballer-config`, `language japanese`), with Tab completion for both. The line also finds a command by its title in either language.
+- **One declaration.** A command is declared once with `useCommand` ([src/commands](src/commands)): the command line, its single-key shortcut and its row in the `?` list all come from it, so they cannot disagree. A screen or panel offers its commands only while it is on screen, and the panel in front lists its own first.
+- **Commands that cannot run now stay listed**, last, with the reason. Asking for one says why and changes nothing. A refused line stays open with what was typed. The list puts what this browser runs most first.
 - **Single-key shortcuts** cover the frequent actions. They only fire when focus is not in a text field and no IME composition is in progress, and never together with ⌘, Ctrl or Alt, which belong to the browser and the OS.
 - **Modifier shortcuts** are kept to the standard editing set: undo, redo, copy, paste and save. Show ⌘ on Mac and Ctrl elsewhere.
 - **Esc** closes the topmost panel or goes back one step. It never throws away work without asking.
@@ -121,7 +124,7 @@ The keycap is the core component and is drawn the same way everywhere.
 
 | Key | Action |
 | --- | --- |
-| `/` | Go to the repository field |
+| `/`, ⌘K / Ctrl+K | Open the command line |
 | `R` | Refresh the build status |
 | `1`–`9` | Flash the nth firmware |
 | `O` | Flash a hex file from your computer |
@@ -129,13 +132,15 @@ The keycap is the core component and is drawn the same way everywhere.
 | `Esc` | Close the panel or go back a step |
 | `?` | Show the shortcuts |
 
+Commands on the flow pages: `connect <repo>`, `repo` (go to the repository field), `refresh`, `open repo`, `open build`, `flash <id>`, `flash file`, `start`, `port`, `close`, `language <english|japanese>`, `shortcuts`.
+
 ### Keymap editor (planned)
 
 | Key | Action |
 | --- | --- |
 | `←` `↑` `→` `↓` | Move to the nearest key in that direction on the drawing, following the stagger and the thumb rotation |
 | `Enter` | Edit the selected key: the key picker opens with its search field focused |
-| `/` | Search for a keycode |
+| `/`, ⌘K / Ctrl+K | Open the command line, where every editor action is a command: `assign <keycode> [hold=]`, `layer <name>`, `combo add <keys> <output>`, `diff`, `commit [message]`, `undo`, `redo` |
 | `K` | Press a key to assign: the next physical key you press is assigned (by `KeyboardEvent.code`; ignored during IME composition) |
 | `Delete` / `Backspace` | Make the selected key transparent (▽) |
 | `[` / `]` | Previous / next layer |
@@ -182,6 +187,7 @@ Inside the key picker, typing searches, `↑` `↓` move through the results, `T
 - [ ] `npm test` passes, including the contrast check
 - [ ] Every action works with the keyboard alone, and the usual path needs only Enter, Esc and the shortcuts: focus lands on the next action at each step
 - [ ] `?` lists every shortcut on the screen, and each button with a shortcut shows it
+- [ ] Every action on the screen is also a command in the command line, declared with `useCommand`
 - [ ] Checked against the WAI-ARIA patterns named above and WCAG 2.2 AA
 - [ ] At 400px width and at 200% zoom, the page does not scroll sideways
 - [ ] Both languages fit without overflow or clipping

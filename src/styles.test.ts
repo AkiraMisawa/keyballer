@@ -31,7 +31,7 @@ function contrast(a: string, b: string): number {
 
 // [foreground, background, minimum ratio] — keep in sync with DESIGN.md §2.
 const PAIRS: [string, string, number][] = [
-  ...['bg', 'surface', 'cap'].flatMap((bg): [string, string, number][] => [
+  ...['bg', 'surface', 'cap', 'sunken'].flatMap((bg): [string, string, number][] => [
     ['text', bg, 4.5],
     ['muted', bg, 4.5],
   ]),

@@ -1,7 +1,7 @@
 import type { MessageKey } from '../i18n/messages';
 import { useI18n } from '../i18n/react';
 import { formatDateTime, shortSha } from '../lib/format';
-import { Kbd } from '../shortcuts';
+import { Kbd } from '../commands/keys';
 import type { WorkflowRun } from '../lib/github';
 import type { FirmwareManifest } from '../lib/manifest';
 

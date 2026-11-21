@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { keyLabel, shouldHandle } from './shortcuts';
+import { isLineChord, keyLabel, shouldHandle } from './keys';
 
-const key = (k: string, extra: Partial<KeyboardEvent> = {}) => ({
+type Flags = 'isComposing' | 'metaKey' | 'ctrlKey' | 'altKey' | 'shiftKey' | 'defaultPrevented';
+
+const key = (k: string, extra: Partial<Record<Flags, boolean>> = {}) => ({
   key: k,
   isComposing: false,
   metaKey: false,
   ctrlKey: false,
   altKey: false,
+  shiftKey: false,
   defaultPrevented: false,
   ...extra,
 });
@@ -34,12 +37,26 @@ describe('shouldHandle', () => {
     expect(shouldHandle(key('r', { altKey: true }), false, false)).toBe(false);
   });
 
-  it('does nothing while the help dialog is open', () => {
+  it('does nothing while a modal is open', () => {
     expect(shouldHandle(key('Escape'), false, true)).toBe(false);
   });
 
   it('skips keys another handler already used', () => {
     expect(shouldHandle(key('r', { defaultPrevented: true }), false, false)).toBe(false);
+  });
+});
+
+describe('isLineChord', () => {
+  it('is Cmd+K or Ctrl+K', () => {
+    expect(isLineChord(key('k', { metaKey: true }))).toBe(true);
+    expect(isLineChord(key('K', { ctrlKey: true }))).toBe(true);
+  });
+
+  it('is not K alone, or with Shift or Alt, or while composing', () => {
+    expect(isLineChord(key('k'))).toBe(false);
+    expect(isLineChord(key('k', { metaKey: true, shiftKey: true }))).toBe(false);
+    expect(isLineChord(key('k', { ctrlKey: true, altKey: true }))).toBe(false);
+    expect(isLineChord(key('k', { metaKey: true, isComposing: true }))).toBe(false);
   });
 });
 

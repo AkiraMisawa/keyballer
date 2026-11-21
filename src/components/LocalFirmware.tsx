@@ -1,8 +1,8 @@
 import { useRef, useState } from 'react';
+import { useCommand } from '../commands/react';
 import { msg } from '../i18n/core';
 import { useI18n } from '../i18n/react';
 import { parseIntelHex } from '../lib/ihex';
-import { useShortcut } from '../shortcuts';
 
 interface Props {
   disabled: boolean;
@@ -16,15 +16,18 @@ export function LocalFirmware({ disabled, onReady }: Props) {
   const detailsRef = useRef<HTMLDetailsElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  useShortcut(
-    'o',
-    msg('shortcut.openHex'),
-    () => {
+  useCommand({
+    id: 'flash.file',
+    words: 'flash file',
+    title: msg('shortcut.openHex'),
+    group: 'group.firmware',
+    shortcut: 'o',
+    unavailable: disabled ? msg('why.flashing') : undefined,
+    run: () => {
       if (detailsRef.current) detailsRef.current.open = true;
       fileRef.current?.click();
     },
-    !disabled,
-  );
+  });
 
   const onFile = async (file: File | undefined) => {
     setError(null);
