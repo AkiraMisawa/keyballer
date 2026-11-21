@@ -100,6 +100,33 @@ class Link {
     return Uint8Array.from(this.buffer.splice(0, count));
   }
 
+  /**
+   * Discards everything already received plus whatever arrives within
+   * `waitMs`, and returns how many bytes were dropped. Used to get back in
+   * step if the bootloader sent more than the protocol says.
+   */
+  async drain(waitMs: number): Promise<number> {
+    let dropped = this.buffer.length;
+    this.buffer = [];
+    const deadline = Date.now() + waitMs;
+    for (;;) {
+      const left = deadline - Date.now();
+      if (left <= 0) break;
+      this.pending ??= this.reader.read();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<'timeout'>((resolve) => {
+        timer = setTimeout(() => resolve('timeout'), left);
+      });
+      const result = await Promise.race([this.pending, timeout]);
+      clearTimeout(timer);
+      if (result === 'timeout') break;
+      this.pending = null;
+      if (result.done) break;
+      dropped += result.value.length;
+    }
+    return dropped;
+  }
+
   async expectCR(timeoutMs: number, what: string): Promise<void> {
     const [b] = await this.read(1, timeoutMs, what);
     if (b !== CR) throw new FlashError(`${what}: 想定外の応答 0x${b.toString(16)} です`);
@@ -130,6 +157,22 @@ async function setAddress(link: Link, wordOrByteAddress: number): Promise<void> 
 
 function isBlank(page: Uint8Array): boolean {
   return page.every((b) => b === 0xff);
+}
+
+async function writePage(link: Link, addr: number, data: Uint8Array): Promise<void> {
+  await setAddress(link, addr >> 1);
+  await link.send('B', 0, data.length, 'F', data);
+  await link.expectCR(2000, `書き込み (0x${addr.toString(16)})`);
+}
+
+async function readPage(link: Link, addr: number, size: number): Promise<Uint8Array> {
+  await setAddress(link, addr >> 1);
+  await link.send('g', 0, size, 'F');
+  return link.read(size, 2000, `読み出し (0x${addr.toString(16)})`);
+}
+
+function firstDifference(a: Uint8Array, b: Uint8Array): number {
+  return a.findIndex((x, i) => x !== b[i]);
 }
 
 /**
@@ -169,6 +212,9 @@ export async function flashCaterina(
   const link = new Link(port.readable.getReader(), port.writable.getWriter());
 
   try {
+    const stale = await link.drain(50);
+    if (stale > 0) log(`接続前に届いていた ${stale} バイトを読み捨てました`);
+
     await link.send('S');
     const id = new TextDecoder().decode(await link.read(7, 2000, 'ブートローダーの確認'));
     log(`ブートローダー: ${id}`);
@@ -209,24 +255,36 @@ export async function flashCaterina(
 
     for (let i = 0; i < pages.length; i++) {
       progress('write', i, pages.length);
-      const { addr, data } = pages[i];
-      await setAddress(link, addr >> 1);
-      await link.send('B', 0, pageSize, 'F', data);
-      await link.expectCR(2000, `書き込み (0x${addr.toString(16)})`);
+      await writePage(link, pages[i].addr, pages[i].data);
     }
     progress('write', pages.length, pages.length);
     log(`${pages.length} ページ（${image.length} バイト）を書き込みました`);
 
+    // Every response so far was one CR. Anything still waiting would shift
+    // every read below by that many bytes.
+    const extra = await link.drain(100);
+    if (extra > 0) log(`想定外の応答 ${extra} バイトを読み捨てました`);
+
     for (let i = 0; i < pages.length; i++) {
       progress('verify', i, pages.length);
       const { addr, data } = pages[i];
-      await setAddress(link, addr >> 1);
-      await link.send('g', 0, pageSize, 'F');
-      const read = await link.read(pageSize, 2000, `読み出し (0x${addr.toString(16)})`);
-      const bad = read.findIndex((b, j) => b !== data[j]);
+      let read = await readPage(link, addr, pageSize);
+      let bad = firstDifference(read, data);
+      if (bad >= 0) {
+        log(
+          `0x${(addr + bad).toString(16)} が一致しません（期待 ${hex(data.subarray(bad, bad + 8))}、` +
+            `実際 ${hex(read.subarray(bad, bad + 8))}）。書き直します`,
+        );
+        const dropped = await link.drain(50);
+        if (dropped > 0) log(`想定外の応答 ${dropped} バイトを読み捨てました`);
+        await writePage(link, addr, data);
+        read = await readPage(link, addr, pageSize);
+        bad = firstDifference(read, data);
+      }
       if (bad >= 0) {
         throw new FlashError(
-          `0x${(addr + bad).toString(16)} の内容が一致しません。もう一度書き込んでください`,
+          `0x${(addr + bad).toString(16)} の内容が一致しません` +
+            `（期待 ${hex(data.subarray(bad, bad + 8))}、実際 ${hex(read.subarray(bad, bad + 8))}）`,
         );
       }
     }

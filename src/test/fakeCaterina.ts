@@ -6,6 +6,10 @@ export interface FakeCaterinaOptions {
   signature?: number[];
   /** Drop the response to this command letter, to test timeouts. */
   silentOn?: string;
+  /** Send one extra CR after this command, to test getting back in step. */
+  extraCrAfter?: string;
+  /** Return a damaged first byte on the first N flash reads. */
+  badReads?: number;
 }
 
 export class FakeCaterina implements SerialLike {
@@ -75,6 +79,7 @@ export class FakeCaterina implements SerialLike {
       const bytes = this.input.splice(0, need);
       this.commands.push(cmd);
       this.handle(cmd, bytes);
+      if (cmd === this.options.extraCrAfter) this.out.enqueue(Uint8Array.of(0x0d));
     }
   }
 
@@ -123,6 +128,10 @@ export class FakeCaterina implements SerialLike {
         const size = (bytes[1] << 8) | bytes[2];
         const data = this.flash.slice(this.address, this.address + size);
         this.address += size;
+        if ((this.options.badReads ?? 0) > 0) {
+          this.options.badReads!--;
+          data[0] ^= 0xff;
+        }
         this.reply(...data);
         break;
       }

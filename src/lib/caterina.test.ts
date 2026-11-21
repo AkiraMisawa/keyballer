@@ -60,6 +60,29 @@ describe('flashCaterina', () => {
     expect(board.opened).toBe(false);
   });
 
+  it('gets back in step when the bootloader sends an extra byte', async () => {
+    const board = new FakeCaterina({ extraCrAfter: 'e' });
+    const logs: string[] = [];
+    const image = sampleImage(2000);
+    await flashCaterina(board, image, { onLog: (m) => logs.push(m) });
+    expect(Array.from(board.flash.subarray(0, image.length))).toEqual(Array.from(image));
+    expect(logs.some((m) => m.includes('読み捨てました'))).toBe(true);
+  });
+
+  it('rewrites a page once when it reads back wrong', async () => {
+    const board = new FakeCaterina({ badReads: 1 });
+    const logs: string[] = [];
+    await flashCaterina(board, sampleImage(2000), { onLog: (m) => logs.push(m) });
+    expect(logs.some((m) => m.includes('書き直します'))).toBe(true);
+    expect(board.exited).toBe(true);
+  });
+
+  it('reports expected and actual bytes when a page keeps reading back wrong', async () => {
+    const board = new FakeCaterina({ badReads: 2 });
+    await expect(flashCaterina(board, sampleImage(2000))).rejects.toThrow(/期待 .+、実際 /);
+    expect(board.closed).toBe(true);
+  });
+
   it('times out and closes the port when the bootloader stops answering', async () => {
     const board = new FakeCaterina({ silentOn: 'P' });
     await expect(flashCaterina(board, sampleImage(300))).rejects.toThrow(/応答がありません/);
