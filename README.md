@@ -29,7 +29,7 @@ Keyballer (this app) ◀──── GitHub API ──────────�
 | ZMK builds | Planned |
 | Flashing Pro Micro (ATmega32U4 / Caterina) | Supported |
 | Flashing RP2040 / nRF52840 (UF2) | Planned |
-| Keymap editor | Planned |
+| Keymap editor | Supported (keys, combos, layers) |
 
 ## Config repository
 
@@ -145,6 +145,10 @@ Pushing to `main` runs the tests and the build, then publishes to GitHub Pages.
 
 Each build also writes `<id>.view.json` next to the firmware: the keymap drawn on the board's real shape (from the keyboard's VIA definition), its layers, combos, `#define` aliases and the keycodes the keymap's code handles, with line numbers. The app shows it with "View keymap" (`V`). If it cannot be made, the manifest says why and the firmware is unaffected. Plan: [docs/plans/keymap-view.md](docs/plans/keymap-view.md).
 
+### Keymap editing
+
+On the keymap, `E` starts editing. Select a key and give it a new action from the key picker (search by QMK name, by what it prints, or in English or Japanese words; or press the key on your computer, `K`), with a hold action if you like. Add and remove combos on the board, and add, remove and rename layers. Only the data parts of `keymap.c` change (the layer arrays, the combos, `KEYBALLER_SCROLL_LAYERS`); your own code stays as it was. Layer names and which layers scroll also go to `keyballer.json`. The first combo also turns combos on: `COMBO_ENABLE = yes` in `rules.mk` and `#define COMBO_ONLY_FROM_LAYER 0` in `config.h`. Every command is on the command line too (`assign KC_ESC`, `assign KC_A hold=ctrl`, `combo add`, `layer rename Mouse keys`, `save Fix the comma combo`). Saving works as below. Plan: [docs/plans/keymap-editor.md](docs/plans/keymap-editor.md).
+
 ### Trackball settings and saving
 
 Select the trackball on the keymap (`B`) to set cursor and scroll speed. Each is shown as the setting and as counts or scroll steps per centimetre of ball. A pad lets you try a speed with your own ball before flashing, and the sensor can be measured with one full turn of the ball. Changes collect in a bar with undo and redo (⌘Z / Ctrl+Z). "Review and save" (⌘S / Ctrl+S) shows each change and the file diff, then commits to `main` of the config repository, and the firmware build starts. Saving needs a fine-grained token for that repository with Contents: Read and write. Plans: [docs/plans/trackball-settings.md](docs/plans/trackball-settings.md), [docs/plans/keymap-editor.md](docs/plans/keymap-editor.md).
@@ -156,5 +160,5 @@ All UI text is in `src/i18n/messages.ts`. English is the source; the type check 
 ## Roadmap
 
 1. ZMK builds and UF2 flashing
-2. Keymap editor: keys, combos and layers (saving and the review screen are done, with the trackball settings)
-3. GitHub sign-in, LED settings, templates
+2. GitHub sign-in, LED settings, templates
+3. AI-made keymap changes, reviewed in the same screen

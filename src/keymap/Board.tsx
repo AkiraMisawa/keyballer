@@ -18,6 +18,10 @@ interface Props {
   onSelect: (selection: Selection) => void;
   /** Largest key unit in px; the board shrinks to fit its frame down to 36px keycaps, then scrolls. */
   maxUnit?: number;
+  /** Keys changed and not saved yet: a dot in the corner (DESIGN.md §5). */
+  changed?: ReadonlySet<number>;
+  /** Keys picked for a new combo: drawn selected. */
+  picked?: ReadonlySet<number>;
 }
 
 const MIN_UNIT = 40; // a 36px keycap plus the gap around it (DESIGN.md §7)
@@ -145,7 +149,7 @@ function spoken(k: DrawnKey): string {
     .trim();
 }
 
-export function Board({ drawn, label, selected, onSelect, maxUnit = 64 }: Props) {
+export function Board({ drawn, label, selected, onSelect, maxUnit = 64, changed, picked }: Props) {
   const { t } = useI18n();
   const frame = useRef<HTMLDivElement>(null);
   const [room, setRoom] = useState(0);
@@ -202,9 +206,9 @@ export function Board({ drawn, label, selected, onSelect, maxUnit = 64 }: Props)
             <button
               key={k.index}
               type="button"
-              className={`cap ${k.kind}${k.held ? ' held' : ''}${k.code ? ' coded' : ''}`}
+              className={`cap ${k.kind}${k.held ? ' held' : ''}${k.code ? ' coded' : ''}${changed?.has(k.index) ? ' changed' : ''}`}
               style={style}
-              aria-pressed={isSelected}
+              aria-pressed={isSelected || !!picked?.has(k.index)}
               aria-label={spoken(k)}
               tabIndex={isSelected || k === firstStop ? 0 : -1}
               data-index={k.index}

@@ -3,6 +3,7 @@
 
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useI18n } from '../i18n/react';
+import { SessionState } from '../edit/EditBar';
 import { savedTrackball, trackball } from '../edit/session';
 import type { EditSession } from '../edit/useEditSession';
 import {
@@ -49,26 +50,16 @@ function honoursRawMovement(): boolean {
 }
 
 export function TrackballPanel({ edit, request }: Props) {
-  const { t, err, lang } = useI18n();
+  const { t, lang } = useI18n();
   const number = (n: number) => n.toLocaleString(lang === 'ja' ? 'ja-JP' : 'en-US', { maximumFractionDigits: 1 });
 
   // The panel is the first thing that needs the files.
   useEffect(() => edit.ensure());
 
-  if (edit.state.status === 'idle' || edit.state.status === 'loading') return <p className="note">{t('edit.loading')}</p>;
-  if (edit.state.status === 'failed') {
-    return (
-      <div className="stack">
-        <p className="err">{t('edit.failed')}</p>
-        <p className="note">{err(edit.state.error)}</p>
-        <button type="button" onClick={() => edit.reload()}>
-          {t('edit.retry')}
-        </button>
-      </div>
-    );
-  }
+  if (edit.state.status !== 'ready') return <SessionState edit={edit} />;
 
-  const { session, keymapC, sharedBy } = edit.state;
+  const { session, sharedBy } = edit.state;
+  const keymapC = session.base.files[`${session.base.keymapDir}/keymap.c`];
   const now = trackball(session);
   const saved = savedTrackball(session);
   const stamp = keymapC?.includes('KEYBALLER_DEFAULTS_STAMP') ?? false;

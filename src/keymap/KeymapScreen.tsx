@@ -1,5 +1,5 @@
-// The keymap screen: one firmware's keymap drawn on its board, read-only.
-// See docs/plans/keymap-view.md.
+// The keymap screen: one firmware's keymap drawn on its board, and editing it.
+// See docs/plans/keymap-view.md and docs/plans/keymap-editor.md.
 
 import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { isMac, Kbd } from '../commands/keys';
@@ -7,7 +7,9 @@ import { CommandRefused } from '../commands/model';
 import { useCommand } from '../commands/react';
 import { msg, type Lang, type Localized } from '../i18n/core';
 import { useI18n } from '../i18n/react';
-import { EditBar, LeaveDialog } from '../edit/EditBar';
+import { readCustomKeycodes } from '../config/keymap';
+import { ConfirmDialog, EditBar, LeaveDialog, SessionState } from '../edit/EditBar';
+import { ballModeEditable, editedView, keymapFileOf, keymapProblem, keyProblem } from '../edit/session';
 import { useEditSession, type EditSession } from '../edit/useEditSession';
 import { getFirmwareText, repoName, type RepoRef, type WorkflowRun } from '../lib/github';
 import type { FirmwareBuild, FirmwareManifest } from '../lib/manifest';
@@ -15,10 +17,14 @@ import { load, save } from '../lib/storage';
 import { pointerLockBusy, TrackballPanel, type PadMode, type PadRequest } from '../trackball/TrackballPanel';
 import { BALL_MM_MAX, BALL_MM_MIN, CPI_MAX, CPI_MIN, CPI_STEP, DIVIDER_MAX, DIVIDER_MIN } from '../trackball/speed';
 import { Board, type Selection } from './Board';
-import { LAYOUTS, OSES, type Layout, type Os } from './keycodes';
+import { checkKeycode, compose, decompose, makeCatalogue, type Hold } from './catalogue';
+import { ComboPanel, EditPanel, leadingTo } from './EditPanel';
+import { KeyPicker, type PickerContext } from './KeyPicker';
+import { LAYOUTS, OSES, type Layout, type Mod, type Os } from './keycodes';
 import {
   drawLayer,
   layerName,
+  legendOf,
   nextKey,
   parseView,
   type Direction,
@@ -50,6 +56,7 @@ interface Props {
 type Tab = number | 'all';
 
 const OS_NAMES: Record<Os, string> = { mac: 'Mac', windows: 'Windows' };
+const TRANSPARENT_KEY = '_______';
 
 function savedOs(): Os {
   const v = load('keyballer.display.os');
@@ -72,13 +79,31 @@ function toDisplay(value: string): { os: Os } | { layout: Layout } | undefined {
 export function KeymapScreen(props: Props) {
   const { build, repo, firmwareSha, manifest, token, buildsUrl, onClose, onSaved, onToken, runFor, setLeaveGuard } = props;
   const { t, err, lang } = useI18n();
-  const [view, setView] = useState<ViewFile | null>(null);
+  const [builtView, setView] = useState<ViewFile | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
   const [tab, setTab] = useState<Tab>(0);
   const [selected, setSelected] = useState<Selection>(null);
   const [os, setOs] = useState<Os>(savedOs);
   const [layout, setLayout] = useState<Layout>(savedLayout);
   const edit = useEditSession(repo, token, build.id);
+  const [editing, setEditing] = useState(false);
+  /**
+   * What the board draws: the built firmware's keymap, or, while editing or with unsaved
+   * changes, that keymap with the changes over it.
+   */
+  const showEdits = editing || edit.dirty;
+  const view = useMemo(
+    () => (builtView && showEdits ? editedView(builtView, edit.session) : builtView),
+    [builtView, edit.session, showEdits],
+  );
+  /** Keys picked for a new combo; null when not making one. */
+  const [comboPick, setComboPick] = useState<number[] | null>(null);
+  /** The combo whose output is being changed, by name; null when not changing one. */
+  const [comboChange, setComboChange] = useState<string | null>(null);
+  const [removingLayer, setRemovingLayer] = useState(false);
+  /** Requests to the key picker: wait for a key press, or take focus. */
+  const [listen, setListen] = useState(0);
+  const [pickerFocus, setPickerFocus] = useState(0);
   /** What to do once the person agrees to leave with unsaved changes; null when not asking. */
   const [leaving, setLeaving] = useState<(() => void) | null>(null);
   const [padRequest, setPadRequest] = useState<PadRequest | null>(null);
@@ -106,15 +131,21 @@ export function KeymapScreen(props: Props) {
   }, [build.view, repo, firmwareSha, token]);
 
   // Focus moves on (DESIGN.md §8): to the board once it is drawn, or to Back when there is nothing to see.
-  const settled = view !== null || loadError !== null || !build.view;
+  const settled = builtView !== null || loadError !== null || !build.view;
   useEffect(() => {
     if (!settled) return;
     const firstKey = root.current?.querySelector<HTMLElement>('.cap[tabindex="0"]');
     (firstKey ?? backButton.current)?.focus();
   }, [settled]);
 
+  // A removed layer (or undoing an added one) takes its tab with it.
+  const layerCount = view?.layers.length ?? 0;
+  useEffect(() => {
+    if (typeof tab === 'number' && layerCount > 0 && tab >= layerCount) setTab(layerCount - 1);
+  }, [tab, layerCount]);
+
   const display: Display = { lang, os, layout };
-  const shown = tab === 'all' ? 0 : tab;
+  const shown = tab === 'all' ? 0 : Math.min(tab, Math.max(0, layerCount - 1));
   const drawn = useMemo(
     () => (view ? drawLayer(view, shown, { lang, os, layout }) : null),
     [view, shown, lang, os, layout],
@@ -145,6 +176,8 @@ export function KeymapScreen(props: Props) {
   };
 
   const noView: Localized | undefined = view ? undefined : msg('why.noView');
+  /** Combos are made from the base layer's keys, so the base layer stays shown meanwhile. */
+  const noLayerSwitch: Localized | undefined = noView ?? (comboPick !== null ? msg('why.pickingCombo') : undefined);
   const tabs: Tab[] = view ? [...view.layers.map((_, n) => n), 'all'] : [];
   const step = (by: number) => {
     const count = view?.layers.length ?? 0;
@@ -174,6 +207,7 @@ export function KeymapScreen(props: Props) {
 
   // The tabs pattern: arrow keys, Home and End move between layer tabs while one has focus.
   const onTabKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (noLayerSwitch) return;
     const at = tabs.indexOf(tab);
     const to =
       e.key === 'ArrowRight' ? (at + 1) % tabs.length
@@ -197,7 +231,15 @@ export function KeymapScreen(props: Props) {
     run: () => {
       // The Esc that ends the try-out pad's pointer lock is the browser's, not ours.
       if (pointerLockBusy()) return;
-      if (selected !== null) setSelected(null);
+      const inPanel = !!root.current?.querySelector('.side')?.contains(document.activeElement);
+      if (comboPick !== null || comboChange !== null) {
+        setComboPick(null);
+        setComboChange(null);
+      } else if (inPanel && typeof selected === 'number') {
+        // From the key picker, Esc goes back to the key on the board.
+        root.current?.querySelector<HTMLElement>(`.cap[data-index="${selected}"]`)?.focus();
+      } else if (selected !== null) setSelected(null);
+      else if (editing) setEditing(false);
       else close();
     },
   });
@@ -208,7 +250,7 @@ export function KeymapScreen(props: Props) {
     group: 'group.keymap',
     page: true,
     shortcut: ']',
-    unavailable: noView,
+    unavailable: noLayerSwitch,
     run: () => step(1),
   });
   useCommand({
@@ -218,7 +260,7 @@ export function KeymapScreen(props: Props) {
     group: 'group.keymap',
     page: true,
     shortcut: '[',
-    unavailable: noView,
+    unavailable: noLayerSwitch,
     run: () => step(-1),
   });
   useCommand({
@@ -228,7 +270,7 @@ export function KeymapScreen(props: Props) {
     group: 'group.keymap',
     page: true,
     shortcut: 'a',
-    unavailable: noView,
+    unavailable: noLayerSwitch,
     run: () => setTab('all'),
   });
   useCommand({
@@ -294,9 +336,234 @@ export function KeymapScreen(props: Props) {
     setSelected('ball');
   }, (mode) => setPadRequest({ mode, id: ++padRequests.current }));
 
+  // ---- editing (docs/plans/keymap-editor.md) ----
+  const keymapFile = edit.session ? keymapFileOf(edit.session) : undefined;
+  const editProblem = edit.session && builtView ? keymapProblem(edit.session, builtView.layout) : undefined;
+  const canEdit = editing && !!edit.session && !editProblem;
+  const catalogue = useMemo(
+    () =>
+      makeCatalogue({
+        layers: view?.layers.map((l) => l.name) ?? [],
+        custom: keymapFile && !editProblem ? readCustomKeycodes(keymapFile) : [],
+        defines: view?.defines ?? {},
+        labels: view?.labels ?? {},
+      }),
+    [view, keymapFile, editProblem],
+  );
+  const pickerContext: PickerContext | null = view
+    ? { view, display, catalogue, layerNames: view.layers.map((_, n) => layerName(view, n, lang)) }
+    : null;
+  const changed = useMemo(
+    () => new Set((edit.pending?.keys ?? []).filter((k) => k.layer === shown).map((k) => k.index)),
+    [edit.pending, shown],
+  );
+  const sharedBy = edit.state.status === 'ready' ? edit.state.sharedBy : [];
+  const keyIndex = typeof selected === 'number' && tab !== 'all' ? selected : null;
+  const notEditing: Localized | undefined = !editing
+    ? msg('why.notEditing')
+    : !edit.session
+      ? msg('edit.notLoaded')
+      : editProblem
+        ? msg(editProblem)
+        : undefined;
+  const noKey = notEditing ?? (keyIndex === null ? msg('why.noKeySelected') : undefined);
+
+  const startEditing = () => {
+    edit.ensure();
+    setEditing(true);
+    if (tab === 'all') setTab(0);
+  };
+  /** Why a keycode cannot go on the selected key, if it cannot. */
+  const assignProblem = (keycode: string) =>
+    keyIndex === null || !edit.session ? undefined : keyProblem(edit.session, shown, keyIndex, keycode);
+  /**
+   * Puts a keycode on the selected key, then moves to the next key so a row can be filled. Focus
+   * stays in the key picker when the change came from there, else follows the selection.
+   */
+  const assign = (keycode: string) => {
+    if (keyIndex === null || !drawn || assignProblem(keycode)) return;
+    const fromPicker = !!root.current?.querySelector('.picker')?.contains(document.activeElement);
+    edit.edit({ type: 'key', layer: shown, index: keyIndex, keycode });
+    const order = drawn.keys.map((k) => k.index).sort((a, b) => a - b);
+    const next = order[order.indexOf(keyIndex) + 1];
+    if (next !== undefined) {
+      focusAfter.current = !fromPicker;
+      setSelected(next);
+    }
+  };
+  const onBoardSelect = (sel: Selection) => {
+    if (comboPick !== null && typeof sel === 'number') {
+      setComboPick(comboPick.includes(sel) ? comboPick.filter((p) => p !== sel) : [...comboPick, sel]);
+      return;
+    }
+    // Enter or a second click on the selected key, while editing, goes to the key picker.
+    if (canEdit && sel !== null && sel === selected) setPickerFocus((n) => n + 1);
+    setSelected(sel);
+  };
+  const startCombo = () => {
+    setSelected(null);
+    setComboChange(null);
+    setTab(0);
+    setComboPick([]);
+  };
+  const leading = pickerContext && view ? leadingTo(pickerContext, view.layers.length - 1) : [];
+
+  useCommand({
+    id: 'keymap.edit',
+    words: 'edit',
+    title: msg('cmd.edit'),
+    group: 'group.keymap',
+    page: true,
+    shortcut: 'e',
+    unavailable: noView,
+    run: () => (editing ? setEditing(false) : startEditing()),
+  });
+  const holdOf = (text: string): Hold | null | undefined => {
+    if (/^\d+$/.test(text)) return { layer: Number(text) };
+    const mods = text.toLowerCase().split('+');
+    return mods.every((m) => m === 'ctrl' || m === 'shift' || m === 'alt' || m === 'gui') ? { mods: mods as Mod[] } : undefined;
+  };
+  useCommand({
+    id: 'keymap.assign',
+    words: 'assign',
+    title: msg('cmd.assign'),
+    group: 'group.edit',
+    page: true,
+    unavailable: noKey,
+    args: [
+      { name: 'keycode', required: true, hint: msg('cmd.assign.hint'), check: (v) => { const p = checkKeycode(v); return p ? msg(p) : undefined; } },
+      { name: 'hold', required: false, hint: msg('cmd.assign.holdHint'), check: (v) => (holdOf(v) ? undefined : msg('cmd.assign.holdBad')) },
+    ],
+    run: ({ keycode, hold }) => {
+      const typed = checkKeycode(keycode);
+      if (typed) throw new CommandRefused(msg(typed));
+      // Typed without spaces on the line (LT(1,KC_A)); written as keymap.c writes them.
+      let code = keycode.trim().replace(/\s*,\s*/g, ', ');
+      if (hold) {
+        const h = holdOf(hold);
+        if (!h) throw new CommandRefused(msg('cmd.assign.holdBad'));
+        const result = compose({ ...decompose(code), hold: h });
+        if ('refused' in result) throw new CommandRefused(msg(result.refused));
+        code = result.keycode;
+      }
+      const problem = assignProblem(code);
+      if (problem) throw new CommandRefused(msg(problem));
+      assign(code);
+    },
+  });
+  useCommand({
+    id: 'keymap.transparent',
+    words: 'transparent',
+    title: msg('cmd.transparent'),
+    group: 'group.edit',
+    page: true,
+    shortcut: ['Backspace', 'Delete'],
+    unavailable: noKey ?? (assignProblem(TRANSPARENT_KEY) ? msg(assignProblem(TRANSPARENT_KEY)!) : undefined),
+    run: () => assign(TRANSPARENT_KEY),
+  });
+  useCommand({
+    id: 'keymap.none',
+    words: 'none',
+    title: msg('cmd.none'),
+    group: 'group.edit',
+    page: true,
+    unavailable: noKey ?? (assignProblem('KC_NO') ? msg(assignProblem('KC_NO')!) : undefined),
+    run: () => assign('KC_NO'),
+  });
+  useCommand({
+    id: 'keymap.pressKey',
+    words: 'press key',
+    title: msg('cmd.pressKey'),
+    group: 'group.edit',
+    page: true,
+    shortcut: 'k',
+    unavailable: noKey,
+    run: () => setListen((n) => n + 1),
+  });
+  useCommand({
+    id: 'keymap.comboAdd',
+    words: 'combo add',
+    title: msg('cmd.comboAdd'),
+    group: 'group.edit',
+    page: true,
+    unavailable: notEditing,
+    run: startCombo,
+  });
+  const comboAt = (v: string) => view?.combos[Number(v) - 1];
+  useCommand({
+    id: 'keymap.comboRemove',
+    words: 'combo remove',
+    title: msg('cmd.comboRemove'),
+    group: 'group.edit',
+    page: true,
+    unavailable: notEditing,
+    args: [
+      {
+        name: 'number',
+        required: true,
+        hint: msg('cmd.comboRemove.hint'),
+        check: (v) => (comboAt(v)?.name ? undefined : msg('cmd.comboRemove.bad')),
+      },
+    ],
+    run: ({ number }) => {
+      const name = comboAt(number)?.name;
+      if (!name) throw new CommandRefused(msg('cmd.comboRemove.bad'));
+      edit.edit({ type: 'comboRemove', name });
+    },
+  });
+  useCommand({
+    id: 'keymap.layerAdd',
+    words: 'layer add',
+    title: msg('cmd.layerAdd'),
+    group: 'group.edit',
+    page: true,
+    unavailable: notEditing,
+    run: () => edit.edit({ type: 'layerAdd' }),
+  });
+  useCommand({
+    id: 'keymap.layerRemove',
+    words: 'layer remove',
+    title: msg('cmd.layerRemove'),
+    group: 'group.edit',
+    page: true,
+    unavailable: notEditing ?? ((view?.layers.length ?? 0) < 2 ? msg('why.oneLayer') : undefined),
+    run: () => setRemovingLayer(true),
+  });
+  useCommand({
+    id: 'keymap.layerRename',
+    words: 'layer rename',
+    title: msg('cmd.layerRename'),
+    group: 'group.edit',
+    page: true,
+    unavailable: notEditing,
+    args: [{ name: 'name', required: true, rest: true, hint: msg('cmd.layerRename.hint') }],
+    run: ({ name }) => edit.edit({ type: 'layerName', layer: shown, name: name.trim() }),
+  });
+  useCommand({
+    id: 'keymap.ballMode',
+    words: 'ball mode',
+    title: msg('cmd.ballMode'),
+    group: 'group.edit',
+    page: true,
+    unavailable: notEditing ?? (edit.session && !ballModeEditable(edit.session) ? msg('why.ballInCode') : undefined),
+    args: [
+      {
+        name: 'mode',
+        required: true,
+        hint: msg('cmd.ballMode.hint'),
+        complete: () => [{ value: 'cursor' }, { value: 'scroll' }],
+        check: (v) => (v === 'cursor' || v === 'scroll' ? undefined : msg('cmd.ballMode.bad')),
+      },
+    ],
+    run: ({ mode }) => {
+      if (mode !== 'cursor' && mode !== 'scroll') throw new CommandRefused(msg('cmd.ballMode.bad'));
+      edit.edit({ type: 'ballMode', layer: shown, mode });
+    },
+  });
+
   // Links to keymap.c lines: the view names its own source; older views fall back to the manifest.
   const sourceLink = (line: number) => {
-    if (!view?.source) return undefined;
+    if (!view?.source || line <= 0) return undefined;
     const repository = view.source.repository ?? manifest.source.repository;
     const commit = view.source.commit ?? manifest.source.sha;
     return `https://github.com/${repository}/blob/${commit}/${view.source.path}#L${line}`;
@@ -350,7 +617,7 @@ export function KeymapScreen(props: Props) {
           <div className="keymap-controls">
             <div className="seg layers" role="tablist" aria-label={t('keymap.layers')} onKeyDown={onTabKey}>
               {view.layers.map((_, n) => (
-                <LayerTab key={n} view={view} n={n} current={tab === n} onPick={() => setTab(n)} />
+                <LayerTab key={n} view={view} n={n} current={tab === n} disabled={!!noLayerSwitch} onPick={() => setTab(n)} />
               ))}
               <button
                 type="button"
@@ -359,6 +626,7 @@ export function KeymapScreen(props: Props) {
                 aria-selected={tab === 'all'}
                 aria-controls="keymap-panel"
                 tabIndex={tab === 'all' ? 0 : -1}
+                disabled={!!noLayerSwitch}
                 onClick={() => setTab('all')}
                 aria-keyshortcuts="A"
               >
@@ -383,9 +651,27 @@ export function KeymapScreen(props: Props) {
               </div>
               <p className="note">{t('keymap.displayOnly')}</p>
             </div>
+            <button type="button" className={editing ? 'primary' : ''} onClick={() => (editing ? setEditing(false) : startEditing())} aria-keyshortcuts="E">
+              {editing ? t('edit.leave') : t('edit.enter')}
+              <Kbd>E</Kbd>
+            </button>
           </div>
 
-          <EditBar edit={edit} repoName={repoName(repo)} token={token} onToken={onToken} runFor={runFor} onSaved={onSaved} />
+          <EditBar
+            edit={edit}
+            repoName={repoName(repo)}
+            token={token}
+            onToken={onToken}
+            runFor={runFor}
+            onSaved={onSaved}
+            describe={{
+              legend: (k) => {
+                const l = legendOf(view, k, display);
+                return [l.tap, l.hold].filter(Boolean).join(' / ');
+              },
+              layer: (n) => layerName(view, n, lang),
+            }}
+          />
 
           <div className="keymap-body">
             <div className="boards" role="tabpanel" id="keymap-panel" aria-labelledby={`keymap-tab-${tab}`}>
@@ -413,27 +699,102 @@ export function KeymapScreen(props: Props) {
                 <Board
                   drawn={drawn}
                   label={t('keymap.board', { layer: layerName(view, shown, lang) })}
-                  selected={selected}
-                  onSelect={setSelected}
+                  selected={comboPick !== null ? null : selected}
+                  onSelect={onBoardSelect}
+                  changed={changed}
+                  picked={comboPick !== null ? new Set(comboPick) : undefined}
                 />
               )}
             </div>
             <aside className="panel side" aria-live="polite">
-              <Details
-                view={view}
-                drawn={drawn}
-                all={tab === 'all' ? all : null}
-                layer={shown}
-                selected={selected}
-                display={display}
-                sourceLink={sourceLink}
-                trackball={<TrackballPanel edit={edit} request={padRequest} />}
-              />
+              {editing && editProblem ? (
+                <div className="stack">
+                  <p className="note">
+                    {t('edit.cannotEdit')} {t(editProblem)}
+                  </p>
+                  <Details
+                    view={view}
+                    drawn={drawn}
+                    all={tab === 'all' ? all : null}
+                    layer={shown}
+                    selected={selected}
+                    display={display}
+                    sourceLink={sourceLink}
+                    trackball={<TrackballPanel edit={edit} request={padRequest} />}
+                  />
+                </div>
+              ) : editing && !edit.session ? (
+                <SessionState edit={edit} />
+              ) : pickerContext && (comboPick !== null || comboChange !== null) ? (
+                <ComboPanel
+                  edit={edit}
+                  context={pickerContext}
+                  picked={comboPick ?? undefined}
+                  change={comboChange ?? undefined}
+                  onDone={() => {
+                    setComboPick(null);
+                    setComboChange(null);
+                  }}
+                />
+              ) : pickerContext && canEdit && keyIndex !== null ? (
+                <KeyPicker
+                  context={pickerContext}
+                  keyId={`${shown}:${keyIndex}`}
+                  keycode={view.layers[shown]?.keys[keyIndex] ?? 'KC_NO'}
+                  title={t('edit.keyTitle', { layer: layerName(view, shown, lang), n: keyIndex + 1 })}
+                  problem={assignProblem}
+                  pressShortcut
+                  listenRequest={listen}
+                  focusRequest={pickerFocus}
+                  onAssign={assign}
+                />
+              ) : pickerContext && canEdit && selected === null ? (
+                <EditPanel
+                  edit={edit}
+                  context={pickerContext}
+                  layer={shown}
+                  sharedBy={sharedBy}
+                  onAddCombo={startCombo}
+                  onChangeCombo={(name) => {
+                    setSelected(null);
+                    setComboChange(name);
+                  }}
+                  onRemoveLayer={() => setRemovingLayer(true)}
+                />
+              ) : (
+                <Details
+                  view={view}
+                  drawn={drawn}
+                  all={tab === 'all' ? all : null}
+                  layer={shown}
+                  selected={selected}
+                  display={display}
+                  sourceLink={sourceLink}
+                  trackball={<TrackballPanel edit={edit} request={padRequest} />}
+                />
+              )}
             </aside>
           </div>
         </>
       )}
 
+      {removingLayer && view && (
+        <ConfirmDialog
+          title={t('edit.removeLayer', { n: view.layers.length - 1 })}
+          body={
+            leading.length > 0
+              ? t('edit.removeLayerRefs', { n: view.layers.length - 1, keys: leading.join(', ') })
+              : t('edit.removeLayerPlain', { n: view.layers.length - 1 })
+          }
+          confirm={t('edit.removeLayer', { n: view.layers.length - 1 })}
+          cancel={t('edit.cancel')}
+          onConfirm={() => {
+            setRemovingLayer(false);
+            edit.edit({ type: 'layerRemove' });
+          }}
+          onCancel={() => setRemovingLayer(false)}
+        />
+      )}
       {leaving && (
         <LeaveDialog
           onKeep={() => setLeaving(null)}
@@ -524,7 +885,16 @@ function useTrackballCommands(edit: EditSession, showBall: () => void, startPad:
   });
 }
 
-function LayerTab({ view, n, current, onPick }: { view: ViewFile; n: number; current: boolean; onPick: () => void }) {
+interface LayerTabProps {
+  view: ViewFile;
+  n: number;
+  current: boolean;
+  /** While a combo's keys are picked, the base layer stays shown. */
+  disabled: boolean;
+  onPick: () => void;
+}
+
+function LayerTab({ view, n, current, disabled, onPick }: LayerTabProps) {
   const { lang } = useI18n();
   const name = layerName(view, n, lang);
   const shortcut = n < 10 ? String(n) : undefined;
@@ -536,6 +906,7 @@ function LayerTab({ view, n, current, onPick }: { view: ViewFile; n: number; cur
     group: 'group.keymap',
     page: true,
     shortcut,
+    unavailable: disabled ? msg('why.pickingCombo') : undefined,
     run: onPick,
   });
   return (
@@ -546,6 +917,7 @@ function LayerTab({ view, n, current, onPick }: { view: ViewFile; n: number; cur
       aria-selected={current}
       aria-controls="keymap-panel"
       tabIndex={current ? 0 : -1}
+      disabled={disabled && !current}
       onClick={onPick}
       aria-keyshortcuts={shortcut}
     >

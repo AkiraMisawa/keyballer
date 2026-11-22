@@ -13,8 +13,10 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import type { Localized } from '../i18n/core';
+import { useI18n } from '../i18n/react';
 import { CommandLine } from './CommandLine';
-import { chordOf, isLineChord, isTyping, shouldHandle } from './keys';
+import { chordOf, isLineChord, isTyping, shortcutKeys, shouldHandle } from './keys';
 import { execute, type Command } from './model';
 import { ShortcutHelp } from './ShortcutHelp';
 import { recordUse } from './usage';
@@ -58,6 +60,24 @@ export function CommandProvider({ children }: { children: ReactNode }) {
   const openLine = useCallback(() => setLineOpen(true), []);
   const openHelp = useCallback(() => setHelpOpen(true), []);
 
+  /** Why the last shortcut could not run (DESIGN.md §8: asking says why and changes nothing). */
+  const [refusal, setRefusal] = useState<Localized | null>(null);
+  const ran = (command: Command) => {
+    const reason = execute(command, {});
+    setRefusal(reason ?? null);
+    if (reason === undefined) recordUse(command.id);
+  };
+  useEffect(() => {
+    if (!refusal) return;
+    const clear = () => setRefusal(null);
+    const timer = setTimeout(clear, 5000);
+    window.addEventListener('pointerdown', clear);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('pointerdown', clear);
+    };
+  }, [refusal]);
+
   useEffect(() => {
     // The command line and the ? list, or a screen's own modal dialog (dialog.modal), in front.
     const inModal = () => modalOpen.current || document.querySelector('dialog.modal[open]') !== null;
@@ -74,7 +94,7 @@ export function CommandProvider({ children }: { children: ReactNode }) {
         // The browser's own use of the chord (Save page) never happens on a screen that has it.
         e.preventDefault();
         if (inModal() || isTyping(e.target)) return;
-        if (execute(match, {}) === undefined) recordUse(match.id);
+        ran(match);
         return;
       }
       if (!shouldHandle(e, isTyping(e.target), inModal())) return;
@@ -88,10 +108,10 @@ export function CommandProvider({ children }: { children: ReactNode }) {
         setHelpOpen(true);
         return;
       }
-      const match = [...list.current].reverse().find((c) => c.shortcut === e.key);
+      const match = [...list.current].reverse().find((c) => shortcutKeys(c.shortcut).includes(e.key));
       if (!match) return;
       e.preventDefault();
-      if (execute(match, {}) === undefined) recordUse(match.id);
+      ran(match);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -105,7 +125,18 @@ export function CommandProvider({ children }: { children: ReactNode }) {
       {children}
       <CommandLine open={lineOpen} commands={commands} onClose={() => setLineOpen(false)} />
       <ShortcutHelp open={helpOpen} commands={commands} onClose={() => setHelpOpen(false)} />
+      <Refusal reason={refusal} />
     </Ctx.Provider>
+  );
+}
+
+/** A shortcut's reason for not running, announced politely at the foot of the window. */
+function Refusal({ reason }: { reason: Localized | null }) {
+  const { show } = useI18n();
+  return (
+    <p className="shortcut-refusal" role="status" hidden={!reason}>
+      {reason ? show(reason) : ''}
+    </p>
   );
 }
 

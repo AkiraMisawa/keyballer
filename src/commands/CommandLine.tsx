@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { translate, type Localized } from '../i18n/core';
 import { useI18n } from '../i18n/react';
-import { Kbd, keyLabel } from './keys';
+import { Kbd, keyLabel, shortcutKeys } from './keys';
 import {
   completionsOf,
   examples,
@@ -200,7 +200,9 @@ export function CommandLine({ open, commands, onClose }: Props) {
             {show(item.title)}
             {item.unavailable && <span className="note">{show(item.unavailable)}</span>}
           </span>
-          {item.shortcut && <Kbd>{keyLabel(item.shortcut)}</Kbd>}
+          {shortcutKeys(item.shortcut).map((k) => (
+            <Kbd key={k}>{keyLabel(k)}</Kbd>
+          ))}
         </>
       ) : (
         <>

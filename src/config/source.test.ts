@@ -3,7 +3,7 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { readDefine, setBallMm, setDefine } from './source';
+import { readDefine, setBallMm, setDefine, setRule } from './source';
 
 const fixture = (name: string) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
 const configH = fixture('am338.config.h');
@@ -80,3 +80,11 @@ describe('keyballer.json ball size', () => {
   });
 });
 
+describe('rules.mk', () => {
+  it('changes a rule in place, or adds it at the end', () => {
+    const rules = 'OLED_ENABLE = yes\nCOMBO_ENABLE = no\n';
+    expect(setRule(rules, 'COMBO_ENABLE', 'yes')).toBe('OLED_ENABLE = yes\nCOMBO_ENABLE = yes\n');
+    expect(setRule('OLED_ENABLE = yes\n', 'COMBO_ENABLE', 'yes')).toBe('OLED_ENABLE = yes\nCOMBO_ENABLE = yes\n');
+    expect(setRule(rules, 'OLED_ENABLE', 'yes')).toBe(rules);
+  });
+});

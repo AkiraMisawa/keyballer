@@ -138,6 +138,22 @@ describe('finish', () => {
     if (r.kind !== 'arguments') throw new Error('expected arguments');
     expect(finish(r)).toEqual({ args: { repo: 'a/b' } });
   });
+
+  it('lets a last value marked rest take the rest of the line, spaces included', () => {
+    const rename = cmd('layer rename', { args: [{ name: 'name', required: true, rest: true }] });
+    const save = cmd('save', { args: [{ name: 'message', required: false, rest: true }] });
+    const done = (line: string) => {
+      const r = readLine(line, [rename, save]);
+      if (r.kind !== 'arguments') throw new Error('expected arguments');
+      return finish(r);
+    };
+    expect(done('layer rename Mouse keys')).toEqual({ args: { name: 'Mouse keys' } });
+    expect(done('layer rename Mouse keys ')).toEqual({ args: { name: 'Mouse keys' } });
+    expect(done('save message=Fix the comma combo')).toEqual({ args: { message: 'Fix the comma combo' } });
+    expect(done('save Fix the comma combo')).toEqual({ args: { message: 'Fix the comma combo' } });
+    expect(done('save ')).toEqual({ args: {} });
+    expect(signature(save)).toBe('[message]');
+  });
 });
 
 describe('execute', () => {

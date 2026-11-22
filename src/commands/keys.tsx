@@ -57,6 +57,10 @@ export function chordLabel(chord: string, mac = isMac()): string {
 /** The chord that opens the command line, as printed for this computer. */
 export const lineChord = () => (isMac() ? '⌘K' : 'Ctrl+K');
 
+/** A command's single-key shortcuts as a list. */
+export const shortcutKeys = (shortcut: string | readonly string[] | undefined): readonly string[] =>
+  shortcut === undefined ? [] : typeof shortcut === 'string' ? [shortcut] : shortcut;
+
 /** A key as printed on keycaps: Esc, not Escape; P, not p. */
 const ARROWS: Record<string, string> = { ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓' };
 

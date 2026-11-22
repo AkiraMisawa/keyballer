@@ -25,6 +25,14 @@ export function setDefine(text: string, name: string, value: string): string {
   return `${text}${ending}#define ${name} ${value}\n`;
 }
 
+/** Sets `NAME = value` in a rules.mk: in place when set, else at the end. */
+export function setRule(text: string, name: string, value: string): string {
+  const line = new RegExp(`^([ \\t]*${escape(name)}[ \\t]*=[ \\t]*)(.*?)([ \\t]*(?:#.*)?)$`, 'm');
+  if (line.test(text)) return text.replace(line, (_all, head, _old, tail) => `${head}${value}${tail}`);
+  const ending = text === '' || text.endsWith('\n') ? '' : '\n';
+  return `${text}${ending}${name} = ${value}\n`;
+}
+
 /**
  * The text span of each object in keyballer.json's "builds" array. Found by scanning the text,
  * because writing the parsed file back would reorder keys (JSON.stringify puts number-like keys

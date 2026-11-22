@@ -24,17 +24,25 @@ interface BarProps {
   runFor: (sha: string) => WorkflowRun | undefined;
   /** After a save: watch for the build it started. */
   onSaved: (sha: string) => void;
+  /** How the review names keys and layers: a keycode's legend, a layer's name. */
+  describe?: { legend: (keycode: string) => string; layer: (n: number) => string };
 }
 
 const ariaChord = (chord: string) =>
   (isMac() ? 'Meta+' : 'Control+') + (chord.startsWith('shift+') ? `Shift+${chord.slice(6).toUpperCase()}` : chord.toUpperCase());
 
-export function EditBar({ edit, repoName, token, onToken, runFor, onSaved }: BarProps) {
+export function EditBar({ edit, repoName, token, onToken, runFor, onSaved, describe }: BarProps) {
   const { t } = useI18n();
   const [reviewing, setReviewing] = useState(false);
+  /** A commit message typed with `save <message>`, for the review to start from. */
+  const [draft, setDraft] = useState<string | undefined>(undefined);
+  const review = (message?: string) => {
+    setDraft(message?.trim() || undefined);
+    setReviewing(true);
+  };
   const [discarding, setDiscarding] = useState(false);
   const savedLink = useRef<HTMLAnchorElement>(null);
-  const count = edit.pending?.changes.length ?? 0;
+  const count = edit.pending ? edit.pending.changes.length + edit.pending.keys.length + edit.pending.combos.length + edit.pending.layers.length : 0;
   const noChanges: Localized | undefined = edit.dirty ? undefined : msg('why.noChanges');
 
   useCommand({
@@ -65,7 +73,18 @@ export function EditBar({ edit, repoName, token, onToken, runFor, onSaved }: Bar
     page: true,
     chords: ['s'],
     unavailable: noChanges,
-    run: () => setReviewing(true),
+    run: () => review(),
+  });
+  // Saving always goes through the review, so `save` opens it with the message filled in.
+  useCommand({
+    id: 'edit.save',
+    words: 'save',
+    title: msg('cmd.save'),
+    group: 'group.edit',
+    page: true,
+    unavailable: noChanges,
+    args: [{ name: 'message', required: false, rest: true, hint: msg('cmd.save.hint') }],
+    run: ({ message }) => review(message),
   });
   useCommand({
     id: 'edit.discard',
@@ -116,6 +135,8 @@ export function EditBar({ edit, repoName, token, onToken, runFor, onSaved }: Bar
           repoName={repoName}
           token={token}
           onToken={onToken}
+          describe={describe ?? { legend: (k) => k, layer: (n) => String(n) }}
+          draft={draft}
           onClose={() => setReviewing(false)}
           onSaved={(sha) => {
             setReviewing(false);
@@ -159,7 +180,7 @@ export function EditBar({ edit, repoName, token, onToken, runFor, onSaved }: Bar
           <button type="button" className="ghost" onClick={() => setDiscarding(true)}>
             {t('edit.discard')}
           </button>
-          <button type="button" className="primary" onClick={() => setReviewing(true)} aria-keyshortcuts={ariaChord('s')}>
+          <button type="button" className="primary" onClick={() => review()} aria-keyshortcuts={ariaChord('s')}>
             {t('edit.review')}
             <Kbd>{chordLabel('s')}</Kbd>
           </button>
@@ -230,15 +251,18 @@ const TOKEN_ERRORS = new Set<MessageKey>(['save.err.readOnly', 'save.err.noToken
 interface ReviewProps {
   edit: EditSession;
   repoName: string;
+  describe: NonNullable<BarProps['describe']>;
   token: string;
   onToken: (token: string) => void;
+  /** The commit message to start from, instead of the drafted one. */
+  draft?: string;
   onClose: () => void;
   onSaved: (sha: string) => void;
 }
 
-function ReviewDialog({ edit, repoName, token, onToken, onClose, onSaved }: ReviewProps) {
+function ReviewDialog({ edit, repoName, describe, token, onToken, draft, onClose, onSaved }: ReviewProps) {
   const { t, err } = useI18n();
-  const [message, setMessage] = useState(edit.pending?.message ?? '');
+  const [message, setMessage] = useState(draft ?? edit.pending?.message ?? '');
   const [error, setError] = useState<unknown>(null);
   const pending = edit.pending;
   // While saving, the dialog stays: closing it could hide the result.
@@ -272,14 +296,54 @@ function ReviewDialog({ edit, repoName, token, onToken, onClose, onSaved }: Revi
         <p className="note">{t('review.where', { branch: BRANCH, repo: repoName })}</p>
 
         <h3>{t('review.changes')}</h3>
-        <dl className="facts">
-          {pending.changes.map((c) => (
-            <Fragment key={c.setting}>
-              <dt>{t(SETTING_LABEL[c.setting])}</dt>
-              <dd>{t('review.change', { from: value(c, c.from), to: value(c, c.to) })}</dd>
-            </Fragment>
-          ))}
-        </dl>
+        {pending.changes.length > 0 && (
+          <dl className="facts">
+            {pending.changes.map((c) => (
+              <Fragment key={c.setting}>
+                <dt>{t(SETTING_LABEL[c.setting])}</dt>
+                <dd>{t('review.change', { from: value(c, c.from), to: value(c, c.to) })}</dd>
+              </Fragment>
+            ))}
+          </dl>
+        )}
+        {pending.keys.length > 0 && (
+          <ul className="review-list">
+            {pending.keys.map((k) => (
+              <li key={`${k.layer}:${k.index}`}>
+                {t('review.key', {
+                  layer: describe.layer(k.layer),
+                  n: k.index + 1,
+                  from: describe.legend(k.from),
+                  to: describe.legend(k.to),
+                })}
+              </li>
+            ))}
+          </ul>
+        )}
+        {(pending.combos.length > 0 || pending.layers.length > 0) && (
+          <ul className="review-list">
+            {pending.combos.map((c, i) => {
+              const keys = c.keys.map(describe.legend).join(' + ');
+              const output = describe.legend(c.output);
+              return (
+                <li key={`combo:${i}`}>
+                  {c.change === 'changed'
+                    ? t('review.comboChanged', { keys, output, was: describe.legend(c.was) })
+                    : t(c.change === 'added' ? 'review.comboAdded' : 'review.comboRemoved', { keys, output })}
+                </li>
+              );
+            })}
+            {pending.layers.map((l, i) => (
+              <li key={`layer:${i}`}>
+                {l.change === 'renamed'
+                  ? t('review.layerRenamed', { n: l.layer, name: l.name })
+                  : l.change === 'ball'
+                    ? t('review.layerBall', { layer: describe.layer(l.layer), mode: t(l.mode === 'scroll' ? 'legend.scroll' : 'legend.cursor') })
+                    : t(l.change === 'added' ? 'review.layerAdded' : 'review.layerRemoved', { n: l.layer })}
+              </li>
+            ))}
+          </ul>
+        )}
 
         <h3>{t('review.files')}</h3>
         {pending.files.map((f) => (
@@ -374,6 +438,22 @@ export function ConfirmDialog({ title, body, confirm, cancel, onConfirm, onCance
 }
 
 /** Asks before leaving with unsaved changes. */
+/** While the settings are read from the repository, or when they could not be: what to show instead. */
+export function SessionState({ edit }: { edit: EditSession }) {
+  const { t, err } = useI18n();
+  if (edit.state.status === 'idle' || edit.state.status === 'loading') return <p className="note">{t('edit.loading')}</p>;
+  if (edit.state.status !== 'failed') return null;
+  return (
+    <div className="stack">
+      <p className="err">{t('edit.failed')}</p>
+      <p className="note">{err(edit.state.error)}</p>
+      <button type="button" onClick={() => edit.reload()}>
+        {t('edit.retry')}
+      </button>
+    </div>
+  );
+}
+
 export function LeaveDialog({ onDiscard, onKeep }: { onDiscard: () => void; onKeep: () => void }) {
   const { t } = useI18n();
   return (
