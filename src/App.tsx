@@ -40,6 +40,9 @@ interface RepoState {
 }
 
 const POLL_MS = 30_000;
+/** After a save, how often and how long to look for the build it started. */
+const AWAIT_RUN_POLL_MS = 5_000;
+const AWAIT_RUN_MS = 180_000;
 
 /** english / japanese (and en, ja, 英語, 日本語) as a language. */
 function toLang(value: string): Lang | undefined {
@@ -153,32 +156,69 @@ export function App() {
     return () => clearInterval(timer);
   }, [building, refresh]);
 
-  // The keymap screen follows the address, so Back closes it and a link opens it.
+  /**
+   * Asked before leaving or switching the keymap screen: it runs `go` at once, or after asking when
+   * there are unsaved changes. The keymap screen sets it while it is open.
+   */
+  const leaveGuard = useRef<(go: () => void) => void>((go) => go());
+  const shownKeymap = useRef(keymapId);
+  shownKeymap.current = keymapId;
+
+  // The keymap screen follows the address, so Back closes it and a link opens it. Leaving a keymap
+  // with unsaved changes asks first: the address is put back until the person agrees, and then
+  // the history step is taken again (the guard's history.back, which this handler ignores).
+  const skipNextPop = useRef(false);
   useEffect(() => {
     const sync = () => {
-      returnFocus.current = null;
-      setKeymapId(keymapInHash());
+      if (skipNextPop.current) {
+        skipNextPop.current = false;
+        return;
+      }
+      const next = keymapInHash();
+      const now = shownKeymap.current;
+      if (next === now) return;
+      if (now === null) {
+        returnFocus.current = null;
+        setKeymapId(next);
+        return;
+      }
+      history.pushState({ keymap: now }, '', `#keymap-${now}`);
+      leaveGuard.current(() => {
+        skipNextPop.current = true;
+        history.back();
+        returnFocus.current = null;
+        setKeymapId(next);
+      });
     };
     window.addEventListener('popstate', sync);
-    window.addEventListener('hashchange', sync);
-    return () => {
-      window.removeEventListener('popstate', sync);
-      window.removeEventListener('hashchange', sync);
-    };
+    return () => window.removeEventListener('popstate', sync);
   }, []);
 
   const openKeymap = (id: string) => {
-    returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (keymapId !== null && keymapId !== id) {
+      leaveGuard.current(() => showKeymap(id));
+      return;
+    }
+    showKeymap(id);
+  };
+
+  const showKeymap = (id: string) => {
+    if (keymapId === null) {
+      returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    }
     // One history entry for the keymap screen: switching to another keymap replaces it, so Back
     // and Esc both return to the firmware list.
     if (keymapInHash() === null) history.pushState({ keymap: id }, '', `#keymap-${id}`);
     else history.replaceState(history.state, '', `#keymap-${id}`);
+    shownKeymap.current = id;
     setKeymapId(id);
     window.scrollTo({ top: 0 });
   };
 
   const closeKeymap = () => {
     const id = keymapId;
+    // Before history.back(): its popstate must see the keymap already closed.
+    shownKeymap.current = null;
     if ((history.state as { keymap?: string } | null)?.keymap) history.back();
     else history.replaceState(null, '', location.pathname + location.search);
     setKeymapId(null);
@@ -189,6 +229,22 @@ export function App() {
       else document.querySelector<HTMLElement>(`[data-keymap="${id}"]`)?.focus();
     });
   };
+
+  // After saving from the keymap screen, look for the build it started until GitHub lists it.
+  const [awaitingRun, setAwaitingRun] = useState<string | null>(null);
+  const awaitedListed = !!awaitingRun && !!repo?.runs.some((r) => r.head_sha === awaitingRun);
+  useEffect(() => {
+    if (!awaitingRun || awaitedListed) return;
+    const startedAt = Date.now();
+    void refresh();
+    const timer = setInterval(() => {
+      if (Date.now() - startedAt > AWAIT_RUN_MS) setAwaitingRun(null);
+      else void refresh();
+    }, AWAIT_RUN_POLL_MS);
+    return () => clearInterval(timer);
+    // refresh changes with each repository state; the timer only needs to start once per save.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [awaitingRun, awaitedListed]);
 
   const openTarget = (next: FlashTarget) => {
     returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -414,6 +470,15 @@ export function App() {
           token={token}
           buildsUrl={`${repoUrl}/actions/workflows/build.yml`}
           onClose={closeKeymap}
+          onSaved={(sha) => setAwaitingRun(sha)}
+          onToken={(next) => {
+            setToken(next);
+            save('keyballer.token', next);
+          }}
+          runFor={(sha) => repo.runs.find((r) => r.head_sha === sha)}
+          setLeaveGuard={(guard) => {
+            leaveGuard.current = guard;
+          }}
         />
       )}
 

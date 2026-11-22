@@ -14,7 +14,7 @@ import {
   type ReactNode,
 } from 'react';
 import { CommandLine } from './CommandLine';
-import { isLineChord, isTyping, shouldHandle } from './keys';
+import { chordOf, isLineChord, isTyping, shouldHandle } from './keys';
 import { execute, type Command } from './model';
 import { ShortcutHelp } from './ShortcutHelp';
 import { recordUse } from './usage';
@@ -59,13 +59,25 @@ export function CommandProvider({ children }: { children: ReactNode }) {
   const openHelp = useCallback(() => setHelpOpen(true), []);
 
   useEffect(() => {
+    // The command line and the ? list, or a screen's own modal dialog (dialog.modal), in front.
+    const inModal = () => modalOpen.current || document.querySelector('dialog.modal[open]') !== null;
     const onKey = (e: KeyboardEvent) => {
       if (isLineChord(e)) {
         e.preventDefault();
-        if (!modalOpen.current) setLineOpen(true);
+        if (!inModal()) setLineOpen(true);
         return;
       }
-      if (!shouldHandle(e, isTyping(e.target), modalOpen.current)) return;
+      const chord = chordOf(e);
+      if (chord) {
+        const match = [...list.current].reverse().find((c) => c.chords?.includes(chord));
+        if (!match) return;
+        // The browser's own use of the chord (Save page) never happens on a screen that has it.
+        e.preventDefault();
+        if (inModal() || isTyping(e.target)) return;
+        if (execute(match, {}) === undefined) recordUse(match.id);
+        return;
+      }
+      if (!shouldHandle(e, isTyping(e.target), inModal())) return;
       if (e.key === '/') {
         e.preventDefault();
         setLineOpen(true);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isLineChord, keyLabel, shouldHandle } from './keys';
+import { chordLabel, chordOf, isLineChord, keyLabel, shouldHandle } from './keys';
 
 type Flags = 'isComposing' | 'metaKey' | 'ctrlKey' | 'altKey' | 'shiftKey' | 'defaultPrevented';
 
@@ -65,5 +65,23 @@ describe('keyLabel', () => {
     expect(keyLabel('Escape')).toBe('Esc');
     expect(keyLabel('p')).toBe('P');
     expect(keyLabel('/')).toBe('/');
+  });
+});
+
+describe('editing chords', () => {
+  it('reads ⌘ or Ctrl with a key, Shift included, and nothing else', () => {
+    expect(chordOf(key('z', { metaKey: true }))).toBe('z');
+    expect(chordOf(key('Z', { ctrlKey: true, shiftKey: true }))).toBe('shift+z');
+    expect(chordOf(key('s', { metaKey: true }))).toBe('s');
+    expect(chordOf(key('z'))).toBeNull();
+    expect(chordOf(key('z', { metaKey: true, altKey: true }))).toBeNull();
+    expect(chordOf(key('z', { metaKey: true, isComposing: true }))).toBeNull();
+  });
+
+  it('prints a chord the way the computer writes it', () => {
+    expect(chordLabel('z', true)).toBe('⌘Z');
+    expect(chordLabel('shift+z', true)).toBe('⇧⌘Z');
+    expect(chordLabel('shift+z', false)).toBe('Ctrl+Shift+Z');
+    expect(chordLabel('y', false)).toBe('Ctrl+Y');
   });
 });

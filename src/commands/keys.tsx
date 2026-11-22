@@ -37,6 +37,23 @@ export function isMac(): boolean {
   return /mac|iphone|ipad/i.test(platform);
 }
 
+/**
+ * An editing chord (DESIGN.md §8: undo, redo, save): ⌘ or Ctrl with a letter, maybe with Shift,
+ * as "z" or "shift+z"; null for anything else.
+ */
+export function chordOf(e: KeyInfo): string | null {
+  if (!(e.metaKey || e.ctrlKey) || e.altKey || e.isComposing || e.key.length !== 1) return null;
+  const k = e.key.toLowerCase();
+  return e.shiftKey ? `shift+${k}` : k;
+}
+
+/** A chord as printed on this computer: ⇧⌘Z on a Mac, Ctrl+Shift+Z elsewhere. */
+export function chordLabel(chord: string, mac = isMac()): string {
+  const shift = chord.startsWith('shift+');
+  const k = chord.slice(shift ? 6 : 0).toUpperCase();
+  return mac ? `${shift ? '⇧' : ''}⌘${k}` : `Ctrl+${shift ? 'Shift+' : ''}${k}`;
+}
+
 /** The chord that opens the command line, as printed for this computer. */
 export const lineChord = () => (isMac() ? '⌘K' : 'Ctrl+K');
 

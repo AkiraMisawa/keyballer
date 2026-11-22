@@ -39,6 +39,8 @@ export interface Command {
   readonly args?: readonly CommandArgument[];
   /** A single key that runs it when nothing is being typed (`r`, `1`, `Escape`). */
   readonly shortcut?: string;
+  /** Editing chords that run it, ⌘ on Mac and Ctrl elsewhere (`z`, `shift+z`): undo, redo, save only (DESIGN.md §8). */
+  readonly chords?: readonly string[];
   /** Why it cannot run now; absent when it can. */
   readonly unavailable?: Localized;
   /**
