@@ -19,6 +19,9 @@ export interface FirmwareBuild {
   view?: string;
   /** Why the build could not write the keymap view. */
   view_error?: string;
+  /** SHA-256 of the firmware file and of the view, written by the build. */
+  sha256?: string;
+  view_sha256?: string;
 }
 
 export interface FirmwareManifest {
@@ -48,7 +51,8 @@ export function parseManifest(value: unknown): FirmwareManifest {
   }
   for (const b of m.builds as Partial<FirmwareBuild>[]) {
     const plain = typeof b?.file === 'string' && isPlainPath(b.file) && (b.view === undefined || (typeof b.view === 'string' && isPlainPath(b.view)));
-    if (!plain) throw new LocalizedError('manifest.err.format');
+    const digests = [b?.sha256, b?.view_sha256].every((d) => d === undefined || (typeof d === 'string' && /^[0-9a-f]{64}$/.test(d)));
+    if (!plain || !digests) throw new LocalizedError('manifest.err.format');
   }
   return m as FirmwareManifest;
 }

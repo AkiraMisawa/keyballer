@@ -6,9 +6,14 @@ usage: make_manifest.py OUT_DIR IDS_JSON
 OUT_DIR holds the <id>.json files written by build_qmk.py. IDS_JSON is the
 build order from keyballer.json (the output of `build_qmk.py --list`).
 Repository and run details come from the GitHub Actions environment.
+Each build gets the SHA-256 of its firmware file (`sha256`) and of its keymap
+view (`view_sha256`). The publish job keeps an artifact named after the
+manifest's own SHA-256 with the run, so the app can check the bytes it
+flashes against a run of this workflow (src/lib/provenance.ts).
 Also appends a summary table to $GITHUB_STEP_SUMMARY when it is set.
 """
 
+import hashlib
 import json
 import os
 import sys
@@ -29,7 +34,17 @@ def main():
         if not meta_path.exists():
             print("missing build output for {}".format(build_id), file=sys.stderr)
             return 1
-        builds.append(json.loads(meta_path.read_text(encoding="utf-8")))
+        build = json.loads(meta_path.read_text(encoding="utf-8"))
+        for field, digest_field in (("file", "sha256"), ("view", "view_sha256")):
+            name = build.get(field)
+            if not name:
+                continue
+            path = out_dir / name
+            if not path.is_file():
+                print("missing {} {} for {}".format(field, name, build_id), file=sys.stderr)
+                return 1
+            build[digest_field] = hashlib.sha256(path.read_bytes()).hexdigest()
+        builds.append(build)
 
     repo = os.environ.get("GITHUB_REPOSITORY", "")
     run_id = os.environ.get("GITHUB_RUN_ID", "0")

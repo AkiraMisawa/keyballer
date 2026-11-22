@@ -4,7 +4,7 @@
 import { LocalizedError } from '../i18n/core';
 import type { MessageKey } from '../i18n/messages';
 import { isCommitSha, isPlainPath, parseManifest, type FirmwareManifest } from './manifest';
-import type { CheckRun } from './provenance';
+import type { ProvenanceRun, RunArtifact } from './provenance';
 
 export interface RepoRef {
   owner: string;
@@ -174,57 +174,53 @@ export async function getDefaultBranch(r: RepoRef, token: string): Promise<strin
   return body.default_branch;
 }
 
-/** Check runs with this name on a commit (all of them, not only the latest). */
-export async function getCheckRuns(r: RepoRef, sha: string, name: string, token: string): Promise<CheckRun[]> {
-  if (!isCommitSha(sha)) throw new LocalizedError('manifest.err.format');
+/**
+ * How `head` relates to `base` (both full SHAs): the compare API's `status` (`identical`, `behind`
+ * when head is an ancestor of base, `ahead`, `diverged`) and how many commits apart. SHAs, not
+ * branch names, so a tag named like the branch cannot stand in for it.
+ */
+export async function compareCommits(r: RepoRef, base: string, head: string, token: string): Promise<{ status: string; behindBy: number; aheadBy: number; url: string }> {
+  if (!isCommitSha(base) || !isCommitSha(head)) throw new LocalizedError('manifest.err.format');
+  const res = await request(`${repoPath(r)}/compare/${base}...${head}`, token, 'application/vnd.github+json');
+  const body = (await res.json()) as { status: string; behind_by: number; ahead_by: number; html_url: string };
+  return { status: body.status, behindBy: body.behind_by, aheadBy: body.ahead_by, url: body.html_url };
+}
+
+/** A workflow run of the connected repository, as provenance reads it. */
+export async function getProvenanceRun(r: RepoRef, runId: number, token: string): Promise<ProvenanceRun> {
+  if (!Number.isSafeInteger(runId) || runId <= 0) throw new LocalizedError('manifest.err.format');
+  const res = await request(`${repoPath(r)}/actions/runs/${runId}`, token, 'application/vnd.github+json');
+  return (await res.json()) as ProvenanceRun;
+}
+
+/** The run's artifacts with exactly this name. */
+export async function getRunArtifacts(r: RepoRef, runId: number, name: string, token: string): Promise<RunArtifact[]> {
+  if (!Number.isSafeInteger(runId) || runId <= 0) throw new LocalizedError('manifest.err.format');
   const res = await request(
-    `${repoPath(r)}/commits/${sha}/check-runs?check_name=${encodeURIComponent(name)}&filter=all&per_page=100`,
+    `${repoPath(r)}/actions/runs/${runId}/artifacts?name=${encodeURIComponent(name)}&per_page=100`,
     token,
     'application/vnd.github+json',
   );
-  const body = (await res.json()) as { check_runs: CheckRun[] };
-  return body.check_runs;
+  const body = (await res.json()) as { artifacts: RunArtifact[] };
+  return body.artifacts;
 }
 
-/** Whether a commit is on a branch: the branch is the commit or comes after it. */
-export async function isOnBranch(r: RepoRef, branch: string, sha: string, token: string): Promise<boolean> {
-  if (!isCommitSha(sha)) throw new LocalizedError('manifest.err.format');
-  const res = await request(
-    `${repoPath(r)}/compare/${encodeURIComponent(branch)}...${sha}`,
-    token,
-    'application/vnd.github+json',
-  );
-  const body = (await res.json()) as { status: string };
-  return body.status === 'identical' || body.status === 'behind';
-}
-
-/** Who made a commit, when, and what it says. */
+/**
+ * What a commit says. All of it is written by whoever made the commit (name, date, message), so it
+ * helps a person recognise a change but proves nothing about who made it.
+ */
 export interface CommitInfo {
   sha: string;
   url: string;
   message: string;
-  authorName: string;
-  authorLogin: string | null;
   date: string;
 }
 
 export async function getCommitInfo(r: RepoRef, sha: string, token: string): Promise<CommitInfo> {
   if (!isCommitSha(sha)) throw new LocalizedError('manifest.err.format');
   const res = await request(`${repoPath(r)}/commits/${sha}`, token, 'application/vnd.github+json');
-  const body = (await res.json()) as {
-    sha: string;
-    html_url: string;
-    author: { login: string } | null;
-    commit: { message: string; author: { name: string; date: string } };
-  };
-  return {
-    sha: body.sha,
-    url: body.html_url,
-    message: body.commit.message,
-    authorName: body.commit.author.name,
-    authorLogin: body.author?.login ?? null,
-    date: body.commit.author.date,
-  };
+  const body = (await res.json()) as { sha: string; html_url: string; commit: { message: string; author: { date: string } } };
+  return { sha: body.sha, url: body.html_url, message: body.commit.message, date: body.commit.author.date };
 }
 
 /** A file's text at a commit, or null when the file is not there. */
