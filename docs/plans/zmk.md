@@ -56,7 +56,9 @@ The same model as QMK: Keyballer's own reusable workflow builds the firmware, pu
   - Otherwise the editor says why: the keymap changed after the build, or it is written with macros that Keyballer cannot follow.
   - After a save, the edited keymap is the starting point until the next build.
 - **Writing a key.**
-  - **Text already in the file.** A key takes its exact text from the file when the same key is somewhere in it. This keeps the owner's spelling (`&kp LEFT_ALT`, `&kp N7`), and lets custom behaviours and macros be copied.
+  - **Text already in the file.** A key takes its exact text from the file when a binding there means the same, read through `keys.h` (`src/keymap/zmk-keys.json`). This keeps the owner's spelling (`&kp LEFT_ALT`, `&kp N7`).
+    - Which key a binding stands for comes from the build's view. So the view decides only for keys the table cannot write, such as custom behaviours and macros, which can then be copied.
+    - For any other key, a view that names a binding wrongly can never change what is written. The security review showed a view naming the `&bootloader` key "Esc".
   - **The name table.** Otherwise Keyballer writes it from a table of ZMK names:
     - `&kp` with ZMK's names: `LS(…)` and so on for modifiers, and `EXCL` and friends for shifted symbols;
     - `&mt` for a mod-tap that holds one modifier, and `&lt` for a layer-tap;
@@ -79,6 +81,14 @@ The same model as QMK: Keyballer's own reusable workflow builds the firmware, pu
   - **The build.** The file was built on a side branch of the owner's fork, which publishes nothing. ZMK built it.
   - **The result.** The build's view recorded the edited file's SHA-256 and matched the editor's view. Every layer, name and combo was the same, and so was every key except three, which were the same key spelled two ways (`KC_EXLM` and `LSFT(KC_1)`).
 - **ZMK Studio.** For builds with Studio on, the review warns that changes made in ZMK Studio win: once a keymap has been changed there, ".keymap" edits apply only after "Restore Stock Settings" in ZMK Studio ([zmk.dev/docs/features/studio](https://zmk.dev/docs/features/studio)).
+- **What the reader refuses**, because it and ZMK's compiler could read it differently:
+  - conditional directives;
+  - `/delete-node/` and `/delete-property/`;
+  - two properties or nodes of one name;
+  - a keymap or combos node written in two places, or changed through its label;
+  - a `compatible` written with a macro.
+
+  Such a keymap is shown, but not edited. A change that would leave the file unreadable is not made.
 - **Not yet:**
   - combos limited to other layers, which stay as they are;
   - sensor bindings;
