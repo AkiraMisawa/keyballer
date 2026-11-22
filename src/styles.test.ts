@@ -36,6 +36,7 @@ const PAIRS: [string, string, number][] = [
     ['muted', bg, 4.5],
   ]),
   ['ink-text', 'ink', 4.5],
+  ['ball-text', 'ball', 4.5],
   ['ok', 'ok-soft', 4.5],
   ['busy', 'busy-soft', 4.5],
   ['err', 'err-soft', 4.5],

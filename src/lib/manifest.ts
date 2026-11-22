@@ -15,6 +15,10 @@ export interface FirmwareBuild {
   processor: string | null;
   bootloader: string | null;
   split: boolean;
+  /** The keymap view file next to the firmware, when the build could write one. */
+  view?: string;
+  /** Why the build could not write the keymap view. */
+  view_error?: string;
 }
 
 export interface FirmwareManifest {

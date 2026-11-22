@@ -30,6 +30,7 @@ The reasoning and sources are in [docs/research/keymap-editor-design.md](docs/re
 | `--muted` | `#56616a` | `#a9b3bb` | Secondary text |
 | `--ink` / `--ink-text` | `#1c2228` / `#ffffff` | `#e8ebee` / `#24282c` | Primary buttons, progress, held keys |
 | `--ball` | `#c63d2a` | `#e8705a` | The trackball, the selected key, the logo mark |
+| `--ball-text` | `#ffffff` | `#24282c` | Text on the trackball (its mode: Cursor, Scroll) |
 | `--focus` | `#2463c9` | `#7fa8ff` | Focus rings |
 | `--ok` / `--ok-soft` | `#1a6e40` / `#dcf0e3` | `#7fd8a2` / `#1f3a2a` | Success |
 | `--busy` / `--busy-soft` | `#7d5200` / `#f8ecd2` | `#f0bf6a` / `#3d3119` | In progress, unsaved |
@@ -50,6 +51,7 @@ The reasoning and sources are in [docs/research/keymap-editor-design.md](docs/re
 | --- | --- |
 | `--text`, `--muted` on `--bg`, `--surface`, `--cap`, `--sunken` | 4.5:1 |
 | `--ink-text` on `--ink` | 4.5:1 |
+| `--ball-text` on `--ball` | 4.5:1 |
 | `--ok` / `--busy` / `--err` on their soft colour; `--err` on `--bg` and `--surface` | 4.5:1 |
 | `--edge`, `--ball`, `--focus` on `--bg`, `--surface` (and `--cap` for `--edge` and `--ball`) | 3:1 |
 
@@ -76,7 +78,8 @@ The keycap is the core component and is drawn the same way everywhere.
 
 - **Geometry** comes from the board's VIA definition (KLE: stagger, rotated thumb keys, ball position) or the ZMK physical layout. Never draw from QMK `info.json`, which is often a plain grid.
 - **Legends** follow [keymap-drawer](https://github.com/caksoylar/keymap-drawer): the tap action in the centre, the hold action at the bottom, the shifted character at the top, and a layer target shown by the layer's name.
-- **Raw keycode strings** such as `LT(1,KC_A)` never appear on a keycap. Show "A" with "Sym" as the hold action instead.
+- **Raw keycode strings** such as `LT(1,KC_A)` never appear on a keycap. Show "A" with "Sym" as the hold action instead. A keycode Keyballer does not know yet shows its name alone, without arguments, in small monospace in `--muted`, so nothing is hidden; add it to the keycode table when it comes up.
+- **Modifiers** are written the way each OS prints them: symbols on Mac (⌘ ⌥ ⌃ ⇧, in Apple's order), names on Windows (Win, Ctrl, Alt, Shift, joined by "+").
 
 | State | Look |
 | --- | --- |
@@ -91,7 +94,7 @@ The keycap is the core component and is drawn the same way everywhere.
 | Combo | A line joins the trigger keys, with the output as a small chip between them |
 
 - Legend text shrinks in three steps to fit. It is never cut off silently; long names use the abbreviations from the keycode table.
-- The JIS/US and Mac/Windows display switch changes legends only, and the screen says so.
+- The Mac/Windows and US/JIS/UK display switches change legends only, and the screen says so.
 
 ## 6. Trackball
 
@@ -128,12 +131,26 @@ The keycap is the core component and is drawn the same way everywhere.
 | `/`, ⌘K / Ctrl+K | Open the command line |
 | `R` | Refresh the build status |
 | `1`–`9` | Flash the nth firmware |
+| `V` | View the first firmware's keymap |
 | `O` | Flash a hex file from your computer |
 | `P` | Choose the port (while waiting for the reset) |
 | `Esc` | Close the panel or go back a step |
 | `?` | Show the shortcuts |
 
-Commands on the flow pages: `connect <repo>`, `repo` (go to the repository field), `refresh`, `open repo`, `open build`, `flash <id>`, `flash file`, `start`, `port`, `close`, `language <english|japanese>`, `shortcuts`.
+Commands on the flow pages: `connect <repo>`, `repo` (go to the repository field), `refresh`, `open repo`, `open build`, `flash <id>`, `flash file`, `keymap <id>`, `start`, `port`, `close`, `language <english|japanese>`, `shortcuts`.
+
+### Keymap view (now)
+
+| Key | Action |
+| --- | --- |
+| `←` `↑` `→` `↓` | Select the nearest key in that direction on the drawing, following the stagger and the thumb rotation |
+| `[` / `]` | Previous / next layer |
+| `0`–`9` | Go to layer n |
+| `A` | Show all layers side by side |
+| `B` | Select the trackball |
+| `Esc` | Clear the selection, then close the keymap |
+
+Commands: `keymap <id>`, `layer <n>` (or `layer <name>`, found by its title), `layer next`, `layer previous`, `layers all`, `ball`, `select left|right|up|down`, `display mac|windows|us|jis|uk`, `close keymap`.
 
 ### Keymap editor (planned)
 
@@ -163,7 +180,7 @@ Inside the key picker, typing searches, `↑` `↓` move through the results, `T
 
 ## 10. Words
 
-- All text is in [src/i18n/messages.ts](src/i18n/messages.ts). English is the source, and Japanese must use the same placeholders.
+- All text is in [src/i18n/messages.ts](src/i18n/messages.ts). English is the source, and Japanese must use the same placeholders. Key names that read the same in every language (Esc, Tab, 英数) are data in the keycode table, [src/keymap/keycodes.ts](src/keymap/keycodes.ts); keycap words that change with the language (L click, Scroll) are messages.
 - Buttons say what happens ("Flash", "Choose port"). Results confirm it ("Flashed.").
 - Errors say what went wrong and what to do next. No apologies and no blame.
 - No exclamation marks, emoji, "Let's", "Oops", or marketing words ("seamless", "effortless", "powerful").
@@ -173,7 +190,7 @@ Inside the key picker, typing searches, `↑` `↓` move through the results, `T
 ## 11. Accessibility
 
 - Target WCAG 2.2 AA.
-- Everything works from the keyboard. The board follows the WAI-ARIA layout grid pattern with a roving tabindex. Layer tabs follow the tabs pattern. Key search follows the combobox and listbox patterns.
+- Everything works from the keyboard. The board is one tab stop with a roving tabindex: the arrow keys move to the nearest key on the drawing, and each key is a toggle button that says its legends. A staggered, rotated board has no true rows and columns, so it does not use the grid pattern. Layer tabs follow the tabs pattern. Key search follows the combobox and listbox patterns.
 - Focus is a 2px `--focus` ring with a 2px offset, and it is always visible.
 - Flashing progress and build status are announced (`role="progressbar"`, `role="alert"` for failures).
 - `<html lang>` follows the chosen language. Text in the other language (the language switch) carries its own `lang`.
