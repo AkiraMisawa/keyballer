@@ -3,6 +3,7 @@ input to the workflow (docs/plans/zmk.md), and reading a build's role from Zephy
 
 import copy
 import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -235,55 +236,87 @@ class Role(unittest.TestCase):
 
 class KeymapSource(unittest.TestCase):
     """Which .keymap file ZMK built from (KEYMAP_FILE in CMakeCache.txt), for the editor: its path in
-    the config repository and its SHA-256, or None when the file is not the repository's."""
+    the config repository and its SHA-256, or None when the file is not plainly the repository's."""
 
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
         self.repo = self.root / "repo"
-        self.ws = self.root / "ws"
-        self.config = self.ws / "config"
+        (self.repo / "config").mkdir(parents=True)
         (self.repo / "boards" / "shields" / "x").mkdir(parents=True)
-        self.config.mkdir(parents=True)
-        (self.config / "roBa.keymap").write_bytes(b"/ { keymap { }; };\n")
+        (self.repo / "config" / "roBa.keymap").write_bytes(b"/ { keymap { }; };\n")
         (self.repo / "boards" / "shields" / "x" / "x.keymap").write_bytes(b"x\n")
+        self.ws = self.root / "ws"
+
+    def workspace(self):
+        """config/ copied into the workspace as prepare_workspace copies it."""
+        shutil.copytree(self.repo / "config", self.ws / "config")
+        return self.ws / "config"
 
     def cache(self, path):
-        return "ZMK_CONFIG:PATH={}\nKEYMAP_FILE:STRING={}\nSHIELD:STRING=roBa_R\n".format(self.config, path)
+        return "ZMK_CONFIG:PATH={}\nKEYMAP_FILE:STRING={}\nSHIELD:STRING=roBa_R\n".format(self.ws / "config", path)
 
     def test_a_keymap_in_config_is_config_slash_its_name(self):
-        found = keymap_source(self.cache(self.config / "roBa.keymap"), self.ws, self.repo)
+        config = self.workspace()
+        found = keymap_source(self.cache(config / "roBa.keymap"), self.ws, self.repo)
         # sha256 of b"/ { keymap { }; };\n"
         self.assertEqual(found, {"path": "config/roBa.keymap",
                                  "sha256": "4e2753da3201fad45b5b684046a3d8c3ac39edad71625bd371cbf4a00a5392a2"})
 
     def test_a_keymap_in_the_repository_as_a_module_keeps_its_path(self):
+        self.workspace()
         found = keymap_source(self.cache(self.repo / "boards" / "shields" / "x" / "x.keymap"), self.ws, self.repo)
         self.assertEqual(found["path"], "boards/shields/x/x.keymap")
 
     def test_a_keymap_from_elsewhere_or_none_is_not_the_repositorys(self):
+        config = self.workspace()
         other = self.root / "zmk" / "app" / "boards" / "shields" / "y.keymap"
         other.parent.mkdir(parents=True)
         other.write_bytes(b"y")
         self.assertIsNone(keymap_source(self.cache(other), self.ws, self.repo))
-        self.assertIsNone(keymap_source(self.cache(self.config / ".." / ".." / "zmk" / "app" / "boards" / "shields" / "y.keymap"), self.ws, self.repo))
+        self.assertIsNone(keymap_source(self.cache(config / ".." / ".." / "zmk" / "app" / "boards" / "shields" / "y.keymap"), self.ws, self.repo))
         self.assertIsNone(keymap_source("SHIELD:STRING=roBa_R\n", self.ws, self.repo))
-        self.assertIsNone(keymap_source(self.cache(self.config / "missing.keymap"), self.ws, self.repo))
+        self.assertIsNone(keymap_source(self.cache(config / "missing.keymap"), self.ws, self.repo))
+
+    def test_only_a_keymap_file_with_a_plain_path(self):
+        # The build runs the repository's own CMake, which could name any file of it.
+        (self.repo / ".github" / "workflows").mkdir(parents=True)
+        (self.repo / ".github" / "workflows" / "build.yml").write_bytes(b"on: push\n")
+        (self.repo / "boards" / "shields" / "x" / "x.overlay").write_bytes(b"x\n")
+        self.workspace()
+        self.assertIsNone(keymap_source(self.cache(self.repo / ".github" / "workflows" / "build.yml"), self.ws, self.repo))
+        self.assertIsNone(keymap_source(self.cache(self.repo / "boards" / "shields" / "x" / "x.overlay"), self.ws, self.repo))
 
     def test_a_workspace_inside_the_repository_is_still_not_the_repositorys(self):
         # Building locally from the config repository puts the workspace (.keyballer-work) inside it.
+        self.ws = self.repo / ".keyballer-work" / "ws"
+        config = self.workspace()
         module = self.ws / "zmk" / "app" / "boards" / "shields" / "y" / "y.keymap"
         module.parent.mkdir(parents=True)
         module.write_bytes(b"y")
-        self.assertIsNone(keymap_source(self.cache(module), self.ws, self.root))
-        self.assertEqual(keymap_source(self.cache(self.config / "roBa.keymap"), self.ws, self.root)["path"], "config/roBa.keymap")
+        self.assertIsNone(keymap_source(self.cache(module), self.ws, self.repo))
+        self.assertEqual(keymap_source(self.cache(config / "roBa.keymap"), self.ws, self.repo)["path"], "config/roBa.keymap")
 
-    def test_a_link_out_of_the_repository_is_not_followed(self):
+    def test_a_link_in_config_is_not_the_repositorys_file(self):
+        # The workspace copy follows links, so the link is checked in the repository itself: one
+        # out of it would publish another file's digest, and the editor would write over one in it.
         outside = self.root / "secret.keymap"
         outside.write_bytes(b"s")
-        (self.config / "link.keymap").symlink_to(outside)
-        self.assertIsNone(keymap_source(self.cache(self.config / "link.keymap"), self.ws, self.repo))
+        (self.repo / "shared").mkdir()
+        (self.repo / "shared" / "roBa.keymap").write_bytes(b"shared\n")
+        (self.repo / "config" / "out.keymap").symlink_to(outside)
+        (self.repo / "config" / "in.keymap").symlink_to(self.repo / "shared" / "roBa.keymap")
+        config = self.workspace()
+        self.assertFalse((config / "out.keymap").is_symlink())
+        self.assertIsNone(keymap_source(self.cache(config / "out.keymap"), self.ws, self.repo))
+        self.assertIsNone(keymap_source(self.cache(config / "in.keymap"), self.ws, self.repo))
+
+    def test_a_value_it_cannot_follow_is_no_keymap_and_no_error(self):
+        config = self.workspace()
+        (config / "loop.keymap").symlink_to(config / "loop.keymap")
+        self.assertIsNone(keymap_source(self.cache(config / "loop.keymap"), self.ws, self.repo))
+        self.assertIsNone(keymap_source(self.cache("{}\0x".format(config / "roBa.keymap")), self.ws, self.repo))
 
 
 if __name__ == "__main__":

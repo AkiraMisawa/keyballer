@@ -49,10 +49,10 @@ The same model as QMK: Keyballer's own reusable workflow builds the firmware, pu
 
 **Phase 4: keymap editing (decided 2026-11-22).** The keymap screen's edit mode works for ZMK as it does for QMK. You can change keys, add, change and remove combos, and add, remove and rename layers. Saving goes through the same review and commits the `.keymap` file to `main`; the build then makes the new firmware and view. The editor needs no keyboard connected, so the whole loop can be checked on Actions.
 
-- **Which file.** ZMK chooses the keymap file itself (`KEYMAP_FILE` in the build's `CMakeCache.txt`, set by ZMK's `app/keymap-module/modules/modules.cmake`). The build records that file in the view as `zmk.keymap`, with its path in the repository and its SHA-256, when the file is inside the config repository. A keymap that comes from a module is not in the repository, so it cannot be edited.
+- **Which file.** ZMK chooses the keymap file itself (`KEYMAP_FILE` in the build's `CMakeCache.txt`, set by `app/keymap-module/modules/modules.cmake` at both pinned ZMK commits). The build records that file in the view as `zmk.keymap`, with its path in the repository and its SHA-256, when it is plainly the repository's own `.keymap` file: a plain path, and no link on the way, checked in the repository itself because the workspace copy follows links. A keymap that comes from a module is not in the repository, so it cannot be edited.
 - **What the keys mean.** This comes from the build; the source is not read for meaning again.
   - The editor opens only when the file on `main` has the SHA-256 that the build recorded.
-  - The source must also match the build in structure: the same layer nodes, in order, with the same behaviour references (`zmk.layers[].refs`, from `zephyr.dts`), and every combo of the view found by its node name.
+  - The source must also match the build in structure: the same layer nodes, in order, with the same status and behaviour references (`zmk.layers`, every layer node of `zephyr.dts`, unused ones too), and every combo of the view found by its node name.
   - Otherwise the editor says why: the keymap changed after the build, or it is written with macros that Keyballer cannot follow.
   - After a save, the edited keymap is the starting point until the next build.
 - **Writing a key.**

@@ -372,16 +372,16 @@ def make_view(dts_text):
 
     # Layers that are not in use (status other than okay) at the end are left out; one in the middle
     # stays, so that layer numbers keep meaning the same layer.
+    # For the editor: every layer node, unused ones too, and the behaviour each of its bindings
+    # refers to, so that it can match the .keymap source to this build before it changes anything.
+    structure = [{"node": n.name, "status": (n.prop("status") or ["okay"])[0],
+                  "refs": [ref[1:] for _, ref, _ in conv.read(n.prop("bindings") or [])]} for n in keymap.children]
     nodes = list(keymap.children)
     while nodes and (nodes[-1].prop("status") or ["okay"])[0] != "okay":
         nodes.pop()
-    layers, structure = [], []
+    layers = []
     for layer in nodes:
-        read = conv.read(layer.prop("bindings") or [])
-        # For the editor: which node each layer is, and the behaviour each of its bindings refers
-        # to, so that it can match the .keymap source to this build before it changes anything.
-        structure.append({"node": layer.name, "refs": [ref[1:] for _, ref, _ in read]})
-        bindings = [conv.convert(*b) for b in read]
+        bindings = [conv.convert(*b) for b in conv.read(layer.prop("bindings") or [])]
         if len(bindings) > len(keys):
             raise ViewError("layer {} has {} bindings for {} keys".format(layer.name, len(bindings), len(keys)))
         # ZMK leaves the keys past the last binding without one.
