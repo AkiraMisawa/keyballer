@@ -86,6 +86,22 @@ class RobaView(unittest.TestCase):
         self.assertEqual(tab["keys"], ["KC_S", "KC_D"])
         self.assertEqual(next(c for c in combos if c["positions"] == [12, 13])["output"], "LSFT(KC_TAB)")
 
+    def test_names_each_combo_by_its_node(self):
+        # combos { tab { … }; shift_tab { … }; … } in roBa.keymap.
+        self.assertEqual([c["name"] for c in self.view["combos"]][:2], ["tab", "shift_tab"])
+
+    def test_records_the_layer_nodes_and_behaviours_for_the_editor(self):
+        # The editor matches these against the .keymap source before it changes anything.
+        layers = self.view["zmk"]["layers"]
+        self.assertEqual([l["node"] for l in layers],
+                         ["default_layer", "SYMBOL", "NUM", "ARROW", "MOUSE", "FUNCTION", "layer_6", "layer_7"])
+        # &mt LEFT_ALT Q  &kp W … &kp LS(LG(S))  &to 6 … &lt 5 K  &kp L  &lt_to_layer_0 5 APOSTROPHE
+        refs = layers[0]["refs"]
+        self.assertEqual(len(refs), 43)
+        self.assertEqual(refs[:2], ["mt", "kp"])
+        self.assertEqual(refs[15:22], ["kp", "to", "kp", "kp", "lt", "kp", "lt_to_layer_0"])
+        self.assertEqual(layers[1]["refs"][15:17], ["trans", "none"])
+
 
 class Meteorite40View(unittest.TestCase):
     def test_reads_a_whole_keyboard(self):
@@ -142,6 +158,8 @@ class Synthetic(unittest.TestCase):
                               '\t\textra { status = "reserved"; bindings = < &kp 0x70004 &kp 0x70004 >; };'))
         self.assertEqual(view["layers"][0]["keys"], ["KC_A", "KC_NO"])
         self.assertEqual(len(view["layers"]), 1)
+        # The source has one binding there, not two.
+        self.assertEqual(view["zmk"]["layers"], [{"node": "base", "refs": ["kp"]}])
 
     def test_reads_sticky_keys_outputs_and_bluetooth(self):
         # &sk LSHIFT, &sl 2 / &out OUT_USB (1), &bt BT_NXT (1)

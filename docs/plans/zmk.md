@@ -1,6 +1,6 @@
 # ZMK keyboards: builds, provenance and UF2 flashing
 
-Status: phase 1 built (2026-11-22): both owner configs build and publish, and the app offers their checked UF2 files. Flashing on the owner's hardware is next; then phase 2.
+Status (2026-11-22): phases 1 and 3 built. Both owner configs build and publish, the app offers their checked UF2 files, and their keymaps are shown. Phase 4 (keymap editing) is being built. Flashing on the owner's hardware is still to do, and so is phase 2.
 
 Research and sources: [../research/zmk.md](../research/zmk.md). Provenance and the threat model this builds on: [github-login.md](github-login.md).
 
@@ -46,6 +46,36 @@ The same model as QMK: Keyballer's own reusable workflow builds the firmware, pu
 - **Layers:** named by `display-name`, then `label`, then the node name, as ZMK does. A layer with fewer bindings than keys is filled with no action, as ZMK leaves those keys; unused layers (`status` other than okay) at the end are left out, so that layer numbers keep their meaning.
 - **Not yet:** the trackball (its position is not in the devicetree), combos limited to layers other than the base layer, and links to `.keymap` lines.
 - **Errors:** a view that cannot be made is recorded as `view_error` and never fails the build; the settings reset gets none.
+
+**Phase 4: keymap editing (decided 2026-11-22).** The keymap screen's edit mode works for ZMK as it does for QMK. You can change keys, add, change and remove combos, and add, remove and rename layers. Saving goes through the same review and commits the `.keymap` file to `main`; the build then makes the new firmware and view. The editor needs no keyboard connected, so the whole loop can be checked on Actions.
+
+- **Which file.** ZMK chooses the keymap file itself (`KEYMAP_FILE` in the build's `CMakeCache.txt`, set by ZMK's `app/keymap-module/modules/modules.cmake`). The build records that file in the view as `zmk.keymap`, with its path in the repository and its SHA-256, when the file is inside the config repository. A keymap that comes from a module is not in the repository, so it cannot be edited.
+- **What the keys mean.** This comes from the build; the source is not read for meaning again.
+  - The editor opens only when the file on `main` has the SHA-256 that the build recorded.
+  - The source must also match the build in structure: the same layer nodes, in order, with the same behaviour references (`zmk.layers[].refs`, from `zephyr.dts`), and every combo of the view found by its node name.
+  - Otherwise the editor says why: the keymap changed after the build, or it is written with macros that Keyballer cannot follow.
+  - After a save, the edited keymap is the starting point until the next build.
+- **Writing a key.**
+  - **Text already in the file.** A key takes its exact text from the file when the same key is somewhere in it. This keeps the owner's spelling (`&kp LEFT_ALT`, `&kp N7`), and lets custom behaviours and macros be copied.
+  - **The name table.** Otherwise Keyballer writes it from a table of ZMK names:
+    - `&kp` with ZMK's names: `LS(…)` and so on for modifiers, and `EXCL` and friends for shifted symbols;
+    - `&mt` for a mod-tap that holds one modifier, and `&lt` for a layer-tap;
+    - `&mo`, `&tog`, `&to`, `&sl`, `&sk`, `&trans`, `&none`, `&bootloader`, `&sys_reset`, `&caps_word` and `&key_repeat`.
+  - **Behaviours that need a feature.** `&mkp`, `&bt` and `&out` work only when the build has their feature on. Keyballer offers them only when the keymap already uses that behaviour, and adds the header they need.
+  - **Refused, with a reason:** keys that ZMK has no binding for, such as Keyball's own keys, `TT`, `DF`, and a mod-tap that holds several modifiers.
+  - **Checking the table.** The table is checked against ZMK's `keys.h` at both pinned ZMK commits (the headers are the same), through the build's own reader (`zmk_view.keycode`).
+- **Columns.** The next binding on the line keeps its column when there is room.
+- **Combos.** A ZMK combo is a set of key positions, so it stays at its positions when the keys there change. A new combo has no `layers`, so it works on every layer, and its node is named `combo_<output>`.
+- **Layers.**
+  - A new layer goes after the last layer in use, before any reserved ones. Every key is `&trans`, in the last layer's rows.
+  - Removing a layer takes the last layer in use.
+  - A layer's name is its `display-name`.
+- **ZMK Studio.** For builds with Studio on, the review warns that changes made in ZMK Studio win: once a keymap has been changed there, ".keymap" edits apply only after "Restore Stock Settings" in ZMK Studio ([zmk.dev/docs/features/studio](https://zmk.dev/docs/features/studio)).
+- **Not yet:**
+  - combos limited to other layers, which stay as they are;
+  - sensor bindings;
+  - hold-tap settings;
+  - editing macros.
 
 ## Decisions
 
@@ -166,7 +196,7 @@ The same model as QMK: Keyballer's own reusable workflow builds the firmware, pu
 
 ## Out of scope
 
-- Direct write (phase 2) and the keymap view (phase 3).
+- Direct write (phase 2), until the owner has flashed by hand.
 - Building ZMK locally with Docker. The QMK path has it; ZMK can follow.
 - ZMK Studio over Web Serial.
 - Keyboards whose bootloader is not the Adafruit nRF52 UF2 bootloader.

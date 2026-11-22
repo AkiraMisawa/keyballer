@@ -25,6 +25,7 @@ Runs on Python 3.9 or later (the zmk-build-arm image).
 """
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -255,13 +256,38 @@ def prepare_workspace(config_dir, work_dir):
     return Workspace(ws, projects, resolved)
 
 
-def write_view(build, build_dir, out_dir):
+def keymap_source(cmake_cache, workspace, repo):
+    """The .keymap file ZMK built from (KEYMAP_FILE, which ZMK's keymap module sets), as its path in
+    the config repository and its SHA-256, for the editor; None when it is not the repository's.
+
+    The workspace has a copy of the repository's config/ folder; the repository itself is where ZMK
+    reads boards and shields from when it is a module. Anything else in the workspace (ZMK, Zephyr,
+    modules) is not the repository's, even when the workspace is inside it, as in a local build."""
+    m = re.search(r"^KEYMAP_FILE:[A-Z]+=(.+)$", cmake_cache, re.M)
+    if not m:
+        return None
+    # Links are resolved first, so that a link cannot name a file outside the repository.
+    path = Path(m.group(1).strip()).resolve()
+    if not path.is_file():
+        return None
+    if path.is_relative_to((workspace / "config").resolve()):
+        name = "config/" + path.relative_to((workspace / "config").resolve()).as_posix()
+    elif path.is_relative_to(workspace.resolve()) or not path.is_relative_to(repo.resolve()):
+        return None
+    else:
+        name = path.relative_to(repo.resolve()).as_posix()
+    return {"path": name, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+
+
+def write_view(build, build_dir, out_dir, keymap=None):
     """Writes <id>.view.json from the final devicetree; returns view, or view_error. A view that
-    cannot be made never fails the build."""
+    cannot be made never fails the build. keymap is the source file (keymap_source), if known."""
     name = "{}.view.json".format(build["id"])
     try:
         view = make_view((build_dir / "zephyr" / "zephyr.dts").read_text(encoding="utf-8"))
         view["keyboard"] = "{} {}".format(build["board"], build["shield"])
+        if keymap:
+            view["zmk"]["keymap"] = keymap
         (out_dir / name).write_text(json.dumps(view, ensure_ascii=False) + "\n", encoding="utf-8")
     except ViewError as e:
         print("No keymap view for {}: {}".format(build["id"], e), flush=True)
@@ -325,7 +351,13 @@ def build_one(build, cfg, config_dir, workspace, out_dir):
     if build.get("snippet"):
         meta["snippet"] = build["snippet"]
     if role != "settings_reset":
-        meta.update(write_view(build, build_dir, out_dir))
+        try:
+            cache = (build_dir / "CMakeCache.txt").read_text(encoding="utf-8", errors="replace")
+            keymap = keymap_source(cache, ws, config_dir)
+        except OSError as e:  # like the view, this must never fail the build
+            print("No keymap source for {}: {!r}".format(build["id"], e), flush=True)
+            keymap = None
+        meta.update(write_view(build, build_dir, out_dir, keymap))
     (out_dir / "{}.json".format(build["id"])).write_text(
         json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
