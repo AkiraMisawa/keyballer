@@ -19,6 +19,7 @@ export type Category =
   | 'mouse'
   | 'media'
   | 'keyball'
+  | 'lighting'
   | 'special'
   | 'own';
 
@@ -45,10 +46,37 @@ const MOUSE = ['KC_BTN1', 'KC_BTN2', 'KC_BTN3', 'KC_BTN4', 'KC_BTN5', 'KC_MS_U',
 const MEDIA = ['KC_VOLU', 'KC_VOLD', 'KC_MUTE', 'KC_MPLY', 'KC_MNXT', 'KC_MPRV', 'KC_MSTP', 'KC_BRIU', 'KC_BRID'];
 const KEYBALL = ['CPI_I100', 'CPI_D100', 'CPI_I1K', 'CPI_D1K', 'SCRL_TO', 'SCRL_MO', 'SCRL_DVI', 'SCRL_DVD', 'SSNP_VRT', 'SSNP_HOR', 'SSNP_FRE', 'KBC_RST', 'KBC_SAVE'];
 const SPECIAL = ['KC_TRNS', 'KC_NO', 'QK_BOOT', 'QK_RBT', 'EE_CLR', 'CW_TOGG'];
+/**
+ * RGB Lighting's keys (QMK 0.22.14, quantum/keycodes.h). RGB_SPI / RGB_SPD are left out: RGB
+ * Lighting stores the speed but its effects do not read it (docs/plans/led-settings.md).
+ */
+const LIGHTING = [
+  'RGB_TOG', 'RGB_MOD', 'RGB_RMOD', 'RGB_HUI', 'RGB_HUD', 'RGB_SAI', 'RGB_SAD', 'RGB_VAI', 'RGB_VAD',
+  'RGB_M_P', 'RGB_M_B', 'RGB_M_R', 'RGB_M_SW', 'RGB_M_SN', 'RGB_M_K', 'RGB_M_X', 'RGB_M_G', 'RGB_M_TW',
+];
+const LED_WORDS = ['led', 'rgb', 'light', 'lighting', 'ライト', 'ライティング'];
 
 /** What people call keys, beyond their names and legends. */
 const WORDS: Record<string, string[]> = {
   KC_ESC: ['escape', 'エスケープ'],
+  RGB_TOG: [...LED_WORDS, 'on', 'off', 'toggle', 'オン', 'オフ'],
+  RGB_MOD: [...LED_WORDS, 'next effect', 'mode', '次のエフェクト'],
+  RGB_RMOD: [...LED_WORDS, 'previous effect', 'mode', '前のエフェクト'],
+  RGB_HUI: [...LED_WORDS, 'hue', 'colour', 'color', '色相', '色'],
+  RGB_HUD: [...LED_WORDS, 'hue', 'colour', 'color', '色相', '色'],
+  RGB_SAI: [...LED_WORDS, 'saturation', '彩度'],
+  RGB_SAD: [...LED_WORDS, 'saturation', '彩度'],
+  RGB_VAI: [...LED_WORDS, 'brightness', '明るさ', '輝度'],
+  RGB_VAD: [...LED_WORDS, 'brightness', '明るさ', '輝度'],
+  RGB_M_P: [...LED_WORDS, 'plain', 'static', 'solid', '単色'],
+  RGB_M_B: [...LED_WORDS, 'breathing', 'breathe', '呼吸'],
+  RGB_M_R: [...LED_WORDS, 'rainbow mood', 'rainbow', 'レインボー'],
+  RGB_M_SW: [...LED_WORDS, 'rainbow swirl', 'swirl', 'スワール', 'レインボー'],
+  RGB_M_SN: [...LED_WORDS, 'snake', 'スネーク'],
+  RGB_M_K: [...LED_WORDS, 'knight rider', 'knight', 'ナイトライダー'],
+  RGB_M_X: [...LED_WORDS, 'christmas', 'xmas', 'クリスマス'],
+  RGB_M_G: [...LED_WORDS, 'gradient', 'グラデーション'],
+  RGB_M_TW: [...LED_WORDS, 'twinkle', 'きらめき'],
   KC_TAB: ['tab', 'タブ'],
   KC_SPC: ['space', 'スペース'],
   KC_ENT: ['enter', 'return', 'エンター', '改行'],
@@ -176,8 +204,8 @@ function wordsFor(code: string): string[] {
   ]);
 }
 
-/** QMK's keys that ZMK has no binding for: Keyball's own, mouse movement, EEPROM, and two layer keys. */
-const QMK_ONLY = new Set([...KEYBALL, 'EE_CLR', 'KC_MS_U', 'KC_MS_D', 'KC_MS_L', 'KC_MS_R', 'KC_WH_U', 'KC_WH_D', 'KC_WH_L', 'KC_WH_R']);
+/** QMK's keys that ZMK has no binding for: Keyball's own, LED keys, mouse movement, EEPROM, and two layer keys. */
+const QMK_ONLY = new Set([...KEYBALL, ...LIGHTING, 'EE_CLR', 'KC_MS_U', 'KC_MS_D', 'KC_MS_L', 'KC_MS_R', 'KC_WH_U', 'KC_WH_D', 'KC_WH_L', 'KC_WH_R']);
 const QMK_ONLY_LAYER_FUNCTIONS = new Set(['TT', 'DF']);
 
 export function makeCatalogue({ layers, custom, defines = {}, labels, zmk = false }: CatalogueInput): Catalogue {
@@ -207,6 +235,7 @@ export function makeCatalogue({ layers, custom, defines = {}, labels, zmk = fals
     ...group(MOUSE, 'mouse'),
     ...group(MEDIA, 'media'),
     ...group(KEYBALL, 'keyball'),
+    ...group(LIGHTING, 'lighting'),
     ...group(SPECIAL, 'special'),
     ...own,
   ];

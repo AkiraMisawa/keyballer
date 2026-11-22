@@ -52,6 +52,9 @@ describe('legends', () => {
     expect(keyOn(1, 10).legend).toEqual({ tap: '@' }); // KC_AT
     expect(keyOn(1, 10, { ...mac, layout: 'jis' }).legend).toEqual({ tap: '"' });
     expect(single('S(KC_2)').legend).toEqual({ tap: '@' });
+    // LED keys say what they change, under the word LED.
+    expect(single('RGB_TOG').legend).toEqual({ tap: 'On/off', top: 'LED' });
+    expect(single('RGB_M_B', { ...mac, lang: 'ja' }).legend).toEqual({ tap: '呼吸', top: 'LED' });
     expect(single('S(KC_2)', { ...mac, layout: 'jis' }).legend).toEqual({ tap: '"' });
     expect(keyOn(1, 0).legend).toEqual({ tap: '%' }); // KC_PERC
   });
