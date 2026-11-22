@@ -9,7 +9,7 @@ import type { EditSession } from '../edit/useEditSession';
 import type { MessageKey } from '../i18n/messages';
 import { useI18n } from '../i18n/react';
 import type { QmkBuild } from '../lib/manifest';
-import { axesOf, EFFECTS, effectOf, estimateSize, variantOf, type AxisKind, type EffectId } from './leds';
+import { axesOf, EFFECTS, effectOf, estimateSize, ledCost, variantOf, type AxisKind, type EffectId } from './leds';
 
 interface Props {
   edit: EditSession;
@@ -166,6 +166,10 @@ export function LedPanel({ edit, build, builtFrom }: Props) {
             {EFFECTS.filter((e) => e.define).map((e) => {
               const atStart = mode?.effect === e.id;
               const on = now.effects.includes(e.id);
+              // What the effect adds to the effects as they are, or what leaving it out saves:
+              // the first animated effect brings the animation code they share.
+              const cost = (effects: EffectId[]) => ledCost({ leds: true, effects, stamp });
+              const bytes = on ? cost(now.effects) - cost(now.effects.filter((id) => id !== e.id)) : cost([...now.effects, e.id]) - cost(now.effects);
               return (
                 <label key={e.id} className="check">
                   <input
@@ -178,7 +182,7 @@ export function LedPanel({ edit, build, builtFrom }: Props) {
                     }
                   />
                   {t(e.label)}
-                  <span className="muted">{atStart ? t('led.atStart') : t('led.cost', { n: number(e.own) })}</span>
+                  <span className="muted">{atStart ? t('led.atStart') : t(on ? 'led.costIn' : 'led.cost', { n: number(bytes) })}</span>
                 </label>
               );
             })}
