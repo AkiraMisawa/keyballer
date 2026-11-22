@@ -4,7 +4,7 @@
 // are set by GitHub, so a token that rewrites the firmware branch cannot make a run vouch for it.
 
 import { describe, expect, it } from 'vitest';
-import { judgeProvenance, manifestArtifactName, sha256Hex, type ProvenanceRun } from './provenance';
+import { judgeProvenance, keyballerWorkflowSha, manifestArtifactName, sha256Hex, type ProvenanceRun } from './provenance';
 
 // FIPS 180-2, appendix B.1: SHA-256("abc"); and SHA-256 of the empty string.
 const ABC = 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad';
@@ -57,6 +57,19 @@ describe('judgeProvenance', () => {
     expect(
       judge({ run: run({ referenced_workflows: [{ path: 'AkiraMisawa/keyballer/.github/workflows/build-qmk.yml@v1.2.0' }] }) }),
     ).toEqual({ ok: true });
+  });
+
+  it('accepts a run of the ZMK workflow, and refuses one that names Keyballer twice', () => {
+    const zmk = { path: 'AkiraMisawa/keyballer/.github/workflows/build-zmk.yml@main', sha: 'c'.repeat(40) };
+    expect(judge({ run: run({ referenced_workflows: [zmk] }) })).toEqual({ ok: true });
+    expect(keyballerWorkflowSha(run({ referenced_workflows: [zmk] }))).toBe('c'.repeat(40));
+    // Only one of two references would be checked against Keyballer's main.
+    const twice = run({ referenced_workflows: [zmk, { path: 'AkiraMisawa/keyballer/.github/workflows/build-qmk.yml@main', sha: 'd'.repeat(40) }] });
+    expect(keyballerWorkflowSha(twice)).toBeUndefined();
+    expect(judge({ run: twice })).toEqual({ ok: false, reason: 'provenance.err.noRecord' });
+    for (const path of ['AkiraMisawa/keyballer/.github/workflows/build-zmk.yml.evil@main', 'someone/keyballer/.github/workflows/build-zmk.yml@main']) {
+      expect(judge({ run: run({ referenced_workflows: [{ path, sha: 'c'.repeat(40) }] }) })).toEqual({ ok: false, reason: 'provenance.err.noRecord' });
+    }
   });
 
   it('refuses when the run keeps no record of this manifest', () => {

@@ -12,7 +12,7 @@ const MAGIC_START0 = 0x0a324655;
 const MAGIC_START1 = 0x9e5d5157;
 const MAGIC_END = 0x0ab16f30;
 const FLAG_FAMILY_ID = 0x2000;
-export const NRF52840_FAMILY = 0xada52840;
+const NRF52840_FAMILY = 0xada52840;
 const PAYLOAD = 256;
 /**
  * Application flash with SoftDevice S140 v7 (the XIAO nRF52840): code from 0x27000; settings, bonds

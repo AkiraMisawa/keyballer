@@ -28,7 +28,8 @@ import {
   type WorkflowRun,
 } from './lib/github';
 import { loadVerifiedFirmware, type FirmwareSource } from './lib/firmware';
-import { isZmk, type FirmwareBuild, type FirmwareManifest, type QmkBuild, type ZmkBuild } from './lib/manifest';
+import { firmwareCards, isZmk, keyboardOf, type FirmwareBuild, type FirmwareManifest, type QmkBuild, type ZmkBuild } from './lib/manifest';
+import { parseIntelHex } from './lib/ihex';
 import { isWebSerialSupported } from './lib/serial';
 import { load, save } from './lib/storage';
 import type { ForgottenTokenKind } from './lib/token';
@@ -36,7 +37,7 @@ import type { ForgottenTokenKind } from './lib/token';
 /** What the flash panel shows: a hex file to flash over Web Serial, or a UF2 file to copy. */
 type FlashTarget =
   | { kind: 'serial'; title: string; image: Uint8Array; split: boolean; source?: FirmwareSource }
-  | { kind: 'uf2'; build: ZmkBuild; bytes: Uint8Array; source: FirmwareSource };
+  | { kind: 'uf2'; build: ZmkBuild; bytes: Uint8Array; source: FirmwareSource; firmwareSha: string };
 
 interface RepoState {
   ref: RepoRef;
@@ -307,8 +308,7 @@ export function App({ forgottenToken = null }: { forgottenToken?: ForgottenToken
   // ZMK builds have no keymap view yet (docs/plans/zmk.md, phase 3).
   const qmkBuilds = (repo?.manifest?.builds ?? []).filter((b): b is QmkBuild => !isZmk(b));
   const keymapBuild = (keymapId && qmkBuilds.find((b) => b.id === keymapId)) || null;
-  // The settings reset is offered in the UF2 panel's "fix pairing", not as a card.
-  const cardBuilds = (repo?.manifest?.builds ?? []).filter((b) => !(isZmk(b) && b.role === 'settings_reset'));
+  const cardBuilds = firmwareCards(repo?.manifest?.builds ?? []);
   const noRepo: Localized | undefined = repo ? undefined : msg('why.noRepo');
   const latestRun = repo?.runs[0];
   // Why a firmware cannot be flashed right now, if it cannot.
@@ -415,8 +415,14 @@ export function App({ forgottenToken = null }: { forgottenToken?: ForgottenToken
       const b = verified.build;
       openTarget(
         isZmk(b)
-          ? { kind: 'uf2', build: b, bytes: verified.bytes, source: verified.source }
-          : { kind: 'serial', title: b.name, image: verified.image, split: b.split, source: verified.source },
+          ? { kind: 'uf2', build: b, bytes: verified.bytes, source: verified.source, firmwareSha: repo.firmwareSha }
+          : {
+              kind: 'serial',
+              title: b.name,
+              image: parseIntelHex(new TextDecoder().decode(verified.bytes)).data,
+              split: b.split,
+              source: verified.source,
+            },
       );
     } catch (e) {
       setError(e);
@@ -595,14 +601,20 @@ export function App({ forgottenToken = null }: { forgottenToken?: ForgottenToken
         </>
       )}
 
-      {target?.kind === 'uf2' && repo?.firmwareSha && (
+      {target?.kind === 'uf2' && repo && (
         <Uf2Panel
           key={target.build.id}
           build={target.build}
           bytes={target.bytes}
           source={target.source}
-          group={(repo.manifest?.builds ?? []).filter((b): b is ZmkBuild => isZmk(b) && b.group === target.build.group)}
-          loadBuild={async (b) => (await loadVerifiedFirmware(repo.ref, repo.firmwareSha!, b.id, tokenRef.current)).bytes}
+          keyboard={keyboardOf(repo.manifest?.builds ?? [], target.build)}
+          pinsUrl={`${repoUrl}/blob/${target.firmwareSha}/${target.build.west}`}
+          loadBuild={async (b) => {
+            // From the firmware the panel was opened with, and only that ZMK build.
+            const v = await loadVerifiedFirmware(repo.ref, target.firmwareSha, b.id, tokenRef.current);
+            if (!isZmk(v.build) || v.build.id !== b.id) throw new LocalizedError('uf2.err.check');
+            return v.bytes;
+          }}
           onClose={closeTarget}
         />
       )}

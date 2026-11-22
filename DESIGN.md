@@ -134,10 +134,11 @@ The keycap is the core component and is drawn the same way everywhere.
 | `V` | View the first firmware's keymap |
 | `O` | Flash a hex file from your computer |
 | `P` | Choose the port (while waiting for the reset) |
+| `D` | Download the checked UF2 file (in a ZMK keyboard's flash panel) |
 | `Esc` | Close the panel or go back a step |
 | `?` | Show the shortcuts |
 
-Commands on the flow pages: `connect <repo>`, `repo` (go to the repository field), `open link` and `keep repo` (while a `?repo=` link waits for an answer; Esc keeps), `open tokens` (while the notice about a deleted saved token is shown), `sign in` and `sign out` (on every screen, when Keyballer runs on this computer with a GitHub App set up), `install app` (while the sign-in cannot reach the repository), `refresh`, `open repo`, `open build`, `flash <id>`, `flash file`, `keymap <id>`, `start`, `port`, `close`, `language <english|japanese>`, `shortcuts`.
+Commands on the flow pages: `connect <repo>`, `repo` (go to the repository field), `open link` and `keep repo` (while a `?repo=` link waits for an answer; Esc keeps), `open tokens` (while the notice about a deleted saved token is shown), `sign in` and `sign out` (on every screen, when Keyballer runs on this computer with a GitHub App set up), `install app` (while the sign-in cannot reach the repository), `refresh`, `open repo`, `open build`, `flash <id>`, `flash file`, `download firmware` and `download reset` (in a ZMK keyboard's flash panel), `keymap <id>`, `start`, `port`, `close`, `language <english|japanese>`, `shortcuts`.
 
 ### Keymap view (now)
 

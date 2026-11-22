@@ -1,6 +1,6 @@
 # ZMK keyboards: builds, provenance and UF2 flashing
 
-Status: phase 1 in progress (2026-11-22). The workflow builds both owner configs; the app side is next.
+Status: phase 1 built (2026-11-22): both owner configs build and publish, and the app offers their checked UF2 files. Flashing on the owner's hardware is next; then phase 2.
 
 Research and sources: [../research/zmk.md](../research/zmk.md). Provenance and the threat model this builds on: [github-login.md](github-login.md).
 

@@ -6,23 +6,11 @@
 
 import { describe, expect, it } from 'vitest';
 import { checkUf2 } from './uf2';
+import { uf2Block, uf2Image } from './uf2.testing';
 
 const NRF52840 = 0xada52840;
-
-function block(index: number, total: number, addr: number, over: { flags?: number; family?: number; size?: number; magic?: [number, number, number] } = {}) {
-  const b = new Uint8Array(512);
-  const v = new DataView(b.buffer);
-  const [m0, m1, m2] = over.magic ?? [0x0a324655, 0x9e5d5157, 0x0ab16f30];
-  [m0, m1, over.flags ?? 0x2000, addr, over.size ?? 256, index, total, over.family ?? NRF52840].forEach((x, i) => v.setUint32(i * 4, x, true));
-  v.setUint32(508, m2, true);
-  return b;
-}
-
-function image(total = 4, start = 0x27000, over: Parameters<typeof block>[3] = {}) {
-  const out = new Uint8Array(512 * total);
-  for (let i = 0; i < total; i++) out.set(block(i, total, start + 256 * i, over), 512 * i);
-  return out;
-}
+const block = uf2Block;
+const image = uf2Image;
 
 const join = (...parts: Uint8Array[]) => {
   const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));

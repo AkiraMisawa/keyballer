@@ -18,9 +18,14 @@ const isKeyballerWorkflow = (path: string) => KEYBALLER_WORKFLOWS.some((prefix) 
 /** Keyballer builds, saves and flashes from this branch (the editor commits to it too). */
 export const BRANCH = 'main';
 
-/** The Keyballer workflow commit a run used, if it used Keyballer's workflow. */
-export const keyballerWorkflowSha = (run: ProvenanceRun): string | undefined =>
-  (run.referenced_workflows ?? []).find((w) => isKeyballerWorkflow(w.path))?.sha;
+/**
+ * The Keyballer workflow commit a run used, if it used exactly one of Keyballer's workflows: with
+ * two, only one commit would be checked against Keyballer's main.
+ */
+export function keyballerWorkflowSha(run: ProvenanceRun): string | undefined {
+  const used = (run.referenced_workflows ?? []).filter((w) => isKeyballerWorkflow(w.path));
+  return used.length === 1 ? used[0].sha : undefined;
+}
 
 /** The fields of a GitHub Actions workflow run that provenance reads. */
 export interface ProvenanceRun {
@@ -80,7 +85,7 @@ export function judgeProvenance({
    */
   workflowOnKeyballerMain: boolean;
 }): Verdict {
-  const usesKeyballer = (run.referenced_workflows ?? []).some((w) => isKeyballerWorkflow(w.path));
+  const usesKeyballer = (run.referenced_workflows ?? []).filter((w) => isKeyballerWorkflow(w.path)).length === 1;
   const isTheBuild =
     run.id === manifest.runId &&
     run.head_sha === manifest.sourceSha &&

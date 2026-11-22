@@ -4,6 +4,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadVerifiedFirmware } from './firmware';
 import { sha256Hex } from './provenance';
+import { uf2Image } from './uf2.testing';
 
 const REPO = { owner: 'me', repo: 'config' };
 const SOURCE = 'a'.repeat(40);
@@ -14,17 +15,6 @@ const KB_HEAD = 'c'.repeat(40);
 const KB_OLD = 'd'.repeat(40);
 // A one-byte Intel HEX image: byte 0xAA at address 0 (record checksum 0x55), then end of file.
 const IMAGE_HEX = ':01000000AA55\r\n:00000001FF\r\n';
-
-/** A UF2 file of `total` nRF52840 blocks from `start`, built from the UF2 spec's constants. */
-function uf2(total: number, start = 0x27000, family = 0xada52840) {
-  const out = new Uint8Array(512 * total);
-  const v = new DataView(out.buffer);
-  for (let i = 0; i < total; i++) {
-    [0x0a324655, 0x9e5d5157, 0x2000, start + 256 * i, 256, i, total, family].forEach((x, k) => v.setUint32(512 * i + 4 * k, x, true));
-    v.setUint32(512 * i + 508, 0x0ab16f30, true);
-  }
-  return out;
-}
 
 async function setup(
   over: {
@@ -38,7 +28,7 @@ async function setup(
 ) {
   const enc = new TextEncoder();
   const zmk = over.zmk;
-  const hex = zmk ? zmk.bytes : enc.encode(over.hex ?? IMAGE_HEX);
+  const served = zmk ? zmk.bytes : enc.encode(over.hex ?? IMAGE_HEX);
   const build = zmk
     ? {
         id: 'kb', name: 'KB', firmware: 'zmk', format: 'uf2', file: 'kb.uf2', size: zmk.blocks * 256, group: 'kb', board: 'xiao_ble',
@@ -70,7 +60,7 @@ async function setup(
       if (p.startsWith('/repos/AkiraMisawa/keyballer/compare/')) return json({ status: 'ahead', behind_by: 0, ahead_by: 1, html_url: 'k' });
       if (!p.startsWith('/repos/me/config')) return new Response('{}', { status: 404 });
       if (p.endsWith('/contents/manifest.json')) return new Response(manifest);
-      if (p.endsWith(zmk ? '/contents/kb.uf2' : '/contents/kb.hex')) return new Response(hex as Uint8Array<ArrayBuffer>);
+      if (p.endsWith(zmk ? '/contents/kb.uf2' : '/contents/kb.hex')) return new Response(served as Uint8Array<ArrayBuffer>);
       if (p.endsWith(`/actions/runs/${RUN}`)) {
         return json({
           id: RUN,
@@ -102,7 +92,7 @@ describe('loadVerifiedFirmware', () => {
   it('returns the checked image and its source, asking only the connected repository', async () => {
     const requested = await setup();
     const verified = await loadVerifiedFirmware(REPO, FIRMWARE, 'kb', '');
-    expect([...verified.image.slice(0, 1)]).toEqual([0xaa]);
+    expect(new TextDecoder().decode(verified.bytes)).toBe(IMAGE_HEX);
     expect(verified.source).toMatchObject({ sha: SOURCE, branch: 'main', behindBy: 2, repository: 'me/config' });
     // Lookups about the firmware go to the connected repository; Keyballer's repo is asked only about its workflow.
     expect(requested.every((r) => r.startsWith('/repos/me/config') || r.startsWith('/repos/AkiraMisawa/keyballer/'))).toBe(true);
@@ -124,7 +114,7 @@ describe('loadVerifiedFirmware', () => {
   });
 
   it('returns a checked UF2 file from a run of the ZMK workflow', async () => {
-    const bytes = uf2(3);
+    const bytes = uf2Image(3);
     await setup({ zmk: { bytes, blocks: 3 } });
     const verified = await loadVerifiedFirmware(REPO, FIRMWARE, 'kb', '');
     expect(verified.bytes).toEqual(bytes);
@@ -132,14 +122,17 @@ describe('loadVerifiedFirmware', () => {
   });
 
   it('refuses a UF2 file that would overwrite the bootloader, even when its record matches', async () => {
-    await setup({ zmk: { bytes: uf2(3, 0x27000, 0xd663823c), blocks: 3 } });
+    await setup({ zmk: { bytes: uf2Image(3, 0x27000, { family: 0xd663823c }), blocks: 3 } });
     await expect(loadVerifiedFirmware(REPO, FIRMWARE, 'kb', '')).rejects.toMatchObject({ key: 'uf2.err.check' });
-    await setup({ zmk: { bytes: uf2(3, 0xf4000), blocks: 3, start: 0xf4000 } });
+    await setup({ zmk: { bytes: uf2Image(3, 0xf4000), blocks: 3, start: 0xf4000 } });
     await expect(loadVerifiedFirmware(REPO, FIRMWARE, 'kb', '')).rejects.toMatchObject({ key: 'uf2.err.check' });
   });
 
   it('refuses a UF2 file whose blocks differ from what the build recorded', async () => {
-    await setup({ zmk: { bytes: uf2(3), blocks: 4 } });
+    await setup({ zmk: { bytes: uf2Image(3), blocks: 4 } });
+    await expect(loadVerifiedFirmware(REPO, FIRMWARE, 'kb', '')).rejects.toMatchObject({ key: 'uf2.err.check' });
+    // The same number of blocks, at other addresses than the build recorded.
+    await setup({ zmk: { bytes: uf2Image(3, 0x28000), blocks: 3 } });
     await expect(loadVerifiedFirmware(REPO, FIRMWARE, 'kb', '')).rejects.toMatchObject({ key: 'uf2.err.check' });
   });
 
