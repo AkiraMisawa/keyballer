@@ -4,7 +4,7 @@
 
 import { useEffect } from 'react';
 import { SessionState } from '../edit/EditBar';
-import { ledEffectsValue, ledModeValue, leds, savedLeds, type LedSetting } from '../edit/session';
+import { ledEffectsValue, ledModeValue, leds, ledsFromRules, savedLeds, type LedSetting } from '../edit/session';
 import type { EditSession } from '../edit/useEditSession';
 import type { MessageKey } from '../i18n/messages';
 import { useI18n } from '../i18n/react';
@@ -14,6 +14,8 @@ import { axesOf, EFFECTS, effectOf, estimateSize, variantOf, type AxisKind, type
 interface Props {
   edit: EditSession;
   build: QmkBuild;
+  /** The commit the latest build was made from (manifest.source.sha). */
+  builtFrom: string;
 }
 
 const AXIS_LABEL: Record<AxisKind, MessageKey> = {
@@ -30,7 +32,7 @@ function axisValues(kind: AxisKind, size: number): (MessageKey | string)[] {
   return Array.from({ length: size }, (_, i) => String(i + 1));
 }
 
-export function LedPanel({ edit, build }: Props) {
+export function LedPanel({ edit, build, builtFrom }: Props) {
   const { t, lang } = useI18n();
   const number = (n: number) => n.toLocaleString(lang === 'ja' ? 'ja-JP' : 'en-US');
 
@@ -51,13 +53,15 @@ export function LedPanel({ edit, build }: Props) {
   const values = mode ? axesOf(mode.effect, mode.variant) : [];
   const say = (word: MessageKey | string) => (word.includes('.') ? t(word as MessageKey) : word);
 
-  // The latest build's size, with what LEDs cost then and now. Builds made before builds[].leds
-  // say nothing about it; the files read decide then.
+  // The latest build's size, with what LEDs cost then and now. That works only when the build is
+  // of the files read: after a save, or when its build failed, it is older. A build made before
+  // builds[].leds had LEDs if the keymap's rules.mk said so.
+  const fresh = session.base.commit === builtFrom;
   const size =
-    typeof build.size === 'number' && typeof build.max_size === 'number'
+    fresh && typeof build.size === 'number' && typeof build.max_size === 'number'
       ? estimateSize(
           build.size,
-          { leds: typeof build.leds === 'boolean' ? build.leds : saved.fitted, effects: saved.effects, stamp },
+          { leds: typeof build.leds === 'boolean' ? build.leds : ledsFromRules(session), effects: saved.effects, stamp },
           { leds: now.fitted, effects: now.effects, stamp },
         )
       : null;
@@ -147,7 +151,7 @@ export function LedPanel({ edit, build }: Props) {
             <label htmlFor="led-val">{t('led.val')}</label>
             <div className="range">
               <input id="led-val" type="range" min={0} max={now.limit} value={Math.min(now.val, now.limit)} disabled={disabled} onChange={(e) => set('ledVal', Number(e.target.value))} />
-              <span className="note">{now.val}</span>
+              <span className="note">{Math.min(now.val, now.limit)}</span>
             </div>
             {now.limit < 255 && <p className="note">{t('led.limitNote', { limit: now.limit })}</p>}
           </div>
@@ -168,8 +172,9 @@ export function LedPanel({ edit, build }: Props) {
                     type="checkbox"
                     checked={on}
                     disabled={disabled || atStart}
+                    // From the effects chosen: the start-up effect put in goes again when it changes.
                     onChange={(ev) =>
-                      set('ledEffects', ledEffectsValue(ev.target.checked ? [...now.effects, e.id] : now.effects.filter((id) => id !== e.id)))
+                      set('ledEffects', ledEffectsValue(ev.target.checked ? [...now.chosen, e.id] : now.chosen.filter((id) => id !== e.id)))
                     }
                   />
                   {t(e.label)}
@@ -182,6 +187,7 @@ export function LedPanel({ edit, build }: Props) {
         </>
       )}
 
+      {!fresh && <p className="note">{t('led.sizeStale')}</p>}
       {size !== null && max !== null && (
         <div className="stack">
           <p className={size > max ? 'notice' : undefined}>

@@ -26,18 +26,29 @@ export function setDefine(text: string, name: string, value: string): string {
 }
 
 /** A `#define NAME` line, with or without a value: what `#ifdef NAME` sees. */
-const flagLine = (name: string) => new RegExp(`^[ \\t]*#[ \\t]*define[ \\t]+${escape(name)}(?=[ \\t\\r\\n/]|$)[^\\n]*(?:\\n|$)`, 'm');
+const flagLine = (name: string, flags = 'm') =>
+  new RegExp(`^[ \\t]*#[ \\t]*define[ \\t]+${escape(name)}(?=[ \\t\\r\\n/]|$)[^\\n]*(?:\\n|$)`, flags);
 
-/** Whether the file defines NAME as a switch (`#define NAME`). */
+/** The text with block comments taken out, so that a define inside one does not count. */
+const withoutBlockComments = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, ' '));
+
+/** Whether the file defines NAME (`#define NAME`, with or without a value). */
 export function readFlag(text: string, name: string): boolean {
-  return flagLine(name).test(text);
+  return flagLine(name).test(withoutBlockComments(text));
 }
 
-/** Adds `#define NAME` at the end, or removes its line. */
+/**
+ * Adds `#define NAME` at the end, or removes every line that defines it (in each branch of an
+ * `#if` too). A block comment that starts on such a line and goes on is kept.
+ */
 export function setFlag(text: string, name: string, on: boolean): string {
-  const line = flagLine(name);
-  if (!on) return text.replace(line, '');
-  if (line.test(text)) return text;
+  if (!on) {
+    return text.replace(flagLine(name, 'gm'), (line) => {
+      const open = line.indexOf('/*');
+      return open >= 0 && line.indexOf('*/', open) < 0 ? line.slice(open) : '';
+    });
+  }
+  if (readFlag(text, name)) return text;
   const ending = text === '' || text.endsWith('\n') ? '' : '\n';
   return `${text}${ending}#define ${name}\n`;
 }
@@ -65,7 +76,8 @@ function buildSpans(text: string): { start: number; end: number }[] {
     if (ch === '"') {
       let j = i + 1;
       while (j < text.length && text[j] !== '"') j += text[j] === '\\' ? 2 : 1;
-      if (depth === 1 && text.slice(i, j + 1) === '"builds"') inBuilds = true;
+      // The key "builds", not a string value that says builds.
+      if (depth === 1 && text.slice(i, j + 1) === '"builds"' && /^\s*:/.test(text.slice(j + 1))) inBuilds = true;
       i = j;
     } else if (ch === '{' || ch === '[') {
       if (inBuilds && depth === 2 && ch === '{') objectStart = i;
@@ -82,20 +94,46 @@ function buildSpans(text: string): { start: number; end: number }[] {
 /** Sets the trackball diameter of one build in keyballer.json, leaving the rest of the text as is. */
 export const setBallMm = (text: string, buildId: string, mm: number) => setBuildValue(text, buildId, 'ball_mm', mm);
 
+/**
+ * The value of a field of an object's own (not of an object nested in it): where its value starts
+ * and ends in the object's text. Only a scalar value is placed; an object or array value is null.
+ */
+function ownField(body: string, key: string): { start: number; end: number } | null | undefined {
+  let depth = 0;
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i];
+    if (ch === '"') {
+      let j = i + 1;
+      while (j < body.length && body[j] !== '"') j += body[j] === '\\' ? 2 : 1;
+      const colon = /^\s*:\s*/.exec(body.slice(j + 1));
+      if (depth === 1 && colon && body.slice(i, j + 1) === JSON.stringify(key)) {
+        const start = j + 1 + colon[0].length;
+        const scalar = /^("(?:[^"\\]|\\.)*"|true|false|null|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/.exec(body.slice(start));
+        return scalar ? { start, end: start + scalar[0].length } : null;
+      }
+      i = j;
+    } else if (ch === '{' || ch === '[') depth++;
+    else if (ch === '}' || ch === ']') depth--;
+  }
+  return undefined;
+}
+
 /** Sets a number or true/false field of one build in keyballer.json, leaving the rest of the text as is. */
 export function setBuildValue(text: string, buildId: string, key: string, value: number | boolean): string {
   const span = buildSpans(text).find((s) => (JSON.parse(text.slice(s.start, s.end + 1)) as { id?: string }).id === buildId);
   if (!span) throw new Error(`keyballer.json has no build ${buildId}`);
   const body = text.slice(span.start, span.end + 1);
-  const existing = new RegExp(`("${escape(key)}"[ \\t]*:[ \\t]*)(true|false|-?\\d+(?:\\.\\d+)?)`).exec(body);
+  const field = ownField(body, key);
+  if (field === null) throw new Error(`builds[].${key} of ${buildId} is not a single value`);
   let next: string;
-  if (existing) {
-    next = body.replace(existing[0], `${existing[1]}${value}`);
+  if (field) {
+    next = body.slice(0, field.start) + String(value) + body.slice(field.end);
   } else {
     // After the last field, on its own line, indented like the object's fields.
     const lastField = body.slice(0, body.lastIndexOf('}')).trimEnd();
     const indent = /^\{[ \t]*\r?\n([ \t]*)"/.exec(body)?.[1] ?? '  ';
-    next = `${lastField},\n${indent}"${key}": ${value}${body.slice(lastField.length)}`;
+    const ownLine = /^\{[ \t]*\r?\n/.test(body);
+    next = `${lastField},${ownLine ? `\n${indent}` : ' '}"${key}": ${value}${body.slice(lastField.length)}`;
   }
   return text.slice(0, span.start) + next + text.slice(span.end + 1);
 }

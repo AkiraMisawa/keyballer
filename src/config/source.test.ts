@@ -3,7 +3,7 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { readDefine, readFlag, setBallMm, setDefine, setFlag, setRule } from './source';
+import { readDefine, readFlag, setBallMm, setBuildValue, setDefine, setFlag, setRule } from './source';
 
 const fixture = (name: string) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
 const configH = fixture('am338.config.h');
@@ -98,6 +98,30 @@ describe('switches in config.h', () => {
     expect(on).toBe('#pragma once\n#define RGBLIGHT_EFFECT_TWINKLE\n');
     expect(setFlag(on, 'RGBLIGHT_EFFECT_TWINKLE', true)).toBe(on);
     expect(setFlag(on, 'RGBLIGHT_EFFECT_TWINKLE', false)).toBe('#pragma once\n');
+  });
+});
+
+describe('build fields in keyballer.json', () => {
+  it('sets a field of the build itself, not one nested in it or elsewhere', () => {
+    const text = '{\n  "note": "builds",\n  "views": { "x": { "id": "keyballplus" } },\n  "builds": [\n    {\n      "id": "keyballplus",\n      "extra": { "leds": false },\n      "leds": false\n    }\n  ]\n}\n';
+    const after = setBuildValue(text, 'keyballplus', 'leds', true);
+    expect(after).toBe(text.replace('"leds": false\n', '"leds": true\n'));
+    // A field written as a string is replaced, not given a second key.
+    const odd = '{ "builds": [ { "id": "b", "leds": "yes" } ] }';
+    expect(setBuildValue(odd, 'b', 'leds', false)).toBe('{ "builds": [ { "id": "b", "leds": false } ] }');
+    // A key that only contains the name is another key.
+    const escaped = '{ "builds": [ { "id": "b", "\\"leds": 1 } ] }';
+    expect(JSON.parse(setBuildValue(escaped, 'b', 'leds', true))).toEqual({ builds: [{ id: 'b', '"leds': 1, leds: true }] });
+  });
+});
+
+describe('switches inside comments', () => {
+  it('does not count a define in a block comment, and keeps the comment when removing a line', () => {
+    expect(readFlag('/* old:\n#define KEYBALLER_LEDS_OFF\n*/\n', 'KEYBALLER_LEDS_OFF')).toBe(false);
+    const text = '#define KEYBALLER_LEDS_OFF /* a\n b */\n#define X 1\n';
+    const after = setFlag(text, 'KEYBALLER_LEDS_OFF', false);
+    expect(readFlag(after, 'KEYBALLER_LEDS_OFF')).toBe(false);
+    expect(after).toBe('/* a\n b */\n#define X 1\n');
   });
 });
 
