@@ -57,6 +57,22 @@ describe('search', () => {
     expect(first('one-shot shift')).toBe('OSM(MOD_LSFT)');
   });
 
+  it('offers the LED keys under Lighting, found by what people call them', () => {
+    const lighting = catalogue.entries.filter((e) => e.category === 'lighting').map((e) => e.code);
+    expect(lighting).toEqual([
+      'RGB_TOG', 'RGB_MOD', 'RGB_RMOD', 'RGB_HUI', 'RGB_HUD', 'RGB_SAI', 'RGB_SAD', 'RGB_VAI', 'RGB_VAD',
+      'RGB_M_P', 'RGB_M_B', 'RGB_M_R', 'RGB_M_SW', 'RGB_M_SN', 'RGB_M_K', 'RGB_M_X', 'RGB_M_G', 'RGB_M_TW',
+    ]);
+    expect(first('led')).toBe('RGB_TOG');
+    expect(codes('ライト')).toContain('RGB_TOG');
+    expect(first('breathing')).toBe('RGB_M_B');
+    expect(first('呼吸')).toBe('RGB_M_B');
+    expect(codes('明るさ')).toEqual(expect.arrayContaining(['RGB_VAI', 'RGB_VAD']));
+    // ZMK keyboards here have no LEDs, and ZMK has other keys for them.
+    const zmk = makeCatalogue({ layers: ['Base'], custom: [], labels: {}, zmk: true });
+    expect(zmk.entries.some((e) => e.category === 'lighting')).toBe(false);
+  });
+
   it('finds nothing for nonsense', () => {
     expect(codes('zzzzqq')).toEqual([]);
   });

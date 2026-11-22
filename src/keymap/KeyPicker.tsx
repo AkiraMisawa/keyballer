@@ -23,6 +23,7 @@ const CATEGORY_LABEL: Record<Category, MessageKey> = {
   mouse: 'picker.cat.mouse',
   media: 'picker.cat.media',
   keyball: 'picker.cat.keyball',
+  lighting: 'picker.cat.lighting',
   special: 'picker.cat.special',
   own: 'picker.cat.own',
 };
