@@ -1,6 +1,6 @@
 # ZMK keyboards: builds, provenance and UF2 flashing
 
-Status: planned (2026-11-22). Phase 1 next.
+Status: phase 1 in progress (2026-11-22). The workflow builds both owner configs; the app side is next.
 
 Research and sources: [../research/zmk.md](../research/zmk.md). Provenance and the threat model this builds on: [github-login.md](github-login.md).
 
@@ -26,7 +26,7 @@ The same model as QMK: Keyballer's own reusable workflow builds the firmware, pu
 
 1. **Workflow.** `build-zmk.yml` and `scripts/build_zmk.py`, modelled on `build-qmk.yml`: a plan job, a build job with no write token, and the same publish job.
 2. **Config.** The repository's `keyballer.json` with `"firmware": "zmk"` lists the builds. ZMK's `build.yaml` is not read.
-3. **Pinning.** `config/west.yml` must pin every project by commit SHA, before and after `west update`, including Zephyr. Every commit must be contained in a branch or tag of the repository it is fetched from. The frozen manifest is published next to the firmware.
+3. **Pinning.** `config/west.yml` must pin every project by commit SHA, before and after `west update`, including Zephyr. Every commit the config pins must be contained in a branch or tag of the repository it is fetched from. The resolved manifest, with every project at a SHA, is published next to the firmware.
 4. **The UF2 check.** Both the build and the browser check the file block by block.
 5. **Provenance.** It accepts runs of `build-zmk.yml` as it does `build-qmk.yml`.
 6. **The app.** It lists each keyboard's files with their roles, offers a verified download, and explains how to flash:
@@ -67,7 +67,7 @@ The same model as QMK: Keyballer's own reusable workflow builds the firmware, pu
   | `group` | an id-like name; builds of one keyboard share it |
   | `board` | `[a-z0-9_]+(@[0-9.]+)?(/[a-z0-9_]*)*` |
   | `shield` and `snippet` | one or more space-separated `[A-Za-z0-9_-]+` |
-  | `zmk.image` | required, pinned by digest, and the image must match the ZMK version: `3.5` for v0.3, `4.1` for `main` |
+  | `zmk.image` | required, pinned by digest. Use the image for ZMK's Zephyr: `zmk-build-arm:3.5` for Zephyr 3.5 (ZMK v0.3 and `main` before 2025-12-09), `4.1` after that. |
 
   There are no `cmake-args`: a value there reaches CMake, and nothing in the owner's builds needs one.
 - **`config/west.yml`.** It is checked before `west` runs:
@@ -79,10 +79,12 @@ The same model as QMK: Keyballer's own reusable workflow builds the firmware, pu
   - **`self.path`** is `config`.
 
   After `west update`, `west manifest --resolve` must show a SHA for every project, so the config also pins `zephyr` (the top-level definition wins over ZMK's branch).
-- **The containment check.** For every project, the build:
+- **The containment check.** For every project that `config/west.yml` itself lists, the build:
   - fetches the remote's branches and tags with `--filter=tree:0`;
-  - requires `git for-each-ref --contains <sha>`, as `build_qmk.py` does for QMK sources;
-  - writes `west manifest --freeze` to `<id>.west.yml`, which the manifest lists with its SHA-256.
+  - requires `git for-each-ref --contains <sha>`, as `build_qmk.py` does for QMK sources.
+
+  Projects imported by ZMK or Zephyr are pinned by the manifest inside a commit that this check covers.
+- **The published manifest.** The build writes `west manifest --resolve` to `<id>.west.yml`, which the manifest lists with its SHA-256. Every project in it is at a SHA, so it is the frozen manifest. `west manifest --freeze` itself refuses Zephyr's optional projects, which are not cloned.
 - **No build cache.** A poisoned cache would be trusted. Builds take about three minutes.
 - **What the build records** for each build, in its `<id>.json`:
   - `board`, `shield`, `snippet`, `group`, `file`, `format: "uf2"`, `west`;
@@ -104,7 +106,24 @@ The same model as QMK: Keyballer's own reusable workflow builds the firmware, pu
   - **config:** `keyballer.json`;
   - **workflow:** `.github/workflows/build.yml` replaced by one that calls Keyballer's `build-zmk.yml` (ZMK's unpinned workflow is removed).
 
-  The pins that build are found by running the build; this plan records them once they do.
+  These pins build with `zmk-build-arm:3.5` (checked on Actions, 2026-11-22):
+
+  | Project | roBa | meteorite40 |
+  |---|---|---|
+  | ZMK | `acfd8e5e` (`v0.3-branch`, as roBa's designer uses) | `abb64ba3` (`main` of 2025-12-07, the last on Zephyr 3.5, when the config was last changed) |
+  | Zephyr | `dacab487` (`v3.5.0+zmk-fixes`) | `dacab487` |
+  | Modules | `kumamuk-git/zmk-pmw3610-driver` at `main` | the four `iwk7273` modules as of 2025-12-01 |
+
+  The builds and their roles:
+
+  | Build | Role | ZMK Studio |
+  |---|---|---|
+  | roBa right | central | on |
+  | roBa left | peripheral | off |
+  | roBa settings reset | settings_reset | off |
+  | meteorite40, meteorite40 (low profile) | standalone | on |
+
+  Every UF2 file starts at `0x27000`. Each build takes about three minutes.
 
 ## User stories
 
