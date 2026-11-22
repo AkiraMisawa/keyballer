@@ -1,0 +1,143 @@
+# ZMK keyboards: builds, provenance and UF2 flashing
+
+Status: planned (2026-11-22). Phase 1 next.
+
+Research and sources: [../research/zmk.md](../research/zmk.md). Provenance and the threat model this builds on: [github-login.md](github-login.md).
+
+## Problem
+
+Two of the owner's keyboards run ZMK, and Keyballer cannot build or flash either:
+
+- **roBa** is split. The right half is the central, with the trackball. The left half is the peripheral.
+- **meteorite40** is a single XIAO nRF52840 with a trackball.
+
+The owner's config repositories, `AkiraMisawa/zmk-config-roBa` and `AkiraMisawa/zmk-config-meteorite40`, are forks of their designers' repositories. They follow ZMK `main` and their modules by branch. ZMK `main` moved to Zephyr 4.1 and renamed the XIAO board, so they most likely do not build today.
+
+ZMK's own workflow, `build-user-config.yml`, has two problems:
+
+- it expands matrix values inside shell scripts, and it pins actions by tag and its image by a moving tag;
+- it publishes a zip artifact that a page cannot check against anything.
+
+## Solution
+
+The same model as QMK: Keyballer's own reusable workflow builds the firmware, publishes it on the `firmware` branch with a manifest, and keeps a record of the manifest with the run. Keyballer checks the bytes against that record before offering them.
+
+**Phase 1: build, provenance and verified download.**
+
+1. **Workflow.** `build-zmk.yml` and `scripts/build_zmk.py`, modelled on `build-qmk.yml`: a plan job, a build job with no write token, and the same publish job.
+2. **Config.** The repository's `keyballer.json` with `"firmware": "zmk"` lists the builds. ZMK's `build.yaml` is not read.
+3. **Pinning.** `config/west.yml` must pin every project by commit SHA, before and after `west update`, including Zephyr. Every commit must be contained in a branch or tag of the repository it is fetched from. The frozen manifest is published next to the firmware.
+4. **The UF2 check.** Both the build and the browser check the file block by block.
+5. **Provenance.** It accepts runs of `build-zmk.yml` as it does `build-qmk.yml`.
+6. **The app.** It lists each keyboard's files with their roles, offers a verified download, and explains how to flash:
+   - the double reset;
+   - the drive;
+   - that a copy error at the end is normal;
+   - for split keyboards, the order, and settings reset as a separate "fix pairing" step.
+
+**Phase 2: direct write (Chromium).** The owner picks the bootloader drive. Keyballer reads `INFO_UF2.TXT` and checks the board, then writes the file. An error when the file is closed, after every byte was written, means the board has reset; the page asks whether the keyboard restarted. The download stays as the fallback.
+
+**Phase 3: keymap view.** The build writes `<id>.view.json` from `zephyr.dts`. Later, reading the live keymap over ZMK Studio would also show Studio edits.
+
+## Decisions
+
+- **`keyballer.json` for ZMK.** It is checked with `fullmatch`, like QMK's.
+
+  ```json
+  {
+    "firmware": "zmk",
+    "zmk": { "image": "docker.io/zmkfirmware/zmk-build-arm@sha256:…" },
+    "builds": [
+      { "id": "roba-right", "name": "roBa right", "group": "roba",
+        "board": "seeeduino_xiao_ble", "shield": "roBa_R", "snippet": "studio-rpc-usb-uart" },
+      { "id": "roba-left", "name": "roBa left", "group": "roba",
+        "board": "seeeduino_xiao_ble", "shield": "roBa_L" },
+      { "id": "roba-reset", "name": "roBa settings reset", "group": "roba",
+        "board": "seeeduino_xiao_ble", "shield": "settings_reset" }
+    ]
+  }
+  ```
+
+  The fields and their patterns:
+
+  | Field | Pattern |
+  |---|---|
+  | `id` | `[a-z0-9][a-z0-9_-]*` |
+  | `name` | one line of text |
+  | `group` | an id-like name; builds of one keyboard share it |
+  | `board` | `[a-z0-9_]+(@[0-9.]+)?(/[a-z0-9_]*)*` |
+  | `shield` and `snippet` | one or more space-separated `[A-Za-z0-9_-]+` |
+  | `zmk.image` | required, pinned by digest, and the image must match the ZMK version: `3.5` for v0.3, `4.1` for `main` |
+
+  There are no `cmake-args`: a value there reaches CMake, and nothing in the owner's builds needs one.
+- **`config/west.yml`.** It is checked before `west` runs:
+  - **remotes:** each `url-base` is `https://github.com/<owner>`;
+  - **projects:**
+    - each has a remote, a plain path, and a 40-hex `revision`;
+    - `import` is allowed only on the project named `zmk`, as `app/west.yml`;
+    - there are no `submodules`;
+  - **`self.path`** is `config`.
+
+  After `west update`, `west manifest --resolve` must show a SHA for every project, so the config also pins `zephyr` (the top-level definition wins over ZMK's branch).
+- **The containment check.** For every project, the build:
+  - fetches the remote's branches and tags with `--filter=tree:0`;
+  - requires `git for-each-ref --contains <sha>`, as `build_qmk.py` does for QMK sources;
+  - writes `west manifest --freeze` to `<id>.west.yml`, which the manifest lists with its SHA-256.
+- **No build cache.** A poisoned cache would be trusted. Builds take about three minutes.
+- **What the build records** for each build, in its `<id>.json`:
+  - `board`, `shield`, `snippet`, `group`, `file`, `format: "uf2"`, `west`;
+  - the role from `zephyr/.config`: `central`, `peripheral`, `standalone` or `settings_reset`;
+  - `studio` (whether ZMK Studio is on);
+  - `uf2: {family, blocks, start, end}`;
+  - `zmk_sha` and `zephyr_sha`, from the frozen manifest;
+  - `image`.
+- **The UF2 rules**, the same in Python (build) and TypeScript (browser):
+  - the length is a positive multiple of 512;
+  - every block has the three magics, flags exactly `0x2000`, family `0xADA52840`, a 256-byte payload, `blockNo` equal to its index, and the same `numBlocks` as the others;
+  - every target address is 256-aligned and in `[0x26000, 0xEC000)`;
+  - the addresses do not repeat.
+
+  This refuses files that would overwrite the bootloader (family `0xd663823c`), the SoftDevice, or the settings and bonds. In the browser, the file's block count and range must also equal the manifest's.
+- **Provenance.** `KEYBALLER_WORKFLOWS` lists `build-qmk.yml` and `build-zmk.yml`. The workflow commit must still be on Keyballer's `main`. Nothing else changes.
+- **The owner's config repositories** get a pull request each:
+  - **pins:** `config/west.yml` pinned by SHA, taking each designer's current working pins where they exist;
+  - **config:** `keyballer.json`;
+  - **workflow:** `.github/workflows/build.yml` replaced by one that calls Keyballer's `build-zmk.yml` (ZMK's unpinned workflow is removed).
+
+  The pins that build are found by running the build; this plan records them once they do.
+
+## User stories
+
+1. As a roBa or meteorite40 owner, I want Keyballer to build my ZMK config on GitHub Actions and show the firmware like my Keyball's, so that one tool covers all my keyboards.
+2. As an owner, I want Keyballer to refuse a UF2 file that its build did not record, or that would overwrite the bootloader or my pairings, so that a leaked token cannot brick or take over a keyboard.
+3. As a split-keyboard owner, I want to see which file goes on which half, in order, so that I flash the right halves.
+4. As an owner whose halves stopped pairing, I want a separate "fix pairing" step with the settings reset, so that I never flash it by accident.
+5. As an owner, I want the flashing steps (double reset, the drive's name, the copy error that is normal), so that I can flash without searching the ZMK docs.
+
+## Threat model (additions)
+
+| Threat | What it could do | Defence |
+|---|---|---|
+| A stolen token commits a `keyballer.json` or `west.yml` value that injects into the workflow | Code in the publish job; a forged record | `fullmatch` on every value; values reach `west` and `git` as argument lists, never shell text; no expressions in `run:` |
+| A stolen token points `west.yml` at a branch, or at a fork's commit through the upstream URL | New code without a reviewable commit, or someone else's code under an upstream name | SHAs only, before and after `west update`; every commit must be in a branch or tag of the repository it comes from; the frozen manifest is published |
+| A crafted UF2 (bootloader family, writes over the bootloader, SoftDevice or bonds) | A bricked or taken-over keyboard | The UF2 rules in the build and in the browser |
+| A stolen token rewrites the `firmware` branch | Unbuilt UF2 on the keyboard | Provenance, as for QMK |
+| A module or ZMK commit with malicious code on `main` | Firmware built from it | As for QMK, not preventable once a token can write. The flash step shows the run, the commit and the pinned ZMK and Zephyr SHAs. |
+| The bootloader has no signatures | Anything that reaches the drive is flashed | Outside Keyballer. The browser offers only checked bytes; a file the owner copies by hand is their choice. |
+
+## Testing decisions
+
+**Seams** (TDD, with expected values from the UF2 spec and the bootloader source):
+- **The UF2 check**, in Python and TypeScript: synthetic files built from the spec's constants, plus each refusal (family, flags, payload size, an address outside the range, a misaligned address, a short file, block numbering).
+- **`build_zmk.py` config and `west.yml` checks:** each refusal, plus the owner's real files.
+- **The manifest and provenance:** the new fields, and the workflow list.
+- **The app:** listing a group's files with their roles, and the download offering only checked bytes.
+
+**Real runs:** build both owner configs on Actions; flash on the owner's hardware (owner step).
+
+## Out of scope
+
+- Direct write (phase 2) and the keymap view (phase 3).
+- Building ZMK locally with Docker. The QMK path has it; ZMK can follow.
+- ZMK Studio over Web Serial.
+- Keyboards whose bootloader is not the Adafruit nRF52 UF2 bootloader.
