@@ -4,7 +4,7 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { apply, currentFiles, ledEffectsValue, ledModeValue, leds, openSession, rebase, redo, review, trackball, undo, type Edit, type Session } from './session';
+import { apply, canUndo, currentFiles, ledEffectsValue, ledModeValue, leds, ledsFromRules, openSession, rebase, redo, review, trackball, undo, type Edit, type Session } from './session';
 
 const fixture = (name: string) =>
   readFileSync(new URL(`../config/fixtures/${name}`, import.meta.url), 'utf8');
@@ -133,7 +133,7 @@ describe('LED settings in a session (docs/plans/led-settings.md)', () => {
   it('starts from what the files say, with QMK’s defaults and Keyball’s brightness limit for the rest', () => {
     // am338's rules.mk has RGBLIGHT_ENABLE = no and keyballer.json no "leds".
     expect(leds(withRules())).toEqual({
-      fitted: false, mode: { effect: 'static', variant: 0 }, hue: 0, sat: 255, val: 150, startOn: true, effects: [], limit: 150,
+      fitted: false, mode: { effect: 'static', variant: 0 }, hue: 0, sat: 255, val: 150, startOn: true, effects: [], chosen: [], limit: 150,
     });
     expect(leds(withRules('RGBLIGHT_ENABLE = yes\n')).fitted).toBe(true);
     const set = withRules(undefined, `${fixture('am338.config.h')}#define RGBLIGHT_DEFAULT_MODE RGBLIGHT_MODE_TWINKLE + 4\n#define RGBLIGHT_EFFECT_TWINKLE\n#define RGBLIGHT_DEFAULT_VAL 90\n#define KEYBALLER_LEDS_OFF\n`);
@@ -162,7 +162,7 @@ describe('LED settings in a session (docs/plans/led-settings.md)', () => {
       '#define RGBLIGHT_DEFAULT_MODE RGBLIGHT_MODE_BREATHING + 2\n#define RGBLIGHT_DEFAULT_HUE 170\n#define KEYBALLER_LEDS_OFF\n#define RGBLIGHT_EFFECT_BREATHING\n',
     )).toBe(true);
     expect(leds(s)).toMatchObject({ mode: { effect: 'breathing', variant: 2 }, hue: 170, startOn: false, effects: ['breathing'] });
-    expect(review(s).message).toBe('Set the LED effect to breathing, the LED hue to 170, the LEDs to start off and the LED effects to breathing');
+    expect(review(s).message).toBe('Set the LED effect to breathing (variant 3 of 4), the LED hue to 170, the LEDs to start off and the LED effects to breathing');
   });
 
   it('takes settings out again, leaving config.h as it was', () => {
@@ -182,4 +182,58 @@ describe('LED settings in a session (docs/plans/led-settings.md)', () => {
     ].reduce((x, e) => apply(x, e as Edit), withRules());
     expect(leds(s).effects).toEqual(['snake', 'twinkle']);
   });
+
+  it('takes away a start-up effect it put in when the start-up effect changes', () => {
+    // As the panel ticks an effect: from the effects chosen, not those forced in.
+    const snake = apply(withRules(), { type: 'ledMode', value: ledModeValue({ effect: 'snake', variant: 0 }) });
+    expect(leds(snake)).toMatchObject({ effects: ['snake'], chosen: [] });
+    const ticked = apply(snake, { type: 'ledEffects', value: ledEffectsValue([...leds(snake).chosen, 'twinkle']) });
+    const back = apply(ticked, { type: 'ledMode', value: ledModeValue({ effect: 'static', variant: 0 }) });
+    expect(leds(back).effects).toEqual(['twinkle']);
+  });
+
+  it('removes defines the saved file has, every copy, CRLF too', () => {
+    const saved = '#pragma once\r\n#define KEYBALLER_LEDS_OFF\r\n#ifdef A\r\n#define RGBLIGHT_EFFECT_TWINKLE\r\n#else\r\n#define RGBLIGHT_EFFECT_TWINKLE\r\n#endif\r\n';
+    const s = withRules('RGBLIGHT_ENABLE = yes\n', saved);
+    expect(leds(s)).toMatchObject({ startOn: false, effects: ['twinkle'] });
+    const after = [
+      { type: 'ledStartOn', value: 1 },
+      { type: 'ledEffects', value: 0 },
+    ].reduce((x, e) => apply(x, e as Edit), s);
+    expect(configOf(after)).toBe('#pragma once\r\n#ifdef A\r\n#else\r\n#endif\r\n');
+    expect(review(after).message).toBe('Set the LEDs to start on and the LED effects to none');
+  });
+
+  it('makes each choice one undo step, but a slider drag one step', () => {
+    const s = [
+      { type: 'ledEffects', value: ledEffectsValue(['twinkle']) },
+      { type: 'ledEffects', value: ledEffectsValue(['twinkle', 'knight']) },
+      { type: 'ledHue', value: 10 },
+      { type: 'ledHue', value: 20 },
+    ].reduce((x, e) => apply(x, e as Edit), withRules());
+    const back = undo(s);
+    expect(leds(back)).toMatchObject({ hue: 0, effects: ['knight', 'twinkle'] });
+    expect(leds(undo(back)).effects).toEqual(['twinkle']);
+    expect(canUndo(undo(undo(back)))).toBe(false);
+  });
+
+  it('says the variant of the start-up effect in the commit message', () => {
+    const s = apply(withRules(), { type: 'ledMode', value: ledModeValue({ effect: 'breathing', variant: 2 }) });
+    expect(review(s).message).toBe('Set the LED effect to breathing (variant 3 of 4) and the LED effects to breathing');
+  });
+
+  it('reads the brightness limit and rules.mk as QMK does', () => {
+    expect(leds(withRules(undefined, '#define RGBLIGHT_LIMIT_VAL 0x80\n')).limit).toBe(128);
+    const other = openSession({
+      commit: 'base000', buildId: 'macro', keymapDir: 'keymaps/m',
+      files: { 'keymaps/m/config.h': '', 'keyballer.json': '{"builds": [{"id": "macro", "keyboard": "handwired/m"}]}' },
+    });
+    expect(leds(other).limit).toBe(255);
+    // make takes the last plain assignment; := assigns too.
+    expect(leds(withRules('RGBLIGHT_ENABLE = yes\nRGBLIGHT_ENABLE = no\n')).fitted).toBe(false);
+    expect(leds(withRules('RGBLIGHT_ENABLE := yes # on\n')).fitted).toBe(true);
+    // What rules.mk says, whatever keyballer.json says: what a build made before builds[].leds had.
+    expect(ledsFromRules(apply(withRules('RGBLIGHT_ENABLE = yes\n'), { type: 'leds', value: 0 }))).toBe(true);
+  });
 });
+

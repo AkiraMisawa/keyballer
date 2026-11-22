@@ -17,7 +17,7 @@ import {
   setScrollLayers,
 } from '../config/keymap';
 import { readDefine, readFlag, setBallMm, setBuildValue, setDefine, setFlag, setRule } from '../config/source';
-import { EFFECTS, modeText, readMode, type EffectId, type LedMode } from '../leds/leds';
+import { EFFECTS, modeText, readMode, variantCount, type EffectId, type LedMode } from '../leds/leds';
 import type { MessageKey } from '../i18n/messages';
 import { readCustomKeycodes } from '../config/keymap';
 import { basicLegend, TRANSPARENT } from '../keymap/keycodes';
@@ -65,6 +65,8 @@ export type Edit =
   | { type: 'ballMode'; layer: number; mode: BallMode };
 
 const isSetting = (e: Edit): e is { type: Setting; value: number } => Object.hasOwn(SETTINGS, e.type);
+
+const SLIDERS = new Set<string>(['cpi', 'divider', 'ballMm', 'ledHue', 'ledSat', 'ledVal']);
 
 export interface Session {
   base: SessionBase;
@@ -144,7 +146,8 @@ export function openSession(base: SessionBase): Session {
 /** Whether two edits change the same thing, so the later one replaces the earlier. */
 function sameTarget(a: Edit, b: Edit): boolean {
   if (a.type !== b.type) return false;
-  if (isSetting(a)) return true;
+  // A slider drag is one step; each choice (a box ticked, an effect picked) is its own.
+  if (isSetting(a)) return SLIDERS.has(a.type);
   if (a.type === 'key' && b.type === 'key') return a.layer === b.layer && a.index === b.index;
   if ((a.type === 'layerName' || a.type === 'ballMode') && a.type === b.type) return a.layer === (b as typeof a).layer;
   return false;
@@ -209,8 +212,8 @@ export const ledEffectsOf = (value: number): EffectId[] => EFFECTS.filter((e, i)
 
 /** Keyball limits brightness for power (RGBLIGHT_LIMIT_VAL 150 in its config.h); QMK's limit is 255. */
 function ledLimit(base: SessionBase, files: Record<string, string>): number {
-  const own = Number.parseInt(readDefine(files[configPath(base)] ?? '', 'RGBLIGHT_LIMIT_VAL') ?? '', 10);
-  if (Number.isFinite(own)) return own;
+  const text = readDefine(files[configPath(base)] ?? '', 'RGBLIGHT_LIMIT_VAL')?.trim() ?? '';
+  if (/^(0x[0-9a-fA-F]+|\d+)$/.test(text)) return Math.min(Number(text), 255);
   return buildOf(base, files)?.keyboard?.startsWith('keyball/') ? 150 : 255;
 }
 
@@ -226,6 +229,18 @@ const EFFECT_WORDS: Record<EffectId, string> = {
   twinkle: 'twinkle',
   alternating: 'alternating',
 };
+
+/**
+ * Whether rules.mk turns RGB Lighting on: its last plain assignment, as make takes it. `?=` and
+ * `+=` do not decide, since the keyboard's own rules.mk is read first.
+ */
+function rulesHaveLeds(rules: string): boolean {
+  const set = [...rules.matchAll(/^[ \t]*RGBLIGHT_ENABLE[ \t]*:?=[ \t]*([A-Za-z]+)/gm)].at(-1);
+  return set?.[1].toLowerCase() === 'yes';
+}
+
+/** What the keymap's rules.mk says about LEDs, whatever keyballer.json says: what a build made without builds[].leds had. */
+export const ledsFromRules = (session: Session) => rulesHaveLeds(session.base.files[rulesPath(session.base)] ?? '');
 
 const config = (b: SessionBase, f: Record<string, string>) => f[configPath(b)] ?? '';
 const writeConfig = (b: SessionBase, f: Record<string, string>, change: (text: string) => string) => void (f[configPath(b)] = change(config(b, f)));
@@ -259,7 +274,7 @@ const SETTINGS: Record<
     read: (b, f) => {
       const own = buildOf(b, f)?.leds;
       if (typeof own === 'boolean') return own ? 1 : 0;
-      return /^[ \t]*RGBLIGHT_ENABLE[ \t]*=[ \t]*yes\b/m.test(f[rulesPath(b)] ?? '') ? 1 : 0;
+      return rulesHaveLeds(f[rulesPath(b)] ?? '') ? 1 : 0;
     },
     write: (b, f, v) => void (f[CONFIG_JSON] = setBuildValue(f[CONFIG_JSON], b.buildId, 'leds', v === 1)),
     clause: (to, buildId) => `${buildId} to build ${to ? 'with' : 'without'} LEDs`,
@@ -270,7 +285,12 @@ const SETTINGS: Record<
       const mode = ledModeOf(v);
       if (mode) writeConfig(b, f, (text) => setDefine(text, LED_MODE, modeText(mode)));
     },
-    clause: (to) => `the LED effect to ${EFFECT_WORDS[ledModeOf(to)?.effect ?? 'static']}`,
+    clause: (to) => {
+      const mode = ledModeOf(to);
+      if (!mode) return 'the LED effect';
+      const count = variantCount(mode.effect);
+      return `the LED effect to ${EFFECT_WORDS[mode.effect]}${count > 1 ? ` (variant ${mode.variant + 1} of ${count})` : ''}`;
+    },
   },
   ledHue: {
     read: (b, f) => readNumber(readDefine(config(b, f), ledDefine('HUE')), 0),
@@ -298,7 +318,7 @@ const SETTINGS: Record<
       writeConfig(b, f, (text) => EFFECTS.reduce((t, e, i) => (e.define ? setFlag(t, e.define, (v & (1 << i)) !== 0) : t), text)),
     clause: (to) => {
       const ids = ledEffectsOf(to);
-      return ids.length ? `the LED effects to ${englishList(ids.map((id) => EFFECT_WORDS[id]))}` : 'no LED effects';
+      return `the LED effects to ${ids.length ? englishList(ids.map((id) => EFFECT_WORDS[id])) : 'none'}`;
     },
   },
 };
@@ -320,12 +340,15 @@ export function savedSettings(session: Session): Settings {
   return settingsOf(session.base, session.base.files);
 }
 
-/** Every setting as the session stands now. */
-export function settings(session: Session): Settings {
-  const now = savedSettings(session);
+/** Every setting as the edits leave it, before the start-up effect is put in. */
+function chosenSettings(session: Session): Settings {
+  const now = Object.fromEntries(SETTING_ORDER.map((k) => [k, SETTINGS[k].read(session.base, session.base.files)])) as Settings;
   for (const e of session.edits) if (isSetting(e)) now[e.type] = e.value;
-  return withModeEffect(now);
+  return now;
 }
+
+/** Every setting as the session stands now. */
+export const settings = (session: Session): Settings => withModeEffect(chosenSettings(session));
 
 const trackballOf = ({ cpi, divider, ballMm }: Settings): Trackball => ({ cpi, divider, ballMm });
 
@@ -347,11 +370,13 @@ export interface Leds {
   startOn: boolean;
   /** The effects compiled in, besides the static colour. */
   effects: EffectId[];
+  /** The effects chosen to be compiled in; `effects` adds the start-up effect. */
+  chosen: EffectId[];
   /** The highest brightness the firmware allows. */
   limit: number;
 }
 
-const ledsOf = (s: Settings, limit: number): Leds => ({
+const ledsOf = (s: Settings, limit: number, chosen: number): Leds => ({
   fitted: s.leds === 1,
   mode: ledModeOf(s.ledMode),
   hue: s.ledHue,
@@ -359,14 +384,17 @@ const ledsOf = (s: Settings, limit: number): Leds => ({
   val: s.ledVal,
   startOn: s.ledStartOn === 1,
   effects: ledEffectsOf(s.ledEffects),
+  chosen: ledEffectsOf(chosen),
   limit,
 });
 
 /** The LED settings as the session stands now. */
-export const leds = (session: Session): Leds => ledsOf(settings(session), ledLimit(session.base, currentFiles(session)));
+export const leds = (session: Session): Leds =>
+  ledsOf(settings(session), ledLimit(session.base, currentFiles(session)), chosenSettings(session).ledEffects);
 
 /** The LED settings as they are in the files read from the repository. */
-export const savedLeds = (session: Session): Leds => ledsOf(savedSettings(session), ledLimit(session.base, session.base.files));
+export const savedLeds = (session: Session): Leds =>
+  ledsOf(savedSettings(session), ledLimit(session.base, session.base.files), SETTINGS.ledEffects.read(session.base, session.base.files));
 
 
 

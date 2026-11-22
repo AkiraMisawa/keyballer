@@ -444,6 +444,7 @@ export function KeymapScreen(props: Props) {
     setSelected(sel);
   };
   const startCombo = () => {
+    setLedsOpen(false);
     setSelected(null);
     setComboChange(null);
     setTab(view?.zmk ? shown : 0);
@@ -803,7 +804,7 @@ export function KeymapScreen(props: Props) {
               {ledsOpen && !isZmk(build) ? (
                 <div className="stack">
                   <h3>{t('led.title')}</h3>
-                  <LedPanel edit={edit} build={build} />
+                  <LedPanel edit={edit} build={build} builtFrom={manifest.source.sha} />
                 </div>
               ) : editing && editProblem ? (
                 <div className="stack">
@@ -858,6 +859,7 @@ export function KeymapScreen(props: Props) {
                   sharedBy={sharedBy}
                   onAddCombo={startCombo}
                   onChangeCombo={(name) => {
+                    setLedsOpen(false);
                     setSelected(null);
                     setComboChange(name);
                   }}
