@@ -3,7 +3,8 @@
 
 import { LocalizedError } from '../i18n/core';
 import type { MessageKey } from '../i18n/messages';
-import { parseManifest, type FirmwareManifest } from './manifest';
+import { isCommitSha, isPlainPath, parseManifest, type FirmwareManifest } from './manifest';
+import type { CheckRun } from './provenance';
 
 export interface RepoRef {
   owner: string;
@@ -108,6 +109,8 @@ export async function getFirmwareHead(r: RepoRef, token: string): Promise<string
 }
 
 async function getRaw(r: RepoRef, path: string, ref: string, token: string): Promise<Response> {
+  // Paths come from the config repository; one with `..` would reach other API paths with the token.
+  if (!isPlainPath(path)) throw new LocalizedError('manifest.err.format');
   const encoded = path.split('/').map(encodeURIComponent).join('/');
   return request(
     `${repoPath(r)}/contents/${encoded}?ref=${encodeURIComponent(ref)}`,
@@ -156,6 +159,72 @@ export async function getBranchHead(r: RepoRef, branch: string, token: string): 
   );
   const body = (await res.json()) as { object: { sha: string } };
   return body.object.sha;
+}
+
+/** A file's exact bytes at a commit (the firmware branch), for digests. */
+export async function getFirmwareBytes(r: RepoRef, ref: string, file: string, token: string): Promise<Uint8Array> {
+  const res = await getRaw(r, file, ref, token);
+  return new Uint8Array(await res.arrayBuffer());
+}
+
+/** The repository's default branch. */
+export async function getDefaultBranch(r: RepoRef, token: string): Promise<string> {
+  const res = await request(repoPath(r), token, 'application/vnd.github+json');
+  const body = (await res.json()) as { default_branch: string };
+  return body.default_branch;
+}
+
+/** Check runs with this name on a commit (all of them, not only the latest). */
+export async function getCheckRuns(r: RepoRef, sha: string, name: string, token: string): Promise<CheckRun[]> {
+  if (!isCommitSha(sha)) throw new LocalizedError('manifest.err.format');
+  const res = await request(
+    `${repoPath(r)}/commits/${sha}/check-runs?check_name=${encodeURIComponent(name)}&filter=all&per_page=100`,
+    token,
+    'application/vnd.github+json',
+  );
+  const body = (await res.json()) as { check_runs: CheckRun[] };
+  return body.check_runs;
+}
+
+/** Whether a commit is on a branch: the branch is the commit or comes after it. */
+export async function isOnBranch(r: RepoRef, branch: string, sha: string, token: string): Promise<boolean> {
+  if (!isCommitSha(sha)) throw new LocalizedError('manifest.err.format');
+  const res = await request(
+    `${repoPath(r)}/compare/${encodeURIComponent(branch)}...${sha}`,
+    token,
+    'application/vnd.github+json',
+  );
+  const body = (await res.json()) as { status: string };
+  return body.status === 'identical' || body.status === 'behind';
+}
+
+/** Who made a commit, when, and what it says. */
+export interface CommitInfo {
+  sha: string;
+  url: string;
+  message: string;
+  authorName: string;
+  authorLogin: string | null;
+  date: string;
+}
+
+export async function getCommitInfo(r: RepoRef, sha: string, token: string): Promise<CommitInfo> {
+  if (!isCommitSha(sha)) throw new LocalizedError('manifest.err.format');
+  const res = await request(`${repoPath(r)}/commits/${sha}`, token, 'application/vnd.github+json');
+  const body = (await res.json()) as {
+    sha: string;
+    html_url: string;
+    author: { login: string } | null;
+    commit: { message: string; author: { name: string; date: string } };
+  };
+  return {
+    sha: body.sha,
+    url: body.html_url,
+    message: body.commit.message,
+    authorName: body.commit.author.name,
+    authorLogin: body.author?.login ?? null,
+    date: body.commit.author.date,
+  };
 }
 
 /** A file's text at a commit, or null when the file is not there. */

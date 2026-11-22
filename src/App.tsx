@@ -14,14 +14,13 @@ import {
   checkRepo,
   getBuildRuns,
   getFirmwareHead,
-  getFirmwareText,
   getManifest,
   parseRepo,
   repoName,
   type RepoRef,
   type WorkflowRun,
 } from './lib/github';
-import { parseIntelHex } from './lib/ihex';
+import { loadVerifiedFirmware, type FirmwareSource } from './lib/firmware';
 import type { FirmwareBuild, FirmwareManifest } from './lib/manifest';
 import { isWebSerialSupported } from './lib/serial';
 import { load, save } from './lib/storage';
@@ -30,6 +29,7 @@ interface FlashTarget {
   title: string;
   image: Uint8Array;
   split: boolean;
+  source?: FirmwareSource;
 }
 
 interface RepoState {
@@ -73,16 +73,41 @@ function KeymapCommand({ build, shortcut, onOpen }: { build: FirmwareBuild; shor
   return null;
 }
 
-function initialRepo(): string {
-  const fromUrl = new URLSearchParams(location.search).get('repo');
-  return fromUrl ?? load('keyballer.repo');
+const sameRepo = (a: string, b: string) => {
+  const x = parseRepo(a);
+  const y = parseRepo(b);
+  return !!x && !!y && repoName(x).toLowerCase() === repoName(y).toLowerCase();
+};
+
+/**
+ * A repository named in the address (`?repo=`) that is not the remembered one. It is not opened
+ * until the person agrees: firmware from it would run on their keyboard, and anyone can make a link.
+ */
+function linkedRepo(): string | null {
+  const fromUrl = new URLSearchParams(location.search).get('repo')?.trim();
+  if (!fromUrl) return null;
+  const saved = load('keyballer.repo');
+  return saved && sameRepo(fromUrl, saved) ? null : fromUrl;
+}
+
+/** The address without `?repo=`, once the link has been answered. */
+function dropRepoParam() {
+  const url = new URL(location.href);
+  url.searchParams.delete('repo');
+  history.replaceState(history.state, '', url);
 }
 
 export function App() {
   const { t, rich, err, setLang } = useI18n();
   const { openLine, openHelp } = useCommandLine();
   const serialOk = isWebSerialSupported();
-  const [repoInput, setRepoInput] = useState(initialRepo);
+  const [askRepo, setAskRepo] = useState(linkedRepo);
+  // The safe answer has focus, so Enter does not open a stranger's repository.
+  const keepRepoButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (askRepo) keepRepoButton.current?.focus();
+  }, [askRepo]);
+  const [repoInput, setRepoInput] = useState(() => load('keyballer.repo'));
   const [token, setToken] = useState(() => load('keyballer.token'));
   const [repo, setRepo] = useState<RepoState | null>(null);
   const [connecting, setConnecting] = useState(false);
@@ -357,9 +382,9 @@ export function App() {
     setLoadingBuild(build.id);
     setError(null);
     try {
-      const text = await getFirmwareText(repo.ref, repo.firmwareSha, build.file, tokenRef.current);
-      const { data } = parseIntelHex(text);
-      openTarget({ title: build.name, image: data, split: build.split });
+      // Only firmware that GitHub Actions built from the default branch, checked byte for byte.
+      const verified = await loadVerifiedFirmware(repo.ref, repo.firmwareSha, build.id, tokenRef.current);
+      openTarget({ title: verified.build.name, image: verified.image, split: verified.build.split, source: verified.source });
     } catch (e) {
       setError(e);
     } finally {
@@ -401,6 +426,41 @@ export function App() {
       {!keymapBuild && (
         <section className="panel" aria-labelledby="repo-title">
           <h2 id="repo-title">{t('repo.title')}</h2>
+          {askRepo && (
+            <div className="banner stack" role="alertdialog" aria-labelledby="link-repo-title" aria-describedby="link-repo-body">
+              <p id="link-repo-title">
+                {t('repo.linkAsk', { repo: askRepo })}
+              </p>
+              <p id="link-repo-body" className="note">
+                {t('repo.linkWhy')}
+              </p>
+              <div className="row">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = askRepo;
+                    setAskRepo(null);
+                    dropRepoParam();
+                    setRepoInput(next);
+                    void connect(next);
+                  }}
+                >
+                  {t('repo.linkOpen', { repo: askRepo })}
+                </button>
+                <button
+                  type="button"
+                  className="primary"
+                  ref={keepRepoButton}
+                  onClick={() => {
+                    setAskRepo(null);
+                    dropRepoParam();
+                  }}
+                >
+                  {repoInput ? t('repo.linkKeep', { repo: repoInput }) : t('repo.linkIgnore')}
+                </button>
+              </div>
+            </div>
+          )}
           <form
             className="repo-form"
             onSubmit={(e) => {
@@ -520,6 +580,7 @@ export function App() {
           title={target.title}
           image={target.image}
           split={target.split}
+          source={target.source}
           onClose={closeTarget}
         />
       )}

@@ -29,10 +29,26 @@ export interface FirmwareManifest {
   builds: FirmwareBuild[];
 }
 
+/**
+ * A path inside the `firmware` branch that stays there: segments of letters, digits, `_`, `-` and
+ * `.`, none empty and none starting with a dot. Manifest paths go into GitHub API URLs with the
+ * user's token, so `..`, encoded characters, `?` or `#` could reach other API paths.
+ */
+export function isPlainPath(path: string): boolean {
+  return path.split('/').every((segment) => /^[A-Za-z0-9_][A-Za-z0-9._-]*$/.test(segment));
+}
+
+/** A full commit SHA, as GitHub writes it. */
+export const isCommitSha = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value);
+
 export function parseManifest(value: unknown): FirmwareManifest {
   const m = value as Partial<FirmwareManifest> | null;
-  if (!m || m.schema !== 1 || !Array.isArray(m.builds) || !m.source?.sha) {
+  if (!m || m.schema !== 1 || !Array.isArray(m.builds) || !isCommitSha(m.source?.sha)) {
     throw new LocalizedError('manifest.err.format');
+  }
+  for (const b of m.builds as Partial<FirmwareBuild>[]) {
+    const plain = typeof b?.file === 'string' && isPlainPath(b.file) && (b.view === undefined || (typeof b.view === 'string' && isPlainPath(b.view)));
+    if (!plain) throw new LocalizedError('manifest.err.format');
   }
   return m as FirmwareManifest;
 }

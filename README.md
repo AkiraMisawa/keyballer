@@ -106,9 +106,10 @@ jobs:
     uses: AkiraMisawa/keyballer/.github/workflows/build-qmk.yml@main
     permissions:
       contents: write
+      checks: write
 ```
 
-When a build succeeds, the `firmware` branch is replaced by a single commit holding `manifest.json` and the firmware files.
+When a build of the default branch succeeds, the `firmware` branch is replaced by a single commit holding `manifest.json` and the firmware files. The build also records the SHA-256 of each file as a `keyballer-firmware` check run on the source commit (that is what `checks: write` is for). Keyballer flashes only firmware that matches it, and shows the commit it came from. A token can rewrite the `firmware` branch but cannot create check runs, so a leaked token cannot slip firmware onto your keyboard unseen. A ruleset on `main` that blocks force-pushes and deletion is recommended.
 
 ## Building locally
 
