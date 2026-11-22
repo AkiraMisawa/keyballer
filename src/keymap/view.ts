@@ -148,9 +148,35 @@ export function comboFiresOn(view: ViewFile, combo: ViewCombo, layer: number): b
   return !combo.layers?.length || combo.layers.includes(layer);
 }
 
+/**
+ * The layers typed for a combo (`combo layers 3 0 2`): `all` for every layer (null), or layer
+ * numbers from the tabs, by spaces or commas; undefined when it is neither.
+ */
+export function parseLayerList(text: string, count: number): number[] | null | undefined {
+  const typed = text.trim().toLowerCase();
+  if (typed === 'all') return null;
+  const words = typed.split(/[\s,]+/).filter(Boolean);
+  if (words.length === 0 || !words.every((w) => /^(0|[1-9][0-9]?)$/.test(w) && Number(w) < count)) return undefined;
+  return [...new Set(words.map(Number))].sort((a, b) => a - b);
+}
+
 /** ZMK keeps a combo's layers as bits of 32. */
 const isLayerList = (value: unknown): value is number[] =>
   Array.isArray(value) && value.every((l) => Number.isInteger(l) && l >= 0 && l < 32);
+
+/** A combo as the screen reads one: its keys, positions and output. */
+function isCombo(value: unknown): value is ViewCombo {
+  const c = value as Partial<ViewCombo> | null;
+  return (
+    !!c &&
+    typeof c === 'object' &&
+    Array.isArray(c.keys) &&
+    c.keys.every((k) => typeof k === 'string') &&
+    Array.isArray(c.positions) &&
+    c.positions.every((p) => p === null || Number.isInteger(p)) &&
+    typeof c.output === 'string'
+  );
+}
 
 /** Checks the shape of a fetched view file; throws a readable error when it is not one. */
 export function parseView(value: unknown): ViewFile {
@@ -163,9 +189,7 @@ export function parseView(value: unknown): ViewFile {
     balls: v.balls ?? [],
     labels: v.labels ?? {},
     defines: v.defines ?? {},
-    combos: (Array.isArray(v.combos) ? v.combos : [])
-      .filter((c): c is ViewCombo => !!c && typeof c === 'object')
-      .map(({ layers, ...c }) => (isLayerList(layers) ? { ...c, layers } : c)),
+    combos: (Array.isArray(v.combos) ? v.combos : []).filter(isCombo).map(({ layers, ...c }) => (isLayerList(layers) ? { ...c, layers } : c)),
     code: v.code ?? {},
   } as ViewFile;
 }

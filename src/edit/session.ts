@@ -19,7 +19,7 @@ import {
 import { readDefine, setBallMm, setDefine, setRule } from '../config/source';
 import type { MessageKey } from '../i18n/messages';
 import { readCustomKeycodes } from '../config/keymap';
-import { basicLegend } from '../keymap/keycodes';
+import { basicLegend, TRANSPARENT } from '../keymap/keycodes';
 import type { ViewFile } from '../keymap/view';
 import { zmkLabel } from '../keymap/zmkKeys';
 import { applyZmkEdit, zmkKeyProblem, type ZmkBase, type ZmkCombo, type ZmkDoc, type ZmkEdit, type ZmkModel } from './zmk';
@@ -598,10 +598,17 @@ export function review(session: Session): Review {
   return { changes, keys, combos, layers, files, message };
 }
 
-/** A ZMK combo's keys, as the first layer it fires on has them. */
+/**
+ * A ZMK combo's keys, as the first layer it fires on has them. A transparent key is named by the
+ * base layer's key there, which is what it does unless the layer is reached through another one
+ * (the board works that out from the keys that lead to each layer).
+ */
 function zmkComboKeys(model: ZmkModel, combo: ZmkCombo): string[] {
   const layer = combo.layers?.find((l) => l < model.layers.length) ?? 0;
-  return combo.positions.map((p) => model.layers[layer]?.keys[p] ?? 'KC_NO');
+  return combo.positions.map((p) => {
+    const key = model.layers[layer]?.keys[p] ?? 'KC_NO';
+    return TRANSPARENT.has(key) ? (model.layers[0]?.keys[p] ?? key) : key;
+  });
 }
 
 /** What a ZMK session changes: the model before and after, and the .keymap file's diff. */
@@ -623,7 +630,9 @@ function zmkReview(session: Session, zmk: ZmkBase): Review {
       if (old.output !== c.output || old.positions.join() !== c.positions.join()) {
         combos.push({ change: 'changed', keys: zmkComboKeys(now, c), output: c.output, was: old.output });
       }
-      if ((old.layers ?? []).join() !== (c.layers ?? []).join()) combos.push({ change: 'layers', keys: zmkComboKeys(now, c), output: c.output, layers: c.layers });
+      if ((old.layers ?? []).join() !== (c.layers ?? []).join()) {
+        combos.push({ change: 'layers', keys: zmkComboKeys(now, c), output: c.output, layers: c.layers?.length ? c.layers : null });
+      }
     }
   }
   for (const w of was.combos) if (!now.combos.some((c) => c.name === w.name)) combos.push({ change: 'removed', keys: zmkComboKeys(was, w), output: w.output });

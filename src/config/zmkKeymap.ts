@@ -318,7 +318,8 @@ function numbers(src: string, p: Prop | undefined): number[] | null {
   // Checked number by number, in linear time.
   const inner = value.startsWith('<') && value.endsWith('>') ? value.slice(1, -1).trim() : null;
   const words = inner === null ? null : inner === '' ? [] : inner.split(/\s+/);
-  if (!words || !words.every((w) => /^(0x[0-9a-fA-F]+|\d+)$/.test(w))) throw new ZmkSourceError(`numbers Keyballer cannot read: ${value.slice(0, 40)}`);
+  // dtc reads C literals: 010 is octal 8, so only decimal without a leading zero and hex are read.
+  if (!words || !words.every((w) => /^(0x[0-9a-fA-F]+|0|[1-9]\d*)$/.test(w))) throw new ZmkSourceError(`numbers Keyballer cannot read: ${value.slice(0, 40)}`);
   return words.map(Number);
 }
 
@@ -515,15 +516,17 @@ function propRemoval(src: string, current: Prop): Splice {
 }
 
 /**
- * Adds a property after a node's last one: on a line of its own when that property ends its line
- * (comments aside), else on the same line.
+ * Adds a property after a node's last one: on a line of its own when that property ends its line,
+ * else on the same line right after it. A comment after the property counts as text: it could go
+ * on past the line (a block comment, or a line comment ending in a backslash), and a new line
+ * there would be inside it or bring the next line out of it.
  */
 function propAddition(p: Parsed, n: Node, text: string): Splice {
-  const { src, m } = p;
+  const { src } = p;
   const last = n.props.at(-1);
   if (!last) throw new ZmkSourceError(`${n.name} has no properties`);
   const end = lineEnd(src, last.end);
-  const ownLine = /^[ \t]*$/.test(src.slice(lineStart(src, last.start), last.start)) && /^[ \t]*$/.test(m.slice(last.end, end));
+  const ownLine = /^[ \t]*$/.test(src.slice(lineStart(src, last.start), last.start)) && /^[ \t]*$/.test(src.slice(last.end, end));
   if (ownLine && end < n.close) return { start: end, end, text: `\n${indentAt(src, last.start)}${text}` };
   return { start: last.end, end: last.end, text: ` ${text}` };
 }

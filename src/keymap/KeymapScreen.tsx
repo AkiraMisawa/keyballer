@@ -28,6 +28,7 @@ import {
   layerName,
   legendOf,
   nextKey,
+  parseLayerList,
   parseView,
   type Direction,
   type Display,
@@ -429,7 +430,7 @@ export function KeymapScreen(props: Props) {
   const onlyOnLast =
     view?.zmk && pickerContext
       ? view.combos
-          .filter((c) => c.layers?.length === 1 && c.layers[0] === view.layers.length - 1)
+          .filter((c) => !!c.layers?.length && c.layers.every((l) => l === view.layers.length - 1))
           .map((c) => `${c.keys.map((k) => legendOf(view, k, pickerContext.display).tap).join(' + ')} = ${legendOf(view, c.output, pickerContext.display).tap}`)
       : [];
 
@@ -515,15 +516,7 @@ export function KeymapScreen(props: Props) {
     run: startCombo,
   });
   const comboAt = (v: string) => (/^[1-9][0-9]*$/.test(v) ? view?.combos[Number(v) - 1] : undefined);
-  /** `all`, or layer numbers from the tabs (`0 2`, `0,2`); undefined when it is neither. */
-  const layersArg = (v: string): number[] | null | undefined => {
-    const text = v.trim().toLowerCase();
-    if (text === 'all') return null;
-    const words = text.split(/[\s,]+/).filter(Boolean);
-    const count = view?.layers.length ?? 0;
-    if (words.length === 0 || !words.every((w) => /^[0-9]{1,2}$/.test(w) && Number(w) < count)) return undefined;
-    return [...new Set(words.map(Number))].sort((a, b) => a - b);
-  };
+  const layersArg = (v: string) => parseLayerList(v, view?.layers.length ?? 0);
   useCommand({
     id: 'keymap.comboRemove',
     words: 'combo remove',
@@ -795,6 +788,8 @@ export function KeymapScreen(props: Props) {
                 <SessionState edit={edit} />
               ) : pickerContext && (comboPick !== null || comboChange !== null) ? (
                 <ComboPanel
+                  // A new combo's layers start from the shown layer, so each combo and layer gets its own panel.
+                  key={comboChange ?? `new:${shown}`}
                   edit={edit}
                   context={pickerContext}
                   layer={shown}
@@ -966,7 +961,7 @@ interface LayerTabProps {
   view: ViewFile;
   n: number;
   current: boolean;
-  /** While a combo's keys are picked, the base layer stays shown. */
+  /** While a combo's keys are picked, the layer they are picked on stays shown. */
   disabled: boolean;
   onPick: () => void;
 }
@@ -1027,7 +1022,11 @@ function Details({ view, drawn, all, layer, selected, display, sourceLink, track
   // QMK's combos use the base layer's keys; a ZMK combo, the keys of a layer it fires on.
   const comboLayer = view.zmk ? layer : 0;
   const base = drawLayer(view, comboLayer, display);
-  const nameAt = (index: number) => base.keys.find((k) => k.index === index)?.legend.tap ?? '?';
+  const nameAt = (index: number) => {
+    const k = base.keys.find((key) => key.index === index);
+    // A transparent key is named by what it does there.
+    return k ? ((k.kind === 'transparent' ? k.fallsTo?.tap : undefined) ?? k.legend.tap) : '?';
+  };
   const lang: Lang = display.lang;
 
   const combos = (only?: number) => {

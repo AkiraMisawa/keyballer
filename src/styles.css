@@ -935,6 +935,12 @@ dialog.help > * + * {
   display: flex;
   align-items: center;
   gap: 8px;
+  white-space: nowrap;
+}
+/* The layers a ZMK combo is limited to, on a line of their own. */
+.combo-list .combo-on {
+  flex-basis: 100%;
+  font-size: 0.85rem;
 }
 .lines {
   list-style: none;

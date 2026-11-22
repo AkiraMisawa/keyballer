@@ -8,7 +8,7 @@ import type { EditSession } from '../edit/useEditSession';
 import { useI18n } from '../i18n/react';
 import { LAYER_FUNCTIONS } from './catalogue';
 import { KeyPicker, type PickerContext } from './KeyPicker';
-import { comboFiresOn, layerName, legendOf, parseKeycode, type ViewCombo, type ViewFile } from './view';
+import { comboFiresOn, drawLayer, layerName, legendOf, parseKeycode, type ViewCombo, type ViewFile } from './view';
 
 /** What still leads to a layer: keys on other layers, and combos whose output is a layer key. */
 export function leadingTo(context: PickerContext, target: number): string[] {
@@ -22,9 +22,17 @@ export function leadingTo(context: PickerContext, target: number): string[] {
   return [...keys, ...combos];
 }
 
-/** A combo's keys as a layer has them: the base layer for QMK, whose combos name its keys. */
-const comboKeys = (view: ViewFile, positions: (number | null)[], context: PickerContext, layer = 0) =>
-  positions.map((p) => (p === null ? '?' : legendOf(view, view.layers[layer]?.keys[p] ?? 'KC_NO', context.display).tap));
+/**
+ * A combo's keys as a layer has them: the base layer for QMK, whose combos name its keys. A
+ * transparent key is named by what it does there, as the board shows it.
+ */
+function comboKeys(view: ViewFile, positions: (number | null)[], context: PickerContext, layer = 0): string[] {
+  const keys = drawLayer(view, layer, context.display).keys;
+  return positions.map((p) => {
+    const k = p === null ? undefined : keys.find((key) => key.index === p);
+    return k ? ((k.kind === 'transparent' ? k.fallsTo?.tap : undefined) ?? k.legend.tap) : '?';
+  });
+}
 
 /** Where a combo's keys are read: the shown layer when the combo fires there, else the first it fires on. */
 function keysLayer(view: ViewFile, combo: ViewCombo, shown: number): number {
@@ -38,7 +46,8 @@ function ComboLayers({ view, value, onChange }: { view: ViewFile; value: number[
   const { t, lang } = useI18n();
   const toggle = (n: number) => {
     const next = value === null ? [n] : value.includes(n) ? value.filter((l) => l !== n) : [...value, n].sort((a, b) => a - b);
-    onChange(next.length > 0 ? next : null);
+    // Taking away the last layer would widen the combo to every layer, which has its own button.
+    if (next.length > 0) onChange(next);
   };
   return (
     <div className="stack">
@@ -136,9 +145,6 @@ export function EditPanel({ edit, context, layer, sharedBy, onAddCombo, onChange
             <span className="out">
               <span className="muted">=</span>
               <span>{legendOf(view, c.output, display).tap}</span>
-              {view.zmk && c.layers?.length ? (
-                <span className="muted">{t('edit.comboOnly', { layers: list(c.layers.map((n) => layerName(view, n, lang))) })}</span>
-              ) : null}
               {c.name && (
                 <>
                   <button type="button" className="link" onClick={() => onChangeCombo(c.name!)}>
@@ -150,6 +156,9 @@ export function EditPanel({ edit, context, layer, sharedBy, onAddCombo, onChange
                 </>
               )}
             </span>
+            {view.zmk && c.layers?.length ? (
+              <span className="muted combo-on">{t('edit.comboOnly', { layers: list(c.layers.map((n) => layerName(view, n, lang))) })}</span>
+            ) : null}
           </li>
         ))}
       </ul>
