@@ -137,7 +137,7 @@ The keycap is the core component and is drawn the same way everywhere.
 | `Esc` | Close the panel or go back a step |
 | `?` | Show the shortcuts |
 
-Commands on the flow pages: `connect <repo>`, `repo` (go to the repository field), `open link` and `keep repo` (while a `?repo=` link waits for an answer; Esc keeps), `open tokens` (while the notice about a deleted saved token is shown), `refresh`, `open repo`, `open build`, `flash <id>`, `flash file`, `keymap <id>`, `start`, `port`, `close`, `language <english|japanese>`, `shortcuts`.
+Commands on the flow pages: `connect <repo>`, `repo` (go to the repository field), `open link` and `keep repo` (while a `?repo=` link waits for an answer; Esc keeps), `open tokens` (while the notice about a deleted saved token is shown), `sign in` and `sign out` (when Keyballer runs on this computer with a GitHub App set up), `refresh`, `open repo`, `open build`, `flash <id>`, `flash file`, `keymap <id>`, `start`, `port`, `close`, `language <english|japanese>`, `shortcuts`.
 
 ### Keymap view (now)
 

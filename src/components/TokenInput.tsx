@@ -3,6 +3,7 @@
 // never sent.
 
 import { useEffect, useRef, useState } from 'react';
+import type { SignIn } from '../auth/useSignIn';
 import type { MessageKey } from '../i18n/messages';
 import { useI18n } from '../i18n/react';
 import { checkPastedToken } from '../lib/token';
@@ -16,15 +17,16 @@ export interface TokenField {
   /** Why the input was refused, if it was. */
   problem: MessageKey | null;
   set: (input: string) => void;
+  /** Local sign-in, where Keyballer runs on this machine; its token is used while signed in. */
+  signIn: SignIn | null;
 }
 
-/** The token, held in this tab's memory only. */
-export function useTokenField(): TokenField {
+/** The token, held in this tab's memory only: the signed-in one, or else the pasted one. */
+export function useTokenField(signIn: SignIn | null): TokenField {
   const [input, set] = useState('');
   const checked = checkPastedToken(input);
-  return checked.ok
-    ? { input, value: checked.token, problem: null, set }
-    : { input, value: '', problem: checked.reason, set };
+  const pasted = checked.ok ? checked.token : '';
+  return { input, value: signIn?.token || pasted, problem: checked.ok ? null : checked.reason, set, signIn };
 }
 
 export function TokenInput({ id, tokenField }: { id: string; tokenField: TokenField }) {

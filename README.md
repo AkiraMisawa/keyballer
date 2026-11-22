@@ -132,10 +132,45 @@ On Apple Silicon, Docker runs the arm64 image, which ships an older avr-gcc (5.4
 
 ```sh
 npm ci
-npm run dev     # dev server
+npm run dev     # dev server, http://127.0.0.1:5173
 npm test        # Vitest (flashing is tested against an in-memory bootloader)
-npm run build   # type check and build
+npm run build   # type check, build, and check that dist/ holds no sign-in settings
 ```
+
+### Signing in on your own computer
+
+When Keyballer runs on your computer (`npm run dev`, or `npm run build` then `npm run preview` at http://127.0.0.1:4173), it can sign in with GitHub instead of a pasted token. The hosted site keeps the pasted token.
+
+The sign-in lasts until the tab closes, or 8 hours. It reaches only the repositories you install the app on. Signing out revokes it. Plan and threat model: [docs/plans/github-login.md](docs/plans/github-login.md).
+
+It needs a GitHub App of your own. Register one at <https://github.com/settings/apps/new>:
+
+- **Homepage URL:** anything, for example this repository.
+- **Callback URLs:**
+  - `http://127.0.0.1:5173/auth/callback`
+  - `http://127.0.0.1:4173/auth/callback`
+- **Expire user authorization tokens:** on.
+- **Off:**
+  - "Request user authorization (OAuth) during installation";
+  - "Enable Device Flow";
+  - the Setup URL;
+  - the webhook ("Active").
+- **Repository permissions:** Contents: Read and write, Actions: Read (Metadata: Read is added by GitHub). No account permissions.
+- **Where can this GitHub App be installed?** Only on this account.
+
+Then, on the app's page:
+
+1. Generate a client secret.
+2. Install the app on your config repository only ("Only select repositories").
+3. Put the settings in `.env.local` at the top of this repository. Git ignores this file; never commit it.
+
+```sh
+KEYBALLER_GITHUB_CLIENT_ID=<the app's Client ID>
+KEYBALLER_GITHUB_CLIENT_SECRET=<the client secret>
+KEYBALLER_GITHUB_APP_SLUG=<the app's URL name, for the install link (optional)>
+```
+
+Vite reads these on its own server only. They never reach the page or `dist/`.
 
 Build scripts have their own tests: `python3 -m unittest discover -s scripts -p 'test_*.py'`.
 

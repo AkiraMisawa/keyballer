@@ -132,10 +132,45 @@ Apple Silicon の Mac では arm64 版のイメージが使われ、GitHub Actio
 
 ```sh
 npm ci
-npm run dev     # 開発サーバー
+npm run dev     # 開発サーバー（http://127.0.0.1:5173）
 npm test        # Vitest（書き込み手順は模擬ブートローダーで検証）
-npm run build   # 型チェックとビルド
+npm run build   # 型チェックとビルド。dist/ にサインインの設定が入っていないかも確かめる
 ```
+
+### 手元のパソコンでのサインイン
+
+Keyballer を手元で動かしているとき（`npm run dev`、または `npm run build` のあと `npm run preview` で http://127.0.0.1:4173）は、トークンを貼り付ける代わりに GitHub でサインインできます。公開サイトでは、これまでどおりトークンを貼り付けます。
+
+サインインは、タブを閉じるか 8 時間たつと終わります。アクセスできるのは、アプリをインストールしたリポジトリだけです。サインアウトすると、そのサインインは GitHub 上でも取り消されます。計画と脅威モデル：[docs/plans/github-login.md](docs/plans/github-login.md)（英語）
+
+自分用の GitHub App が必要です。<https://github.com/settings/apps/new> で登録します。
+
+- **Homepage URL：** 何でもかまいません（このリポジトリなど）。
+- **Callback URL：**
+  - `http://127.0.0.1:5173/auth/callback`
+  - `http://127.0.0.1:4173/auth/callback`
+- **Expire user authorization tokens：** オン。
+- **オフにするもの：**
+  - 「Request user authorization (OAuth) during installation」
+  - 「Enable Device Flow」
+  - Setup URL
+  - Webhook の「Active」
+- **Repository permissions：** Contents は「Read and write」、Actions は「Read」（Metadata の「Read」は GitHub が自動で付けます）。Account permissions は付けません。
+- **Where can this GitHub App be installed?：** Only on this account。
+
+続けて、アプリのページで次の手順を行います。
+
+1. client secret を作ります。
+2. 設定リポジトリだけにアプリをインストールします（「Only select repositories」）。
+3. このリポジトリの一番上に `.env.local` を作り、設定を書きます。このファイルは git が無視するので、コミットしないでください。
+
+```sh
+KEYBALLER_GITHUB_CLIENT_ID=<アプリの Client ID>
+KEYBALLER_GITHUB_CLIENT_SECRET=<client secret>
+KEYBALLER_GITHUB_APP_SLUG=<アプリの URL 上の名前。インストールへのリンクに使う（任意）>
+```
+
+これらは Vite のサーバー側だけで読み込みます。ページにも `dist/` にも入りません。
 
 ビルド用スクリプトのテストは `python3 -m unittest discover -s scripts -p 'test_*.py'` で動きます。
 

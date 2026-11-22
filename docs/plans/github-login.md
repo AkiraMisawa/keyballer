@@ -1,6 +1,6 @@
 # Sign in with GitHub, and firmware provenance
 
-Status: phase 1 built; phase 2 built except an origin of its own (2026-11-22); phase 3 next.
+Status: phase 1 built; phase 2 built except an origin of its own; phase 3 built, and a real sign-in waits for the owner's GitHub App (2026-11-22).
 
 Decided with the owner:
 - Sign-in is for running Keyballer on their own machine ("ローカル使用だけでいいや"). The hosted site keeps the personal access token, which is kept for one tab only.
@@ -141,44 +141,62 @@ This validation guards the workflow's own shell. It is not a boundary against th
 - **Classic tokens are refused.** Tokens starting with `ghp_` are refused with the reason, and anything else that is not a fine-grained token (`github_pat_` followed by letters, digits and `_`) is refused too, so nothing pasted can add to the `Authorization` header. A classic token reaches every repository, `AkiraMisawa/keyballer` included, so a stolen one is an owner compromise: it could change the build workflow itself. The field takes only fine-grained tokens (`github_pat_`). The app's tokens (`ghu_`) come only from the local sign-in (phase 3), which does not go through the field. The recommended fine-grained token covers the config repository only, with Contents: Read and write and Actions: Read.
 - **Its own origin (not built).** Web Serial permission belongs to the origin. `3style` and `ex-grid` share `akiramisawa.github.io` with Keyballer, so a script on either could use the keyboard's port and set Keyballer's `localStorage`. Only an origin of its own fixes this: the owner creates an organization (for example `keyballer-app`), Keyballer moves there, and callers update `uses:`. Whether to move is the owner's call; as decided above, it is out of scope for now, so the same-origin row of the threat model stays unmitigated.
 
-## Phase 3: local sign-in
+## Phase 3: local sign-in (built)
 
 ### The flow
 
 GitHub's web flow with PKCE (S256), in a popup, as reviewed. The device flow was rejected, because a device code can be phished and GitHub advises against enabling it without reason.
 
+0. **Where it shows.** Only when the page's host is `127.0.0.1` and `GET /auth/status` returns a client ID, that is, when `npm run dev` or `npm run preview` runs with the app's settings in `.env.local`. The hosted site never shows it.
 1. **Before the click.** When the button appears, Keyballer makes a random `state` (32 bytes) and a PKCE verifier (32 random bytes, base64url) with Web Crypto, and computes the challenge. Both stay in memory.
 2. **The click.** It opens `github.com/login/oauth/authorize` synchronously, because Safari blocks `window.open` after an `await`. The call is `window.open(url, 'keyballer-sign-in', 'popup,noopener')`.
-3. **The callback.** GitHub sends the window to `callback.html`: a separate page with its own CSP and one script. It calls `history.replaceState` first, sends `{type, code, state}` on a `BroadcastChannel`, and closes.
-4. **Taking the code.** The page waiting for that exact `state` takes one message within 10 minutes and forgets the `state`. It POSTs `{code, code_verifier}` to `/auth/token` on its own origin.
+3. **The callback.** GitHub sends the window to `/auth/callback`, which the local server serves with real headers:
+   - a CSP of its own (`default-src 'none'; script-src 'self'; frame-ancestors 'none'`, and Trusted Types);
+   - `Referrer-Policy: no-referrer`, `Cache-Control: no-store` and `nosniff`.
+
+   Its one script, `/auth/callback.js`, calls `history.replaceState` first, sends `{type, code, state, error}` on a `BroadcastChannel`, and tries to close the window. The page never shows any part of the address.
+4. **Taking the code.** The page waiting for that exact `state` takes one message within 10 minutes and forgets the `state`. Messages for other states are ignored, and a repeat of the same one finds nothing listening. It POSTs `{code, code_verifier}` to `/auth/token` on its own origin.
 5. **The exchange.** The local server adds the client ID, the client secret and the fixed `redirect_uri`, then calls `github.com/login/oauth/access_token`. It returns `{access_token, expires_in}` and nothing else; a response without an `access_token` is an error. The refresh token is dropped.
-6. **After sign-in.** The page keeps the token in memory, shows the login from `GET /user`, and checks that the installations reach the config repository. If they do not, it links to the install page.
+6. **After sign-in.**
+   - The page keeps the token in memory, uses it in place of a pasted one, and shows the login from `GET /user`.
+   - It checks that the app's installations reach the connected repository: `GET /user/installations`, then the repositories of an installation on that owner. If they do not reach it, it says so and links to the install page (with `KEYBALLER_GITHUB_APP_SLUG`).
+   - It forgets the token when it expires, and says so.
+   - The review offers the same sign-in when saving needs a token, so unsaved changes stay.
+   - The commands are `sign in` and `sign out`.
 
 **Signing out.** The page POSTs the token to `/auth/revoke`, which calls `DELETE /applications/{client_id}/token` with Basic auth, then forgets it.
 
 ### The local auth endpoints (`src/auth/server.ts`)
 
-**Shape.** One fetch-style handler, `(Request, env, fetch) → Response`, mounted by a Vite plugin in `configureServer` and `configurePreviewServer`. The same handler could later run in a Worker.
+**Shape.** One fetch-style handler, `handleAuth(Request, config, fetch) → Response | null`, mounted by a Vite plugin in `configureServer` and `configurePreviewServer` (`vite.config.ts`). It returns null for paths outside `/auth/`. The same handler could later run in a Worker.
 
 **What it accepts.**
-- Only `POST /auth/token`, `POST /auth/revoke` and `GET /auth/status`; anything else gets 404. `/auth/status` reports whether sign-in is configured.
-- `Origin` must equal the server's own origin exactly; `Host` must be `127.0.0.1:<port>` or `localhost:<port>`, which blocks DNS rebinding. Anything else gets 403.
+- Only these routes; anything else under `/auth/` gets 404:
+  - `POST /auth/token` and `POST /auth/revoke`;
+  - `GET /auth/status`, which returns the public client ID and app slug, or nulls;
+  - `GET /auth/callback` and `GET /auth/callback.js`.
+- `Host` must be `127.0.0.1:<port>`, which blocks DNS rebinding. The dev and preview servers listen on `127.0.0.1` only, on fixed ports (`strictPort`), because the callback URLs name them.
+- On the POSTs, `Origin` must equal `http://` and that host exactly.
+- Anything else gets 403.
 - The body must be `application/json`, read from the stream up to 1 KB, and an object with exactly the expected fields:
   - `code`: `^[A-Za-z0-9_-]{1,64}$`
   - `code_verifier`: `^[A-Za-z0-9._~-]{43,128}$`
   - `access_token`: `^ghu_[A-Za-z0-9_]{16,255}$`
-- Any failure gets the same `400 {"error":"bad_request"}`, and input is never echoed.
+- Any bad input gets the same `400 {"error":"bad_request"}`, and input is never echoed.
+- Without the app's settings, the POSTs get `503`.
+- A refusal or an odd answer from GitHub gets `502 {"error":"github"}`, without GitHub's wording. That includes an `access_token` that is not a `ghu_` token.
+- The lifetime returned is at most 8 hours, also when expiry is off in the app.
 
 **What it sends.**
-- It calls only GitHub's two endpoints, with a fixed `redirect_uri`, `Accept: application/json` and an explicit `User-Agent`.
+- It calls only GitHub's two endpoints, with `redirect: 'error'`, `Accept: application/json` and an explicit `User-Agent`. The `redirect_uri` is `http://<host>/auth/callback`, from the checked host.
 - It returns `Cache-Control: no-store`.
 - `/revoke` answers `204` whatever happens.
 - It logs nothing.
 
 **The secret.**
-- `KEYBALLER_GITHUB_CLIENT_SECRET` and `KEYBALLER_GITHUB_CLIENT_ID` live in `.env.local`, which git ignores. The owner writes them.
-- They are read with Vite's `loadEnv` on the server side only. Variables without the `VITE_` prefix never reach the client.
-- A build test asserts that `dist/` contains neither variable's name.
+- `KEYBALLER_GITHUB_CLIENT_ID`, `KEYBALLER_GITHUB_CLIENT_SECRET` and, optionally, `KEYBALLER_GITHUB_APP_SLUG` live in `.env.local`, which git ignores. The owner writes them.
+- They are read with Vite's `loadEnv` in `vite.config.ts`, on the server side only, and checked by `parseAuthConfig`. Malformed settings turn sign-in off. Variables without the `VITE_` prefix never reach the client.
+- `npm run build` ends with `scripts/check-dist.mjs`, which fails if `dist/` contains the variable names or, when `.env.local` is present, their values.
 
 ### The GitHub App (registered by the owner, by hand)
 
@@ -186,7 +204,7 @@ GitHub's web flow with PKCE (S256), in a popup, as reviewed. The device flow was
 - **Repository permissions:** Contents: Read and write, Actions: Read, Metadata: Read. No account permissions, no Workflows.
 - **Tokens:** "Expire user authorization tokens" on.
 - **Off:** the webhook, the device flow, "Request user authorization during installation", and the Setup URL.
-- **Callback URLs:** `http://127.0.0.1:5173/callback.html` and `http://127.0.0.1:4173/callback.html`, matched exactly.
+- **Callback URLs:** `http://127.0.0.1:5173/auth/callback` and `http://127.0.0.1:4173/auth/callback`, matched exactly.
 - **Secret and key:** the owner generates a client secret and writes it into `.env.local` themselves. No private key is generated.
 
 ## Threat model
@@ -223,7 +241,7 @@ GitHub's web flow with PKCE (S256), in a popup, as reviewed. The device flow was
 - **The local auth handler:**
   - abuse cases first: `Origin`, `Host`, method, path, content type, a streamed oversize body, fields, no echo;
   - then the calls to GitHub and the response shaping.
-- **The auth module:** PKCE (RFC 7636 Appendix B), `state` and message handling, expiry, and no storage.
+- **The auth module** (`src/auth/client.ts`): PKCE (RFC 7636 Appendix B), the authorize address, `state` and message handling over a real `BroadcastChannel`, and the exchange. `appReaches` covers the installations. Expiry and the sign-in UI were checked in the browser, with `window.open` captured and only the made-up token's requests answered, so nothing reached GitHub.
 
 **Reviews per phase:**
 - the security-review method
