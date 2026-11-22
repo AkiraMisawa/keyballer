@@ -16,7 +16,8 @@ import {
   type RepoRef,
 } from './github';
 import { parseIntelHex } from './ihex';
-import { isCommitSha, parseManifest, type FirmwareBuild } from './manifest';
+import { isCommitSha, isZmk, parseManifest, type FirmwareBuild } from './manifest';
+import { checkUf2 } from './uf2';
 import { BRANCH, judgeProvenance, keyballerWorkflowSha, manifestArtifactName, sha256Hex } from './provenance';
 
 /** Keyballer's own repository, home of the build workflow. */
@@ -38,6 +39,9 @@ export interface FirmwareSource extends CommitInfo {
 
 export interface VerifiedFirmware {
   build: FirmwareBuild;
+  /** The file's bytes, checked against the build's record. */
+  bytes: Uint8Array;
+  /** For a hex file, the flash image it describes; empty for UF2. */
   image: Uint8Array;
   source: FirmwareSource;
 }
@@ -62,7 +66,7 @@ export async function loadVerifiedFirmware(
   const manifest = parseManifest(parsed);
   const build = manifest.builds.find((b) => b.id === buildId);
   if (!build) throw new LocalizedError('manifest.err.format');
-  const hex = await getFirmwareBytes(r, firmwareSha, build.file, token);
+  const bytes = await getFirmwareBytes(r, firmwareSha, build.file, token);
   const manifestDigest = await sha256Hex(manifestBytes);
 
   // Lookups go to the connected repository, never to one the manifest names.
@@ -87,11 +91,20 @@ export async function loadVerifiedFirmware(
     artifacts,
     defaultBranch,
     manifest: { sourceSha: manifest.source.sha, runId: manifest.run.id, digest: manifestDigest },
-    file: { expected: build.sha256, actual: await sha256Hex(hex) },
+    file: { expected: build.sha256, actual: await sha256Hex(bytes) },
     branchStatus: sinceSource.status,
     workflowOnKeyballerMain,
   });
   if (!verdict.ok) throw new LocalizedError(verdict.reason);
+  // A UF2 file must also be an nRF52840 application image, as the build checked it: the bootloader
+  // flashes whatever it is given, the bootloader itself included.
+  if (isZmk(build)) {
+    const checked = checkUf2(bytes);
+    const u = build.uf2;
+    if (!checked.ok || checked.uf2.blocks !== u.blocks || checked.uf2.start !== u.start || checked.uf2.end !== u.end) {
+      throw new LocalizedError('uf2.err.check');
+    }
+  }
 
   const commit = await getCommitInfo(r, manifest.source.sha, token);
   let sinceLast: FirmwareSource['sinceLast'] = null;
@@ -103,11 +116,12 @@ export async function loadVerifiedFirmware(
       // The remembered commit may be gone; the dialog then shows no comparison.
     }
   }
-  const { data } = parseIntelHex(new TextDecoder().decode(hex));
+  const image = isZmk(build) ? new Uint8Array(0) : parseIntelHex(new TextDecoder().decode(bytes)).data;
   const repository = repoName(r);
   return {
     build,
-    image: data,
+    bytes,
+    image,
     source: {
       ...commit,
       repository,

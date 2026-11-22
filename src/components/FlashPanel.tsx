@@ -4,10 +4,10 @@ import type { MessageKey } from '../i18n/messages';
 import { useI18n } from '../i18n/react';
 import { flashCaterina, type FlashPhase, type FlashProgress } from '../lib/caterina';
 import type { FirmwareSource } from '../lib/firmware';
-import { formatDateTime, shortSha } from '../lib/format';
 import { findGrantedBootloader, pickBootloader } from '../lib/serial';
 import { Kbd } from '../commands/keys';
 import { useCommand } from '../commands/react';
+import { SourceNote } from './SourceNote';
 
 type Step = 'ready' | 'waiting' | 'flashing' | 'done' | 'error';
 
@@ -49,7 +49,7 @@ interface Props {
 }
 
 export function FlashPanel({ title, image, split, source, onFlashed, onClose }: Props) {
-  const { t, show, err, lang } = useI18n();
+  const { t, show, err } = useI18n();
   const [step, setStep] = useState<Step>('ready');
   const [eraseEeprom, setEraseEeprom] = useState(false);
   const [progress, setProgress] = useState<FlashProgress | null>(null);
@@ -201,47 +201,7 @@ export function FlashPanel({ title, image, split, source, onFlashed, onClose }: 
         </button>
       </div>
 
-      {source && (
-        <div className="source stack" role="note" aria-label={t('flash.source')}>
-          <p>
-            <span className="badge ok">{t('flash.verified')}</span>{' '}
-            <a href={source.runUrl} target="_blank" rel="noreferrer">
-              {t('flash.run', { repo: source.repository, branch: source.branch })}
-            </a>
-          </p>
-          <p>
-            <a href={source.url} target="_blank" rel="noreferrer">
-              <code>{shortSha(source.sha)}</code>
-            </a>{' '}
-            <span className="commit-line">{source.message.split('\n')[0]}</span>{' '}
-            <span className="muted">{formatDateTime(source.date, lang)}</span>
-          </p>
-          {source.behindBy > 0 && (
-            <p className="note">
-              {t(source.behindBy === 1 ? 'flash.behindOne' : 'flash.behindMany', { n: source.behindBy, branch: source.branch })}
-            </p>
-          )}
-          {source.sinceLast && source.sinceLast.older > 0 && (
-            <p className="note">
-              {t(source.sinceLast.older === 1 ? 'flash.olderOne' : 'flash.olderMany', {
-                n: source.sinceLast.older,
-                sha: shortSha(source.sinceLast.sha),
-              })}
-            </p>
-          )}
-          {source.sinceLast && source.sinceLast.newer > 0 && (
-            <p>
-              <a href={source.sinceLast.url} target="_blank" rel="noreferrer">
-                {t(source.sinceLast.newer === 1 ? 'flash.sinceLastOne' : 'flash.sinceLastMany', {
-                  n: source.sinceLast.newer,
-                  sha: shortSha(source.sinceLast.sha),
-                })}
-              </a>
-            </p>
-          )}
-          <p className="note">{t('flash.checkSource')}</p>
-        </div>
-      )}
+      {source && <SourceNote source={source} />}
 
       {split && (
         <ol className="halves" aria-label={t('flash.halves')}>
