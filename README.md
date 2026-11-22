@@ -26,9 +26,9 @@ Keyballer (this app) ◀──── GitHub API ──────────�
 | | Status |
 | --- | --- |
 | QMK builds | Supported, including keyboards defined outside qmk_firmware (for example Yowkees/keyball) |
-| ZMK builds | Supported, with Keyballer's workflow (flashing from the app comes next) |
+| ZMK builds | Supported, with Keyballer's workflow |
 | Flashing Pro Micro (ATmega32U4 / Caterina) | Supported |
-| Flashing RP2040 / nRF52840 (UF2) | Planned |
+| Flashing nRF52840 (UF2, ZMK) | Supported: a checked file to copy onto the keyboard's drive. Writing it from the page, and RP2040, are planned |
 | Keymap editor | Supported (keys, combos, layers) |
 
 ## Config repository

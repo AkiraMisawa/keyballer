@@ -7,6 +7,7 @@ import type { FirmwareSource } from '../lib/firmware';
 import { findGrantedBootloader, pickBootloader } from '../lib/serial';
 import { Kbd } from '../commands/keys';
 import { useCommand } from '../commands/react';
+import { PanelHead } from './PanelHead';
 import { SourceNote } from './SourceNote';
 
 type Step = 'ready' | 'waiting' | 'flashing' | 'done' | 'error';
@@ -186,20 +187,13 @@ export function FlashPanel({ title, image, split, source, onFlashed, onClose }: 
 
   return (
     <section className="panel flash" aria-labelledby="flash-title">
-      <div className="panel-head">
-        <h2 id="flash-title" ref={headingRef} tabIndex={-1}>
-          {t('flash.title', { name: title })}
-        </h2>
-        <button
-          type="button"
-          className="ghost"
-          onClick={onClose}
-          disabled={step === 'flashing'}
-          aria-keyshortcuts="Escape"
-        >
-          {t('common.close')}
-        </button>
-      </div>
+      <PanelHead
+        id="flash-title"
+        title={t('flash.title', { name: title })}
+        headingRef={headingRef}
+        onClose={onClose}
+        closeDisabled={step === 'flashing'}
+      />
 
       {source && <SourceNote source={source} />}
 

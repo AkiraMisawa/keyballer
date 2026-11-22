@@ -29,9 +29,12 @@ export interface QmkBuild extends BuildBase {
   split: boolean;
 }
 
-/** What a ZMK build is for, from its .config: one half of a split keyboard, a whole one, or a reset. */
-export type ZmkRole = 'central' | 'peripheral' | 'standalone' | 'settings_reset';
-const ZMK_ROLES: readonly string[] = ['central', 'peripheral', 'standalone', 'settings_reset'];
+/**
+ * What a ZMK build is for, from its .config: one half of a split keyboard, a whole one, or a reset.
+ * Listed in flashing order: the central half first.
+ */
+const ZMK_ROLES = ['central', 'peripheral', 'standalone', 'settings_reset'] as const;
+export type ZmkRole = (typeof ZMK_ROLES)[number];
 
 /** A ZMK build (scripts/build_zmk.py): a UF2 file for the Adafruit nRF52 bootloader. */
 export interface ZmkBuild extends BuildBase {
@@ -98,15 +101,37 @@ function isZmkBuild(b: Partial<ZmkBuild>): boolean {
   const u = b.uf2;
   return (
     b.format === 'uf2' &&
+    typeof b.file === 'string' && b.file.endsWith('.uf2') &&
     typeof b.group === 'string' && /^[a-z0-9][a-z0-9_-]*$/.test(b.group) &&
     typeof b.board === 'string' &&
     typeof b.shield === 'string' &&
-    typeof b.role === 'string' && ZMK_ROLES.includes(b.role) &&
+    typeof b.role === 'string' && (ZMK_ROLES as readonly string[]).includes(b.role) &&
     typeof b.west === 'string' && isPlainPath(b.west) &&
     !!u && isCount(u.family) && isCount(u.blocks) && u.blocks > 0 && isCount(u.start) && isCount(u.end) && u.start < u.end &&
     (b.zmk_sha == null || isCommitSha(b.zmk_sha)) &&
     (b.zephyr_sha == null || isCommitSha(b.zephyr_sha))
   );
+}
+
+const roleRank = (b: ZmkBuild) => ZMK_ROLES.indexOf(b.role);
+
+/**
+ * The firmware cards: one per QMK build, and the builds of each ZMK keyboard together, the central
+ * half first. The settings reset has no card; the UF2 panel offers it under "fix pairing".
+ */
+export function firmwareCards(builds: FirmwareBuild[]): FirmwareBuild[] {
+  const groups = builds.map((b) => (isZmk(b) ? b.group : `\0${b.id}`));
+  const firstOf = (key: string) => groups.indexOf(key);
+  return builds
+    .map((b, i) => ({ b, at: firstOf(groups[i]), rank: isZmk(b) ? roleRank(b) : 0 }))
+    .filter(({ b }) => !(isZmk(b) && b.role === 'settings_reset'))
+    .sort((x, y) => x.at - y.at || x.rank - y.rank)
+    .map(({ b }) => b);
+}
+
+/** All builds of one ZMK keyboard, in flashing order: the halves, then the settings reset. */
+export function keyboardOf(builds: FirmwareBuild[], build: ZmkBuild): ZmkBuild[] {
+  return builds.filter((b): b is ZmkBuild => isZmk(b) && b.group === build.group).sort((x, y) => roleRank(x) - roleRank(y));
 }
 
 /** Whether this app can flash the build. */

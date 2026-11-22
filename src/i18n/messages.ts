@@ -5,9 +5,9 @@
 export const en = {
   'app.tagline': 'Flash keyboard firmware built on GitHub, right from your browser.',
   'app.noSerial':
-    'This browser cannot flash over USB. Open this page in Chrome or Edge on a computer.',
+    'This browser cannot flash Pro Micro keyboards over USB. Open this page in Chrome or Edge on a computer for those; UF2 downloads work here.',
   'app.footer':
-    'Flashing uses Web Serial in Chrome / Edge. The firmware goes straight from this page to your keyboard and is not sent anywhere else.',
+    'Pro Micro keyboards are flashed with Web Serial in Chrome / Edge, straight from this page. UF2 keyboards get a checked file to copy onto their drive. Firmware is not sent anywhere else.',
   'app.language': 'Language',
 
   'shortcut.title': 'Keyboard shortcuts',
@@ -427,11 +427,13 @@ export const en = {
   'flash.olderMany': 'This firmware is {n} commits older than the last one you flashed ({sha}).',
   'flash.checkSource': 'A commit\'s author, message and date are written by whoever made it. If you do not recognise this change, do not flash it.',
   'flash.title': 'Flash {name}',
-  'zmk.role.central': 'Central half: connects to your computer',
-  'zmk.role.peripheral': 'Peripheral half',
+  'zmk.role.central': 'Main half (central): connects to your computer',
+  'zmk.role.peripheral': 'Other half (peripheral)',
   'zmk.studio': 'ZMK Studio',
   'zmk.size': '{size} bytes',
-  'zmk.splitNote': 'This is one half of a split keyboard. Keymap changes usually need only the central half ({central}); other changes need both halves.',
+  'zmk.splitNote': 'This is one half of a split keyboard. Flash the main half ({central}) first. Keymap changes usually need only the main half; other changes need both halves.',
+  'zmk.pins': 'Built with ZMK {zmk} and Zephyr {zephyr}.',
+  'zmk.allPins': 'Every pinned commit',
   'zmk.step.connect': 'Connect {name} to your computer with USB.',
   'zmk.step.bootloader': 'Press its reset button twice quickly, or the bootloader key in your keymap. A drive named XIAO-SENSE, XIAO-BOOT or NICENANO appears.',
   'zmk.step.copy': 'Download the file and copy it onto that drive.',
@@ -543,9 +545,9 @@ export type MessageKey = keyof typeof en;
 export const ja: Record<MessageKey, string> = {
   'app.tagline': 'GitHub でビルドしたキーボードのファームウェアを、ブラウザから書き込みます。',
   'app.noSerial':
-    'このブラウザは USB での書き込みに対応していません。パソコンの Chrome か Edge で開いてください。',
+    'このブラウザは Pro Micro のキーボードへの USB での書き込みに対応していません。それにはパソコンの Chrome か Edge で開いてください。UF2 のダウンロードはこのまま使えます。',
   'app.footer':
-    '書き込みには Chrome / Edge の Web Serial を使います。ファームウェアはこのページから直接キーボードに送られ、外部には送信されません。',
+    'Pro Micro のキーボードは、Chrome / Edge の Web Serial でこのページから直接書き込みます。UF2 のキーボードには、確認済みのファイルを渡してドライブにコピーしてもらいます。ファームウェアが外部に送信されることはありません。',
   'app.language': '言語',
 
   'shortcut.title': 'キーボード操作',
@@ -964,11 +966,13 @@ export const ja: Record<MessageKey, string> = {
   'flash.olderMany': 'このファームウェアは、前回書き込んだもの（{sha}）より {n} コミット古いものです。',
   'flash.checkSource': 'コミットの作者、メッセージ、日時は、コミットした人が書いたものです。この変更に心当たりがなければ、書き込まないでください。',
   'flash.title': '{name} に書き込む',
-  'zmk.role.central': 'セントラル（パソコンにつながる側）',
-  'zmk.role.peripheral': 'ペリフェラル',
+  'zmk.role.central': 'メインの側（セントラル）：パソコンにつながる',
+  'zmk.role.peripheral': 'もう片側（ペリフェラル）',
   'zmk.studio': 'ZMK Studio',
   'zmk.size': '{size} バイト',
-  'zmk.splitNote': '左右分割キーボードの片側です。キーマップの変更は、ふつうセントラル（{central}）だけに書き込めば反映されます。それ以外の変更は両側に書き込んでください。',
+  'zmk.splitNote': '左右分割キーボードの片側です。メインの側（{central}）から書き込んでください。キーマップの変更は、ふつうメインの側だけで反映されます。それ以外の変更は両側に書き込んでください。',
+  'zmk.pins': 'ZMK {zmk} と Zephyr {zephyr} でビルドしました。',
+  'zmk.allPins': '固定しているすべてのコミット',
   'zmk.step.connect': '{name} を USB でパソコンにつなぎます。',
   'zmk.step.bootloader': 'リセットボタンを素早く 2 回押すか、キーマップのブートローダーのキーを押します。XIAO-SENSE、XIAO-BOOT、NICENANO などの名前のドライブが現れます。',
   'zmk.step.copy': 'ファイルをダウンロードして、そのドライブにコピーします。',

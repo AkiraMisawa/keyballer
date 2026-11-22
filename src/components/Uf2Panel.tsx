@@ -9,7 +9,9 @@ import { useCommand } from '../commands/react';
 import { msg } from '../i18n/core';
 import { useI18n } from '../i18n/react';
 import type { FirmwareSource } from '../lib/firmware';
+import { shortSha } from '../lib/format';
 import type { ZmkBuild } from '../lib/manifest';
+import { PanelHead } from './PanelHead';
 import { SourceNote } from './SourceNote';
 
 /** Saves bytes as a file through the browser's download. */
@@ -27,28 +29,36 @@ interface Props {
   /** The UF2 file, checked against the build's record. */
   bytes: Uint8Array;
   source: FirmwareSource;
-  /** The other builds of the same keyboard: the other half, the settings reset. */
-  group: ZmkBuild[];
-  /** Loads and checks another build of the group (the settings reset). */
+  /** All builds of this keyboard, in flashing order (manifest.ts, keyboardOf). */
+  keyboard: ZmkBuild[];
+  /** Where the build's resolved west manifest, with every pin, can be read. */
+  pinsUrl: string;
+  /** Loads and checks another build of the keyboard (the settings reset), from the same firmware. */
   loadBuild: (build: ZmkBuild) => Promise<Uint8Array>;
   onClose: () => void;
 }
 
-export function Uf2Panel({ build, bytes, source, group, loadBuild, onClose }: Props) {
+export function Uf2Panel({ build, bytes, source, keyboard, pinsUrl, loadBuild, onClose }: Props) {
   const { t, err } = useI18n();
-  const heading = useRef<HTMLHeadingElement>(null);
+  const downloadButton = useRef<HTMLButtonElement>(null);
   const [downloaded, setDownloaded] = useState('');
   const [resetError, setResetError] = useState<unknown>(null);
   const [loadingReset, setLoadingReset] = useState(false);
-  useEffect(() => heading.current?.focus(), []);
+  // Focus moves on (DESIGN.md §8): to the download, the panel's next step.
+  useEffect(() => downloadButton.current?.focus(), []);
 
-  const central = group.find((b) => b.role === 'central');
-  const reset = group.find((b) => b.role === 'settings_reset');
-  const split = build.role === 'central' || build.role === 'peripheral';
+  const halves = keyboard.filter((b) => b.role === 'central' || b.role === 'peripheral');
+  const central = halves.find((b) => b.role === 'central');
+  const reset = keyboard.find((b) => b.role === 'settings_reset');
 
+  /** Says what was saved; cleared first, so saving the same file again is announced again. */
+  const saved = (file: string) => {
+    setDownloaded('');
+    requestAnimationFrame(() => setDownloaded(file));
+  };
   const download = () => {
     saveFile(build.file, bytes);
-    setDownloaded(build.file);
+    saved(build.file);
   };
   const downloadReset = async () => {
     if (!reset) return;
@@ -56,7 +66,7 @@ export function Uf2Panel({ build, bytes, source, group, loadBuild, onClose }: Pr
     setResetError(null);
     try {
       saveFile(reset.file, await loadBuild(reset));
-      setDownloaded(reset.file);
+      saved(reset.file);
     } catch (e) {
       setResetError(e);
     } finally {
@@ -64,31 +74,50 @@ export function Uf2Panel({ build, bytes, source, group, loadBuild, onClose }: Pr
     }
   };
 
-  useCommand({ id: 'zmk.download', words: 'download firmware', title: msg('cmd.download'), group: 'group.flash', shortcut: 'd', run: download });
+  useCommand({
+    id: 'zmk.download',
+    words: 'download firmware',
+    title: msg('cmd.download'),
+    group: 'group.flash',
+    page: true,
+    shortcut: 'd',
+    run: download,
+  });
   useCommand({
     id: 'zmk.downloadReset',
     words: 'download reset',
     title: msg('cmd.downloadReset'),
     group: 'group.flash',
+    page: true,
     unavailable: !reset ? msg('why.noReset') : loadingReset ? msg('why.loading') : undefined,
     run: () => void downloadReset(),
   });
-  useCommand({ id: 'flash.close', words: 'close', title: msg('shortcut.back'), group: 'group.flash', shortcut: 'Escape', run: onClose });
+  useCommand({ id: 'flash.close', words: 'close', title: msg('shortcut.back'), group: 'group.flash', page: true, shortcut: 'Escape', run: onClose });
 
   return (
     <section className="panel flash" aria-labelledby="uf2-title">
-      <div className="panel-head">
-        <h2 id="uf2-title" ref={heading} tabIndex={-1}>
-          {t('flash.title', { name: build.name })}
-        </h2>
-        <button type="button" className="ghost" onClick={onClose} aria-keyshortcuts="Escape">
-          {t('common.close')}
-        </button>
-      </div>
+      <PanelHead id="uf2-title" title={t('flash.title', { name: build.name })} onClose={onClose} />
 
       <SourceNote source={source} />
+      <p className="note">
+        {t('zmk.pins', { zmk: build.zmk_sha ? shortSha(build.zmk_sha) : '?', zephyr: build.zephyr_sha ? shortSha(build.zephyr_sha) : '?' })}{' '}
+        <a href={pinsUrl} target="_blank" rel="noreferrer">
+          {t('zmk.allPins')}
+        </a>
+      </p>
 
-      {split && central && <p className="note">{t('zmk.splitNote', { central: central.name })}</p>}
+      {halves.length > 1 && central && (
+        <>
+          <ol className="halves" aria-label={t('flash.halves')}>
+            {halves.map((b) => (
+              <li key={b.id} className={b.id === build.id ? 'current' : ''}>
+                {b.name}
+              </li>
+            ))}
+          </ol>
+          <p className="note">{t('zmk.splitNote', { central: central.name })}</p>
+        </>
+      )}
 
       <ol className="steps">
         <li>{t('zmk.step.connect', { name: build.name })}</li>
@@ -97,7 +126,7 @@ export function Uf2Panel({ build, bytes, source, group, loadBuild, onClose }: Pr
           <div className="stack">
             <span>{t('zmk.step.copy')}</span>
             <div className="row">
-              <button type="button" className="primary" onClick={download} aria-keyshortcuts="D">
+              <button ref={downloadButton} type="button" className="primary" onClick={download} aria-keyshortcuts="D">
                 {t('zmk.download', { file: build.file })}
                 <Kbd>D</Kbd>
               </button>
@@ -106,11 +135,9 @@ export function Uf2Panel({ build, bytes, source, group, loadBuild, onClose }: Pr
         </li>
         <li>{t('zmk.step.restart')}</li>
       </ol>
-      {downloaded && (
-        <p className="note" role="status">
-          {t('zmk.downloaded', { file: downloaded })}
-        </p>
-      )}
+      <p className="note" role="status">
+        {downloaded && t('zmk.downloaded', { file: downloaded })}
+      </p>
 
       {reset && (
         <details>
@@ -123,7 +150,7 @@ export function Uf2Panel({ build, bytes, source, group, loadBuild, onClose }: Pr
               <li>{t('zmk.reset.step3')}</li>
             </ol>
             <div className="row">
-              <button type="button" onClick={() => void downloadReset()} disabled={loadingReset}>
+              <button type="button" onClick={() => void downloadReset()} disabled={loadingReset} aria-busy={loadingReset}>
                 {loadingReset ? t('card.loading') : t('zmk.reset.download')}
               </button>
             </div>

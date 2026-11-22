@@ -2,7 +2,7 @@
 // untrusted input: its paths go into GitHub API URLs with the user's token.
 
 import { describe, expect, it } from 'vitest';
-import { isPlainPath, parseManifest } from './manifest';
+import { firmwareCards, isPlainPath, keyboardOf, parseManifest, type FirmwareBuild } from './manifest';
 
 const SHA = '58e1bc2d3f4a5b6c7d8e9f00112233445566778a';
 const build = (extra: Record<string, unknown> = {}) => ({
@@ -64,5 +64,55 @@ describe('parseManifest', () => {
     expect(() => parseManifest(manifest({ source: { repository: 'a/b', sha: 'main', ref: 'x' } }))).toThrow();
     expect(() => parseManifest(manifest({ source: { repository: 'a/b', sha: SHA.slice(0, 7), ref: 'x' } }))).toThrow();
     expect(() => parseManifest(manifest({ source: { repository: 'a/b', sha: `${SHA}/../x`, ref: 'x' } }))).toThrow();
+  });
+});
+
+/** A ZMK build as scripts/build_zmk.py records it. */
+const zmk = (id: string, role: string, group = 'roba', extra: Record<string, unknown> = {}) => ({
+  id, name: id, firmware: 'zmk', format: 'uf2', file: `${id}.uf2`, size: 256, group, board: 'seeeduino_xiao_ble', shield: id,
+  role, studio: false, west: `${id}.west.yml`, zmk_sha: SHA, zephyr_sha: SHA, image: 'i',
+  uf2: { family: 0xada52840, blocks: 1, start: 0x27000, end: 0x27100 }, ...extra,
+});
+
+describe('ZMK builds in the manifest', () => {
+  it('takes a ZMK build as the build records it', () => {
+    expect(parseManifest(manifest({}, zmk('roba-right', 'central') as never)).builds[0]).toMatchObject({ firmware: 'zmk', role: 'central' });
+  });
+
+  it('refuses ZMK builds with fields that do not fit', () => {
+    const bad: Record<string, unknown>[] = [
+      { format: 'hex' },
+      { file: 'roba-right.bat' },
+      { role: 'leader' },
+      { group: 'Ro Ba' },
+      { west: '../west.yml' },
+      { uf2: { family: 0xada52840, blocks: 1, start: 0x27100, end: 0x27000 } },
+      { uf2: { family: 0xada52840, blocks: 0, start: 0x27000, end: 0x27100 } },
+      { uf2: undefined },
+      { zmk_sha: 'main' },
+      { west_sha256: 'x' },
+    ];
+    for (const extra of bad) {
+      expect(() => parseManifest(manifest({}, zmk('r', 'central', 'roba', extra) as never)), JSON.stringify(extra)).toThrow();
+    }
+  });
+});
+
+describe('firmwareCards and keyboardOf', () => {
+  const builds = [
+    build({ id: 'keyball39' }),
+    zmk('roba-reset', 'settings_reset'),
+    zmk('roba-left', 'peripheral'),
+    zmk('m40', 'standalone', 'meteorite40'),
+    zmk('roba-right', 'central'),
+  ] as unknown as FirmwareBuild[];
+
+  it('lists each keyboard once, the central half first, without the settings reset', () => {
+    expect(firmwareCards(builds).map((b) => b.id)).toEqual(['keyball39', 'roba-right', 'roba-left', 'm40']);
+  });
+
+  it('gives a keyboard\'s builds in flashing order, the settings reset last', () => {
+    const right = builds.find((b) => b.id === 'roba-right')!;
+    expect(keyboardOf(builds, right as never).map((b) => b.id)).toEqual(['roba-right', 'roba-left', 'roba-reset']);
   });
 });

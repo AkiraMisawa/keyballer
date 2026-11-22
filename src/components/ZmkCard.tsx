@@ -1,12 +1,11 @@
 // A ZMK firmware in the list: its name, board and shield, which half it is, and "Flash", which
 // opens the UF2 panel (docs/plans/zmk.md). The settings reset has no card; the panel offers it.
 
-import { Kbd } from '../commands/keys';
-import { useCommand } from '../commands/react';
-import { msg, type Localized } from '../i18n/core';
+import type { Localized } from '../i18n/core';
 import { useI18n } from '../i18n/react';
 import { formatBytes } from '../lib/format';
 import type { ZmkBuild } from '../lib/manifest';
+import { FlashButton } from './FlashButton';
 
 interface Props {
   build: ZmkBuild;
@@ -20,16 +19,6 @@ interface Props {
 
 export function ZmkCard({ build, index, blocked, loading, onFlash }: Props) {
   const { t, lang } = useI18n();
-  const shortcut = index < 9 ? String(index + 1) : '';
-  useCommand({
-    id: `flash:${build.id}`,
-    words: `flash ${build.id}`,
-    title: msg('shortcut.flashBuild', { name: build.name }),
-    group: 'group.firmware',
-    shortcut: shortcut || undefined,
-    unavailable: blocked ?? (loading ? msg('why.loading') : undefined),
-    run: onFlash,
-  });
   return (
     <article className="card">
       <div className="card-head">
@@ -48,16 +37,7 @@ export function ZmkCard({ build, index, blocked, loading, onFlash }: Props) {
       </ul>
 
       <div className="row">
-        <button
-          type="button"
-          className="primary"
-          onClick={onFlash}
-          disabled={!!blocked || loading}
-          aria-keyshortcuts={shortcut || undefined}
-        >
-          {loading ? t('card.loading') : t('card.flash')}
-          {shortcut && <Kbd>{shortcut}</Kbd>}
-        </button>
+        <FlashButton id={build.id} name={build.name} index={index} unavailable={blocked} loading={loading} onFlash={onFlash} />
       </div>
     </article>
   );

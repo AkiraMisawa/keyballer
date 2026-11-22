@@ -15,7 +15,6 @@ import {
   type CommitInfo,
   type RepoRef,
 } from './github';
-import { parseIntelHex } from './ihex';
 import { isCommitSha, isZmk, parseManifest, type FirmwareBuild } from './manifest';
 import { checkUf2 } from './uf2';
 import { BRANCH, judgeProvenance, keyballerWorkflowSha, manifestArtifactName, sha256Hex } from './provenance';
@@ -39,10 +38,8 @@ export interface FirmwareSource extends CommitInfo {
 
 export interface VerifiedFirmware {
   build: FirmwareBuild;
-  /** The file's bytes, checked against the build's record. */
+  /** The file's bytes, checked against the build's record (and, for UF2, block by block). */
   bytes: Uint8Array;
-  /** For a hex file, the flash image it describes; empty for UF2. */
-  image: Uint8Array;
   source: FirmwareSource;
 }
 
@@ -116,12 +113,10 @@ export async function loadVerifiedFirmware(
       // The remembered commit may be gone; the dialog then shows no comparison.
     }
   }
-  const image = isZmk(build) ? new Uint8Array(0) : parseIntelHex(new TextDecoder().decode(bytes)).data;
   const repository = repoName(r);
   return {
     build,
     bytes,
-    image,
     source: {
       ...commit,
       repository,
