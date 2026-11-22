@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from build_qmk import ConfigError, load_config  # noqa: E402
+from build_qmk import ConfigError, compile_command, load_config  # noqa: E402
 
 SHA = "4664de991d14da34bd42e7031ac7406b6ccb02af"
 DIGEST = "sha256:" + "2dc05fc9f32efebd6b05c2b8676ee548358bc7e151e9dbf4dac6b6eed4513b07"
@@ -86,3 +86,23 @@ class LoadConfigTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LedsTest(unittest.TestCase):
+    """builds[].leds says whether the board has LEDs; one keymap folder serves boards with and without."""
+
+    def load(self, cfg):
+        return LoadConfigTest.load(self, cfg)
+
+    def test_takes_a_boolean_only(self):
+        self.load(config(build__leds=True))
+        self.load(config(build__leds=False))
+        for value in ["yes", "true", 1, 0, None, [], {}]:
+            with self.assertRaises(ConfigError, msg=repr(value)):
+                self.load(config(build__leds=value))
+
+    def test_turns_rgb_lighting_on_or_off_for_the_build_only(self):
+        build = config()["builds"][0]
+        self.assertEqual(compile_command(build), ["qmk", "compile", "-kb", "keyball/keyball39", "-km", "am338"])
+        self.assertEqual(compile_command({**build, "leds": True})[-2:], ["-e", "RGBLIGHT_ENABLE=yes"])
+        self.assertEqual(compile_command({**build, "leds": False})[-2:], ["-e", "RGBLIGHT_ENABLE=no"])
