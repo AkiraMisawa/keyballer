@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { appReaches, getBuildRuns, getFirmwareText, parseRepo } from './github';
+import { appReaches, getBuildRuns, getFirmwareText, getTextAt, parseRepo } from './github';
 
 describe('parseRepo', () => {
   it('accepts owner/repo', () => {
@@ -90,3 +90,39 @@ describe('build runs', () => {
     expect(url.searchParams.get('branch')).toBe('main');
   });
 });
+
+describe('reading files at a commit without a token', () => {
+  // raw.githubusercontent.com serves a public repository's files outside the API's 60 requests an
+  // hour; what a commit names never changes, so it can be kept in the browser's cache.
+  afterEach(() => vi.unstubAllGlobals());
+  const repo = { owner: 'AkiraMisawa', repo: 'keyballer-config' };
+  const SHA = '05a21d7c0ffee0000000000000000000000000ab';
+  const calls = (spy: { mock: { calls: unknown[][] } }) => spy.mock.calls.map(([url, init]) => [String(url), (init as RequestInit | undefined)?.headers]);
+
+  it('reads from raw.githubusercontent.com, without sending anything else, and caches it', async () => {
+    const spy = vi.fn(async (_url: string, _init?: RequestInit) => new Response('#pragma once\n'));
+    vi.stubGlobal('fetch', spy);
+    expect(await getTextAt(repo, 'keymaps/am338/config.h', SHA, '')).toBe('#pragma once\n');
+    expect(calls(spy)).toEqual([[`https://raw.githubusercontent.com/AkiraMisawa/keyballer-config/${SHA}/keymaps/am338/config.h`, undefined]]);
+    expect(spy.mock.calls[0][1]).toMatchObject({ cache: 'force-cache', credentials: 'omit', redirect: 'error' });
+  });
+
+  it('takes a missing file as missing, without asking the API', async () => {
+    const spy = vi.fn(async () => new Response('404: Not Found', { status: 404 }));
+    vi.stubGlobal('fetch', spy);
+    expect(await getTextAt(repo, 'keymaps/am338/rules.mk', SHA, '')).toBeNull();
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks the API when raw fails some other way, and with a token or a branch name', async () => {
+    const spy = vi.fn(async (url: string) => (url.startsWith('https://raw.') ? new Response('', { status: 503 }) : new Response('api')));
+    vi.stubGlobal('fetch', spy);
+    expect(await getTextAt(repo, 'keyballer.json', SHA, '')).toBe('api');
+    expect(String(spy.mock.calls.at(-1)?.[0])).toMatch(/^https:\/\/api\.github\.com\/repos\/AkiraMisawa\/keyballer-config\/contents\/keyballer\.json\?ref=/);
+    spy.mockClear();
+    await getTextAt(repo, 'keyballer.json', SHA, 'github_pat_x');
+    await getTextAt(repo, 'keyballer.json', 'main', '');
+    expect(spy.mock.calls.every(([url]) => String(url).startsWith('https://api.github.com/'))).toBe(true);
+  });
+});
+
