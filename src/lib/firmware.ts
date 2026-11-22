@@ -17,7 +17,10 @@ import {
 } from './github';
 import { parseIntelHex } from './ihex';
 import { isCommitSha, parseManifest, type FirmwareBuild } from './manifest';
-import { judgeProvenance, manifestArtifactName, sha256Hex } from './provenance';
+import { BRANCH, judgeProvenance, keyballerWorkflowSha, manifestArtifactName, sha256Hex } from './provenance';
+
+/** Keyballer's own repository, home of the build workflow. */
+const KEYBALLER_REPO: RepoRef = { owner: 'AkiraMisawa', repo: 'keyballer' };
 
 /** Where checked firmware came from, for the flash dialog. */
 export interface FirmwareSource extends CommitInfo {
@@ -71,6 +74,14 @@ export async function loadVerifiedFirmware(
   // Still on the default branch? Compared by SHA, so a tag named like the branch cannot answer.
   const head = await getBranchHead(r, defaultBranch, token);
   const sinceSource = await compareCommits(r, head, manifest.source.sha, token);
+  // The Keyballer workflow commit the run used must be on Keyballer's main (public; no token).
+  const workflowSha = keyballerWorkflowSha(run);
+  let workflowOnKeyballerMain = false;
+  if (workflowSha && isCommitSha(workflowSha)) {
+    const keyballerHead = await getBranchHead(KEYBALLER_REPO, BRANCH, '');
+    const status = (await compareCommits(KEYBALLER_REPO, keyballerHead, workflowSha, '')).status;
+    workflowOnKeyballerMain = status === 'identical' || status === 'behind';
+  }
   const verdict = judgeProvenance({
     run,
     artifacts,
@@ -78,6 +89,7 @@ export async function loadVerifiedFirmware(
     manifest: { sourceSha: manifest.source.sha, runId: manifest.run.id, digest: manifestDigest },
     file: { expected: build.sha256, actual: await sha256Hex(hex) },
     branchStatus: sinceSource.status,
+    workflowOnKeyballerMain,
   });
   if (!verdict.ok) throw new LocalizedError(verdict.reason);
 

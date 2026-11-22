@@ -58,6 +58,7 @@ export const en = {
   'cmd.shortcuts': 'Show the keyboard shortcuts',
   'cmd.start': 'Start flashing, then press the reset button',
 
+  'why.linkArming': 'Wait a moment, then choose.',
   'why.noRepo': 'Connect a config repository first.',
   'why.noRun': 'There is no build yet.',
   'why.flashing': 'Finish or close the current flashing first.',
@@ -483,6 +484,8 @@ export const en = {
   'provenance.err.mismatch': 'This firmware differs from what its build recorded, so it was not flashed. Someone may have changed the firmware branch by hand. Build again, then flash.',
   'provenance.err.noRecord': 'No build record vouches for this firmware. Firmware built before Keyballer kept build records has none. Build again, then flash.',
   'provenance.err.notDefault': 'This firmware was not built from the repository\'s default branch by a push or a manual run, so it was not flashed. Build again on the default branch, then flash.',
+  'provenance.err.workflow': 'This firmware was built with a version of Keyballer\'s build workflow that is not on Keyballer\'s main branch, so it was not flashed. Build again with the workflow from AkiraMisawa/keyballer main, then flash.',
+  'provenance.err.notMain': 'Keyballer builds and flashes from the main branch, but this repository\'s default branch is another one, so it was not flashed. Make main the default branch, build again, then flash.',
   'manifest.err.format': 'manifest.json is not in the expected format',
 } as const;
 
@@ -544,6 +547,7 @@ export const ja: Record<MessageKey, string> = {
   'cmd.shortcuts': 'キーボード操作の一覧を表示',
   'cmd.start': '書き込みを始める（続けてリセットボタンを押す）',
 
+  'why.linkArming': '少し待ってから選んでください。',
   'why.noRepo': '先に設定リポジトリに接続してください。',
   'why.noRun': 'まだビルドがありません。',
   'why.flashing': '今の書き込みを終えるか、閉じてからにしてください。',
@@ -969,5 +973,7 @@ export const ja: Record<MessageKey, string> = {
   'provenance.err.mismatch': 'このファームウェアは、ビルドが記録した内容と違うため、書き込みませんでした。firmware ブランチが手で書き換えられた可能性があります。もう一度ビルドしてから書き込んでください。',
   'provenance.err.noRecord': 'このファームウェアを保証するビルド記録がありません。Keyballer がビルド記録を残すようになる前のファームウェアには記録がありません。もう一度ビルドしてから書き込んでください。',
   'provenance.err.notDefault': 'このファームウェアは、リポジトリの既定ブランチへの push または手動実行でビルドされたものではないため、書き込みませんでした。既定ブランチでビルドし直してから書き込んでください。',
+  'provenance.err.workflow': 'このファームウェアは、Keyballer の main ブランチにない版のビルドワークフローでビルドされたため、書き込みませんでした。AkiraMisawa/keyballer の main のワークフローでビルドし直してから書き込んでください。',
+  'provenance.err.notMain': 'Keyballer は main ブランチからビルドして書き込みますが、このリポジトリの既定ブランチは別のブランチなので、書き込みませんでした。main を既定ブランチにしてビルドし直してから書き込んでください。',
   'manifest.err.format': 'manifest.json の形式が想定と違います',
 };
