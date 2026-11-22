@@ -1180,3 +1180,16 @@ footer {
 .shortcut-refusal[hidden] {
   display: none;
 }
+
+/* Where checked firmware came from, in the flash dialog. Commit subjects can be long. */
+.flash .source {
+  border-left: 3px solid var(--ok);
+  padding-left: 12px;
+}
+.flash .source p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.flash .source .commit-line {
+  font-weight: 600;
+}

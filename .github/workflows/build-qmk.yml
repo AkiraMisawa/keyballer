@@ -133,6 +133,8 @@ jobs:
           name: keyballer-manifest-${{ steps.record.outputs.digest }}
           path: record/manifest.json
           if-no-files-found: error
+          # As long as the repository allows; Keyballer refuses firmware whose record has expired.
+          retention-days: 90
       - name: Push the firmware branch
         working-directory: out
         env:

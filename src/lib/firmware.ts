@@ -26,8 +26,11 @@ export interface FirmwareSource extends CommitInfo {
   runUrl: string;
   /** How many commits the default branch has gained since this firmware's commit. */
   behindBy: number;
-  /** What changed since the last firmware flashed from this repository with Keyballer. */
-  sinceLast: { sha: string; commits: number; url: string } | null;
+  /**
+   * Against the last firmware flashed from this repository with Keyballer: commits added since
+   * (`newer`), and commits it lacks that the last one had (`older`, a rollback).
+   */
+  sinceLast: { sha: string; newer: number; older: number; url: string } | null;
 }
 
 export interface VerifiedFirmware {
@@ -60,21 +63,21 @@ export async function loadVerifiedFirmware(
   const manifestDigest = await sha256Hex(manifestBytes);
 
   // Lookups go to the connected repository, never to one the manifest names.
-  const [run, artifacts, branch] = await Promise.all([
+  const [run, artifacts, defaultBranch] = await Promise.all([
     getProvenanceRun(r, manifest.run.id, token),
     getRunArtifacts(r, manifest.run.id, manifestArtifactName(manifestDigest), token),
     getDefaultBranch(r, token),
   ]);
   // Still on the default branch? Compared by SHA, so a tag named like the branch cannot answer.
-  const head = await getBranchHead(r, branch, token);
-  const onBranch = await compareCommits(r, head, manifest.source.sha, token);
+  const head = await getBranchHead(r, defaultBranch, token);
+  const sinceSource = await compareCommits(r, head, manifest.source.sha, token);
   const verdict = judgeProvenance({
     run,
     artifacts,
-    defaultBranch: branch,
+    defaultBranch,
     manifest: { sourceSha: manifest.source.sha, runId: manifest.run.id, digest: manifestDigest },
     file: { expected: build.sha256, actual: await sha256Hex(hex) },
-    onBranch: onBranch.status,
+    branchStatus: sinceSource.status,
   });
   if (!verdict.ok) throw new LocalizedError(verdict.reason);
 
@@ -83,7 +86,7 @@ export async function loadVerifiedFirmware(
   if (lastFlashed && isCommitSha(lastFlashed) && lastFlashed !== manifest.source.sha) {
     try {
       const since = await compareCommits(r, lastFlashed, manifest.source.sha, token);
-      sinceLast = { sha: lastFlashed, commits: since.aheadBy, url: since.url };
+      sinceLast = { sha: lastFlashed, newer: since.aheadBy, older: since.behindBy, url: since.url };
     } catch {
       // The remembered commit may be gone; the dialog then shows no comparison.
     }
@@ -96,9 +99,9 @@ export async function loadVerifiedFirmware(
     source: {
       ...commit,
       repository,
-      branch,
+      branch: defaultBranch,
       runUrl: `https://github.com/${repository}/actions/runs/${run.id}`,
-      behindBy: onBranch.behindBy,
+      behindBy: sinceSource.behindBy,
       sinceLast,
     },
   };

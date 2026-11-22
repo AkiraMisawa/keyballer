@@ -4,7 +4,7 @@
 import { LocalizedError } from '../i18n/core';
 import type { MessageKey } from '../i18n/messages';
 import { isCommitSha, isPlainPath, parseManifest, type FirmwareManifest } from './manifest';
-import type { ProvenanceRun, RunArtifact } from './provenance';
+import type { CompareStatus, ProvenanceRun, RunArtifact } from './provenance';
 
 export interface RepoRef {
   owner: string;
@@ -179,23 +179,32 @@ export async function getDefaultBranch(r: RepoRef, token: string): Promise<strin
  * when head is an ancestor of base, `ahead`, `diverged`) and how many commits apart. SHAs, not
  * branch names, so a tag named like the branch cannot stand in for it.
  */
-export async function compareCommits(r: RepoRef, base: string, head: string, token: string): Promise<{ status: string; behindBy: number; aheadBy: number; url: string }> {
+export async function compareCommits(
+  r: RepoRef,
+  base: string,
+  head: string,
+  token: string,
+): Promise<{ status: CompareStatus; behindBy: number; aheadBy: number; url: string }> {
   if (!isCommitSha(base) || !isCommitSha(head)) throw new LocalizedError('manifest.err.format');
   const res = await request(`${repoPath(r)}/compare/${base}...${head}`, token, 'application/vnd.github+json');
-  const body = (await res.json()) as { status: string; behind_by: number; ahead_by: number; html_url: string };
+  const body = (await res.json()) as { status: CompareStatus; behind_by: number; ahead_by: number; html_url: string };
   return { status: body.status, behindBy: body.behind_by, aheadBy: body.ahead_by, url: body.html_url };
 }
 
 /** A workflow run of the connected repository, as provenance reads it. */
-export async function getProvenanceRun(r: RepoRef, runId: number, token: string): Promise<ProvenanceRun> {
+const assertRunId = (runId: number) => {
   if (!Number.isSafeInteger(runId) || runId <= 0) throw new LocalizedError('manifest.err.format');
+};
+
+export async function getProvenanceRun(r: RepoRef, runId: number, token: string): Promise<ProvenanceRun> {
+  assertRunId(runId);
   const res = await request(`${repoPath(r)}/actions/runs/${runId}`, token, 'application/vnd.github+json');
   return (await res.json()) as ProvenanceRun;
 }
 
 /** The run's artifacts with exactly this name. */
 export async function getRunArtifacts(r: RepoRef, runId: number, name: string, token: string): Promise<RunArtifact[]> {
-  if (!Number.isSafeInteger(runId) || runId <= 0) throw new LocalizedError('manifest.err.format');
+  assertRunId(runId);
   const res = await request(
     `${repoPath(r)}/actions/runs/${runId}/artifacts?name=${encodeURIComponent(name)}&per_page=100`,
     token,

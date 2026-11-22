@@ -66,6 +66,18 @@ class LoadConfigTest(unittest.TestCase):
             with self.assertRaises(ConfigError, msg=ref):
                 self.load(config(source__ref=ref))
 
+    def test_refuses_build_fields_that_leave_their_place_or_break_lines(self):
+        for key, value in [
+            ("keymap", "../../.."), ("keymap", "am338/x"), ("keyboard", "keyball/../../x"), ("keyboard", "/abs"),
+            ("keymap_dir", "../outside"), ("keymap_dir", "keymaps/../.."), ("name", "Keyball39\n| injected |"),
+        ]:
+            with self.assertRaises(ConfigError, msg=(key, value)):
+                self.load(config(**{"build__" + key: value}))
+
+    def test_refuses_view_keys_that_are_not_plain_paths(self):
+        with self.assertRaises(ConfigError):
+            self.load(config(views={"../x": {}}))
+
     def test_refuses_source_names_and_paths_that_leave_their_place(self):
         for key, value in [("repo", "a/b/c"), ("repo", "../x"), ("path", "../../etc"), ("path", "/abs"), ("as", "../keyball")]:
             with self.assertRaises(ConfigError, msg=(key, value)):
