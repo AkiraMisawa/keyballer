@@ -121,7 +121,7 @@ This validation guards the workflow's own shell. It is not a boundary against th
 - **CSP** (production builds, `<meta>` right after the charset; the dev server keeps Vite's needs):
   - `default-src 'self'`
   - `script-src 'self'`
-  - `connect-src 'self' https://api.github.com`
+  - `connect-src 'self' https://api.github.com https://raw.githubusercontent.com`. Without a token, a public repository's files at a commit are read from raw.githubusercontent.com, outside the API's 60 requests an hour (2026-11-22). The token is never sent there.
   - `img-src 'self' data:`
   - `style-src 'self'`
   - `font-src 'self'`

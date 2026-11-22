@@ -20,6 +20,7 @@ Keyballer (this app) ◀──── GitHub API ──────────�
 - Your settings live in a GitHub repository per keyboard. Change the keymap and push; the build starts on its own.
 - The build steps are a shared workflow in this repository, so a config repository calls it in a few lines.
 - Flashing uses Web Serial in Chrome / Edge. Nothing to install.
+- No sign-in is needed for public repositories. Without a token, Keyballer reads their files from raw.githubusercontent.com, so it stays well within GitHub's 60 API requests an hour.
 
 ## Status
 
