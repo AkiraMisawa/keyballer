@@ -77,7 +77,7 @@ class RobaView(unittest.TestCase):
         # &lt_to_layer_0 5 APOSTROPHE: hold for layer 5; the tap is a macro (TO_LAYER_0) with the key.
         key = self.view["layers"][0]["keys"][21]
         self.assertEqual(key, "LT(5,ZMK_TO_LAYER_0_70034)")
-        self.assertEqual(self.view["labels"]["ZMK_TO_LAYER_0_70034"]["en"], "TO_LAYER_0 QUOT")
+        self.assertEqual(self.view["labels"]["ZMK_TO_LAYER_0_70034"]["en"], "to layer 0 QUOT")
 
     def test_lists_combos_with_their_positions_and_output(self):
         combos = self.view["combos"]

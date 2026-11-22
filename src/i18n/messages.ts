@@ -76,6 +76,7 @@ export const en = {
   'why.started': 'Flashing has already started.',
   'why.loading': 'The firmware is still loading.',
   'why.noReset': 'This keyboard has no settings reset build.',
+  'why.zmkReadOnly': 'ZMK keymaps can be viewed here; editing them comes later.',
 
   'common.close': 'Close',
   'common.cancel': 'Cancel',
@@ -616,6 +617,7 @@ export const ja: Record<MessageKey, string> = {
   'why.started': 'すでに書き込みを始めています。',
   'why.loading': 'ファームウェアを読み込んでいます。',
   'why.noReset': 'このキーボードには設定のリセットのビルドがありません。',
+  'why.zmkReadOnly': 'ZMK のキーマップはここで見られます。編集は今後対応します。',
 
   'common.close': '閉じる',
   'common.cancel': 'やめる',

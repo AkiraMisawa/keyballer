@@ -28,7 +28,7 @@ import {
   type WorkflowRun,
 } from './lib/github';
 import { loadVerifiedFirmware, type FirmwareSource } from './lib/firmware';
-import { firmwareCards, isZmk, keyboardOf, type FirmwareBuild, type FirmwareManifest, type QmkBuild, type ZmkBuild } from './lib/manifest';
+import { firmwareCards, isZmk, keyboardOf, type FirmwareBuild, type FirmwareManifest, type ZmkBuild } from './lib/manifest';
 import { parseIntelHex } from './lib/ihex';
 import { isWebSerialSupported } from './lib/serial';
 import { load, save } from './lib/storage';
@@ -305,9 +305,9 @@ export function App({ forgottenToken = null }: { forgottenToken?: ForgottenToken
   };
 
   const repoUrl = repo ? `https://github.com/${repoName(repo.ref)}` : '';
-  // ZMK builds have no keymap view yet (docs/plans/zmk.md, phase 3).
-  const qmkBuilds = (repo?.manifest?.builds ?? []).filter((b): b is QmkBuild => !isZmk(b));
-  const keymapBuild = (keymapId && qmkBuilds.find((b) => b.id === keymapId)) || null;
+  // Every QMK build has a keymap screen (it says when there is no view); a ZMK build when its view was made.
+  const keymapBuilds = (repo?.manifest?.builds ?? []).filter((b) => !isZmk(b) || !!b.view);
+  const keymapBuild = (keymapId && keymapBuilds.find((b) => b.id === keymapId)) || null;
   const cardBuilds = firmwareCards(repo?.manifest?.builds ?? []);
   const noRepo: Localized | undefined = repo ? undefined : msg('why.noRepo');
   const latestRun = repo?.runs[0];
@@ -529,7 +529,7 @@ export function App({ forgottenToken = null }: { forgottenToken?: ForgottenToken
       )}
 
       {repo?.manifest &&
-        qmkBuilds.map((b, i) => (
+        keymapBuilds.map((b, i) => (
           <KeymapCommand
             key={b.id}
             build={b}
@@ -581,6 +581,8 @@ export function App({ forgottenToken = null }: { forgottenToken?: ForgottenToken
                       blocked={uf2Blocked}
                       loading={loadingBuild === b.id}
                       onFlash={() => void openBuild(b)}
+                      onKeymap={() => openKeymap(b.id)}
+                      keymapShortcut={b === keymapBuilds[0] ? KEYMAP_SHORTCUT : undefined}
                     />
                   ) : (
                     <FirmwareCard
@@ -591,7 +593,7 @@ export function App({ forgottenToken = null }: { forgottenToken?: ForgottenToken
                       loading={loadingBuild === b.id}
                       onFlash={() => void openBuild(b)}
                       onKeymap={() => openKeymap(b.id)}
-                      keymapShortcut={b === qmkBuilds[0] ? KEYMAP_SHORTCUT : undefined}
+                      keymapShortcut={b === keymapBuilds[0] ? KEYMAP_SHORTCUT : undefined}
                     />
                   ),
                 )}
