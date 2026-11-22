@@ -32,8 +32,11 @@ jobs:
         with:
           path: dist
 
+  # Publishing is paused until Keyballer is ready: the site is unpublished, and the job runs only
+  # when the repository variable PAGES_PUBLISHED is "true" (Settings, Secrets and variables,
+  # Actions, Variables). To publish again, turn Pages on with "GitHub Actions" as the source and set it.
   deploy:
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: vars.PAGES_PUBLISHED == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-24.04
     permissions:
