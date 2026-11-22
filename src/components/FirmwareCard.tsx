@@ -3,10 +3,10 @@ import { useCommand } from '../commands/react';
 import { msg, type Localized } from '../i18n/core';
 import { useI18n } from '../i18n/react';
 import { bootloaderLabel, formatBytes, processorLabel } from '../lib/format';
-import { canFlash, type FirmwareBuild } from '../lib/manifest';
+import { canFlash, type QmkBuild } from '../lib/manifest';
 
 interface Props {
-  build: FirmwareBuild;
+  build: QmkBuild;
   /** Position in the list; the first nine get the shortcuts 1–9. */
   index: number;
   /** Why flashing cannot start now; absent when it can. */

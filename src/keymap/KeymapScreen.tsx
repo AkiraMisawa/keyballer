@@ -12,7 +12,7 @@ import { ConfirmDialog, EditBar, LeaveDialog, SessionState } from '../edit/EditB
 import { ballModeEditable, editedView, keymapFileOf, keymapProblem, keyProblem } from '../edit/session';
 import { useEditSession, type EditSession } from '../edit/useEditSession';
 import { getFirmwareText, repoName, type RepoRef, type WorkflowRun } from '../lib/github';
-import type { FirmwareBuild, FirmwareManifest } from '../lib/manifest';
+import type { FirmwareManifest, QmkBuild } from '../lib/manifest';
 import { load, save } from '../lib/storage';
 import type { TokenField } from '../components/TokenInput';
 import type { SignIn } from '../auth/useSignIn';
@@ -38,7 +38,7 @@ import {
 } from './view';
 
 interface Props {
-  build: FirmwareBuild;
+  build: QmkBuild;
   repo: RepoRef;
   firmwareSha: string;
   manifest: FirmwareManifest;

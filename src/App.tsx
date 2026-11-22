@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { BuildStatus } from './components/BuildStatus';
 import { FirmwareCard } from './components/FirmwareCard';
 import { FlashPanel } from './components/FlashPanel';
+import { Uf2Panel } from './components/Uf2Panel';
+import { ZmkCard } from './components/ZmkCard';
 import { ForgottenToken } from './components/ForgottenToken';
 import { SignInCommands, SignInPanel } from './components/SignInPanel';
 import { TokenInput, useTokenField } from './components/TokenInput';
@@ -26,17 +28,15 @@ import {
   type WorkflowRun,
 } from './lib/github';
 import { loadVerifiedFirmware, type FirmwareSource } from './lib/firmware';
-import type { FirmwareBuild, FirmwareManifest } from './lib/manifest';
+import { isZmk, type FirmwareBuild, type FirmwareManifest, type QmkBuild, type ZmkBuild } from './lib/manifest';
 import { isWebSerialSupported } from './lib/serial';
 import { load, save } from './lib/storage';
 import type { ForgottenTokenKind } from './lib/token';
 
-interface FlashTarget {
-  title: string;
-  image: Uint8Array;
-  split: boolean;
-  source?: FirmwareSource;
-}
+/** What the flash panel shows: a hex file to flash over Web Serial, or a UF2 file to copy. */
+type FlashTarget =
+  | { kind: 'serial'; title: string; image: Uint8Array; split: boolean; source?: FirmwareSource }
+  | { kind: 'uf2'; build: ZmkBuild; bytes: Uint8Array; source: FirmwareSource };
 
 interface RepoState {
   ref: RepoRef;
@@ -304,7 +304,11 @@ export function App({ forgottenToken = null }: { forgottenToken?: ForgottenToken
   };
 
   const repoUrl = repo ? `https://github.com/${repoName(repo.ref)}` : '';
-  const keymapBuild = (keymapId && repo?.manifest?.builds.find((b) => b.id === keymapId)) || null;
+  // ZMK builds have no keymap view yet (docs/plans/zmk.md, phase 3).
+  const qmkBuilds = (repo?.manifest?.builds ?? []).filter((b): b is QmkBuild => !isZmk(b));
+  const keymapBuild = (keymapId && qmkBuilds.find((b) => b.id === keymapId)) || null;
+  // The settings reset is offered in the UF2 panel's "fix pairing", not as a card.
+  const cardBuilds = (repo?.manifest?.builds ?? []).filter((b) => !(isZmk(b) && b.role === 'settings_reset'));
   const noRepo: Localized | undefined = repo ? undefined : msg('why.noRepo');
   const latestRun = repo?.runs[0];
   // Why a firmware cannot be flashed right now, if it cannot.
@@ -313,6 +317,8 @@ export function App({ forgottenToken = null }: { forgottenToken?: ForgottenToken
     : target
       ? msg('why.flashing')
       : undefined;
+  // A UF2 file is downloaded, not flashed over Web Serial, so only an open panel stops it.
+  const uf2Blocked: Localized | undefined = target ? msg('why.flashing') : undefined;
 
   useCommand({
     id: 'repo.connect',
@@ -406,7 +412,12 @@ export function App({ forgottenToken = null }: { forgottenToken?: ForgottenToken
       // Only firmware that GitHub Actions built from the default branch, checked byte for byte.
       const lastFlashed = load(flashedKey(repo.ref));
       const verified = await loadVerifiedFirmware(repo.ref, repo.firmwareSha, build.id, tokenRef.current, lastFlashed);
-      openTarget({ title: verified.build.name, image: verified.image, split: verified.build.split, source: verified.source });
+      const b = verified.build;
+      openTarget(
+        isZmk(b)
+          ? { kind: 'uf2', build: b, bytes: verified.bytes, source: verified.source }
+          : { kind: 'serial', title: b.name, image: verified.image, split: b.split, source: verified.source },
+      );
     } catch (e) {
       setError(e);
     } finally {
@@ -512,7 +523,7 @@ export function App({ forgottenToken = null }: { forgottenToken?: ForgottenToken
       )}
 
       {repo?.manifest &&
-        repo.manifest.builds.map((b, i) => (
+        qmkBuilds.map((b, i) => (
           <KeymapCommand
             key={b.id}
             build={b}
@@ -555,25 +566,47 @@ export function App({ forgottenToken = null }: { forgottenToken?: ForgottenToken
             <section aria-labelledby="fw-title" className="stack">
               <h2 id="fw-title">{t('firmware.title')}</h2>
               <div className="cards">
-                {repo.manifest.builds.map((b, i) => (
-                  <FirmwareCard
-                    key={b.id}
-                    build={b}
-                    index={i}
-                    blocked={flashBlocked}
-                    loading={loadingBuild === b.id}
-                    onFlash={() => void openBuild(b)}
-                    onKeymap={() => openKeymap(b.id)}
-                    keymapShortcut={i === 0 ? KEYMAP_SHORTCUT : undefined}
-                  />
-                ))}
+                {cardBuilds.map((b, i) =>
+                  isZmk(b) ? (
+                    <ZmkCard
+                      key={b.id}
+                      build={b}
+                      index={i}
+                      blocked={uf2Blocked}
+                      loading={loadingBuild === b.id}
+                      onFlash={() => void openBuild(b)}
+                    />
+                  ) : (
+                    <FirmwareCard
+                      key={b.id}
+                      build={b}
+                      index={i}
+                      blocked={flashBlocked}
+                      loading={loadingBuild === b.id}
+                      onFlash={() => void openBuild(b)}
+                      onKeymap={() => openKeymap(b.id)}
+                      keymapShortcut={b === qmkBuilds[0] ? KEYMAP_SHORTCUT : undefined}
+                    />
+                  ),
+                )}
               </div>
             </section>
           )}
         </>
       )}
 
-      {target && (
+      {target?.kind === 'uf2' && repo?.firmwareSha && (
+        <Uf2Panel
+          key={target.build.id}
+          build={target.build}
+          bytes={target.bytes}
+          source={target.source}
+          group={(repo.manifest?.builds ?? []).filter((b): b is ZmkBuild => isZmk(b) && b.group === target.build.group)}
+          loadBuild={async (b) => (await loadVerifiedFirmware(repo.ref, repo.firmwareSha!, b.id, tokenRef.current)).bytes}
+          onClose={closeTarget}
+        />
+      )}
+      {target?.kind === 'serial' && (
         <FlashPanel
           key={target.title}
           title={target.title}
@@ -591,7 +624,7 @@ export function App({ forgottenToken = null }: { forgottenToken?: ForgottenToken
       {serialOk && !keymapBuild && (
         <LocalFirmware
           disabled={!!target}
-          onReady={(name, image, split) => openTarget({ title: name, image, split })}
+          onReady={(name, image, split) => openTarget({ kind: 'serial', title: name, image, split })}
         />
       )}
 

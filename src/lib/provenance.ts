@@ -2,7 +2,7 @@
 // SHA-256 into manifest.json, then keeps an artifact named after the manifest's own SHA-256 with
 // its workflow run. Before flashing, the run named in the manifest must:
 // - have been started by a push or a manual dispatch on the default branch, for the manifest's commit;
-// - use Keyballer's build-qmk.yml, and have succeeded;
+// - use Keyballer's build-qmk.yml or build-zmk.yml, and have succeeded;
 // - hold that artifact, not yet expired;
 // and the firmware's bytes must match the manifest.
 // GitHub sets a run's branch, event, commit and workflows, and only a run can hold artifacts. So a
@@ -12,14 +12,15 @@
 
 import type { MessageKey } from '../i18n/messages';
 
-/** The reusable workflow that config repositories call to build firmware; any ref of it. */
-const KEYBALLER_WORKFLOW = 'AkiraMisawa/keyballer/.github/workflows/build-qmk.yml@';
+/** The reusable workflows that config repositories call to build firmware (QMK, ZMK); any ref. */
+const KEYBALLER_WORKFLOWS = ['build-qmk.yml', 'build-zmk.yml'].map((f) => `AkiraMisawa/keyballer/.github/workflows/${f}@`);
+const isKeyballerWorkflow = (path: string) => KEYBALLER_WORKFLOWS.some((prefix) => path.startsWith(prefix));
 /** Keyballer builds, saves and flashes from this branch (the editor commits to it too). */
 export const BRANCH = 'main';
 
 /** The Keyballer workflow commit a run used, if it used Keyballer's workflow. */
 export const keyballerWorkflowSha = (run: ProvenanceRun): string | undefined =>
-  (run.referenced_workflows ?? []).find((w) => w.path.startsWith(KEYBALLER_WORKFLOW))?.sha;
+  (run.referenced_workflows ?? []).find((w) => isKeyballerWorkflow(w.path))?.sha;
 
 /** The fields of a GitHub Actions workflow run that provenance reads. */
 export interface ProvenanceRun {
@@ -79,7 +80,7 @@ export function judgeProvenance({
    */
   workflowOnKeyballerMain: boolean;
 }): Verdict {
-  const usesKeyballer = (run.referenced_workflows ?? []).some((w) => w.path.startsWith(KEYBALLER_WORKFLOW));
+  const usesKeyballer = (run.referenced_workflows ?? []).some((w) => isKeyballerWorkflow(w.path));
   const isTheBuild =
     run.id === manifest.runId &&
     run.head_sha === manifest.sourceSha &&
