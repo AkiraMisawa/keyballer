@@ -1,6 +1,6 @@
 # LED settings (Keyball, QMK)
 
-Status: phase 1 being built (2026-11-22), at the owner's request. Shares saving (review, commit to `main`) with the keymap editor ([keymap-editor.md](keymap-editor.md)) and the trackball settings ([trackball-settings.md](trackball-settings.md)).
+Status: phase 1 built (2026-11-22, keyballer #16, #17, #18 and keyballer-config #5), at the owner's request; not yet tried on the board. Shares saving (review, commit to `main`) with the keymap editor ([keymap-editor.md](keymap-editor.md)) and the trackball settings ([trackball-settings.md](trackball-settings.md)).
 
 ## Problem
 
