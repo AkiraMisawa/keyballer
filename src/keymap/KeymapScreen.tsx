@@ -14,6 +14,7 @@ import { useEditSession, type EditSession } from '../edit/useEditSession';
 import { getFirmwareText, repoName, type RepoRef, type WorkflowRun } from '../lib/github';
 import type { FirmwareBuild, FirmwareManifest } from '../lib/manifest';
 import { load, save } from '../lib/storage';
+import type { TokenField } from '../lib/token';
 import { pointerLockBusy, TrackballPanel, type PadMode, type PadRequest } from '../trackball/TrackballPanel';
 import { BALL_MM_MAX, BALL_MM_MIN, CPI_MAX, CPI_MIN, CPI_STEP, DIVIDER_MAX, DIVIDER_MIN } from '../trackball/speed';
 import { Board, type Selection } from './Board';
@@ -40,13 +41,12 @@ interface Props {
   repo: RepoRef;
   firmwareSha: string;
   manifest: FirmwareManifest;
-  token: string;
+  token: TokenField;
   /** The config repository's build runs on GitHub, for "build again". */
   buildsUrl: string;
   onClose: () => void;
   /** After saving to the config repository: the commit, whose build to watch for. */
   onSaved: (sha: string) => void;
-  onToken: (token: string) => void;
   runFor: (sha: string) => WorkflowRun | undefined;
   /** Lets the app ask before it leaves or switches this screen (browser Back, another keymap). */
   setLeaveGuard: (guard: (go: () => void) => void) => void;
@@ -77,7 +77,8 @@ function toDisplay(value: string): { os: Os } | { layout: Layout } | undefined {
 }
 
 export function KeymapScreen(props: Props) {
-  const { build, repo, firmwareSha, manifest, token, buildsUrl, onClose, onSaved, onToken, runFor, setLeaveGuard } = props;
+  const { build, repo, firmwareSha, manifest, token: tokenField, buildsUrl, onClose, onSaved, runFor, setLeaveGuard } = props;
+  const token = tokenField.value;
   const { t, err, lang } = useI18n();
   const [builtView, setView] = useState<ViewFile | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
@@ -660,8 +661,7 @@ export function KeymapScreen(props: Props) {
           <EditBar
             edit={edit}
             repoName={repoName(repo)}
-            token={token}
-            onToken={onToken}
+            token={tokenField}
             runFor={runFor}
             onSaved={onSaved}
             describe={{

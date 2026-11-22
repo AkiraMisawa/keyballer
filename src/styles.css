@@ -186,6 +186,12 @@ p {
   background: var(--err-soft);
 }
 
+/* Something to know that is not an error, such as the deleted saved token. */
+.banner.info {
+  background: var(--sunken);
+  border: 1px solid var(--line);
+}
+
 .err {
   color: var(--err);
 }
