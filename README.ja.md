@@ -4,7 +4,7 @@
 
 GitHub Actions でキーボードのファームウェアをビルドし、ブラウザからそのまま書き込むアプリです。
 
-**アプリ：** https://akiramisawa.github.io/keyballer/?lang=ja（英語・日本語。`?lang=ja` を付けると日本語で開きます）
+**アプリ：** 開発中のため公開していません。手元で `npm ci && npm run build && npm run preview` を実行し、http://127.0.0.1:4173/?lang=ja を開いてください（英語・日本語。`?lang=ja` を付けると日本語で開きます）。書き込みもそこでできます。
 
 ```
 設定リポジトリ（キーマップなど） ──push──▶ GitHub Actions がビルド
@@ -174,7 +174,7 @@ KEYBALLER_GITHUB_APP_SLUG=<アプリの URL 上の名前。インストールへ
 
 ビルド用スクリプトのテストは `python3 -m unittest discover -s scripts -p 'test_*.py'` で動きます。
 
-`main` に push すると、テストとビルドのあと GitHub Pages に公開されます。
+`main` に push すると、テストとビルドが動きます。GitHub Pages への公開は止めてあります。デプロイは、リポジトリ変数 `PAGES_PUBLISHED` が `true` で、Pages が有効になっていて、ソースが「GitHub Actions」のときだけ動きます。
 
 ### キーマップ表示
 

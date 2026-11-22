@@ -4,7 +4,7 @@ English | [日本語](README.ja.md)
 
 Keyballer builds keyboard firmware with GitHub Actions and flashes it straight from your browser.
 
-**App:** https://akiramisawa.github.io/keyballer/ (English and Japanese; add `?lang=ja` to open it in Japanese)
+**App:** not published while it is being built. Run it on your computer: `npm ci && npm run build && npm run preview`, then open http://127.0.0.1:4173 (English and Japanese; add `?lang=ja` to open it in Japanese). Flashing works there too.
 
 ```
 Config repository (keymaps etc.) ──push──▶ GitHub Actions builds
@@ -174,7 +174,7 @@ Vite reads these on its own server only. They never reach the page or `dist/`.
 
 Build scripts have their own tests: `python3 -m unittest discover -s scripts -p 'test_*.py'`.
 
-Pushing to `main` runs the tests and the build, then publishes to GitHub Pages.
+Pushing to `main` runs the tests and the build. Publishing to GitHub Pages is paused: the deploy job runs only when the repository variable `PAGES_PUBLISHED` is `true`, with Pages turned on and "GitHub Actions" as its source.
 
 ### Keymap view
 
