@@ -138,10 +138,39 @@ export async function getFirmwareHead(r: RepoRef, token: string): Promise<string
   }
 }
 
+/**
+ * A public repository's file at a commit, from raw.githubusercontent.com: outside the API's limit of
+ * 60 requests an hour without a token. What a commit names never changes, so the browser's cache may
+ * keep it. Null when raw cannot say (a network error, or another failure), so the API is asked.
+ */
+async function getFromRaw(r: RepoRef, encoded: string, sha: string): Promise<Response | null> {
+  try {
+    const res = await fetch(`https://raw.githubusercontent.com/${r.owner}/${r.repo}/${sha}/${encoded}`, {
+      cache: 'force-cache',
+      credentials: 'omit',
+      redirect: 'error',
+    });
+    if (res.ok) return res;
+    // A file that is not there, or a private repository, which the API would not show without a
+    // token either.
+    if (res.status === 404) throw new GitHubError('gh.err.notFound', 404);
+    return null;
+  } catch (e) {
+    if (e instanceof GitHubError) throw e;
+    return null;
+  }
+}
+
 async function getRaw(r: RepoRef, path: string, ref: string, token: string): Promise<Response> {
   // Paths come from the config repository; one with `..` would reach other API paths with the token.
   if (!isPlainPath(path)) throw new LocalizedError('manifest.err.format');
   const encoded = path.split('/').map(encodeURIComponent).join('/');
+  // Without a token, a file at a commit comes from raw. With one, from the API, which also reads
+  // private repositories; the token is never sent to raw.
+  if (!token && isCommitSha(ref)) {
+    const res = await getFromRaw(r, encoded, ref);
+    if (res) return res;
+  }
   return request(
     `${repoPath(r)}/contents/${encoded}?ref=${encodeURIComponent(ref)}`,
     token,

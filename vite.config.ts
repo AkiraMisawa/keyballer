@@ -13,7 +13,7 @@ const CSP = [
   "default-src 'self'",
   "script-src 'self'",
   // The GitHub API is the only server the page talks to.
-  "connect-src 'self' https://api.github.com",
+  "connect-src 'self' https://api.github.com https://raw.githubusercontent.com",
   "img-src 'self' data:",
   // React's style props go through the CSSOM, which CSP does not restrict.
   "style-src 'self'",

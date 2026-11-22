@@ -53,6 +53,13 @@ async function setup(
     'fetch',
     vi.fn(async (url: string) => {
       const u = new URL(url);
+      // Without a token, files at a commit come from raw.githubusercontent.com (github.ts).
+      if (u.hostname === 'raw.githubusercontent.com') {
+        requested.push(`raw:${u.pathname}`);
+        if (u.pathname === `/me/config/${FIRMWARE}/manifest.json`) return new Response(manifest);
+        if (u.pathname === `/me/config/${FIRMWARE}/${zmk ? 'kb.uf2' : 'kb.hex'}`) return new Response(served as Uint8Array<ArrayBuffer>);
+        return new Response('404: Not Found', { status: 404 });
+      }
       requested.push(u.pathname + u.search);
       const p = u.pathname;
       if (p === '/repos/AkiraMisawa/keyballer/git/ref/heads/main') return json({ object: { sha: KB_HEAD } });
@@ -95,7 +102,9 @@ describe('loadVerifiedFirmware', () => {
     expect(new TextDecoder().decode(verified.bytes)).toBe(IMAGE_HEX);
     expect(verified.source).toMatchObject({ sha: SOURCE, branch: 'main', behindBy: 2, repository: 'me/config' });
     // Lookups about the firmware go to the connected repository; Keyballer's repo is asked only about its workflow.
-    expect(requested.every((r) => r.startsWith('/repos/me/config') || r.startsWith('/repos/AkiraMisawa/keyballer/'))).toBe(true);
+    expect(requested.every((r) => r.startsWith('/repos/me/config') || r.startsWith('raw:/me/config/') || r.startsWith('/repos/AkiraMisawa/keyballer/'))).toBe(true);
+    // The manifest and the firmware come from raw, at the firmware commit.
+    expect(requested).toEqual(expect.arrayContaining([`raw:/me/config/${FIRMWARE}/manifest.json`, `raw:/me/config/${FIRMWARE}/kb.hex`]));
   });
 
   it('refuses when the run kept no record of these manifest bytes', async () => {
