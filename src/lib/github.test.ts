@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { appReaches, getFirmwareText, parseRepo } from './github';
+import { appReaches, getBuildRuns, getFirmwareText, parseRepo } from './github';
 
 describe('parseRepo', () => {
   it('accepts owner/repo', () => {
@@ -74,5 +74,19 @@ describe('appReaches', () => {
     expect(await appReaches(REPO, 'ghu_x')).toBe(false);
     stub([{ id: 8, account: { login: 'someone' }, repository_selection: 'all' }, { id: 7, account: { login: 'me' }, repository_selection: 'selected' }], { 7: ['me/other'] });
     expect(await appReaches(REPO, 'ghu_x')).toBe(false);
+  });
+});
+
+describe('build runs', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('lists runs of main only, since only they publish firmware', async () => {
+    // A run dispatched on a side branch builds but never publishes, so it is not "the latest build".
+    const fetchSpy = vi.fn(async (_url: string) => Response.json({ workflow_runs: [] }));
+    vi.stubGlobal('fetch', fetchSpy);
+    await getBuildRuns({ owner: 'a', repo: 'b' }, '');
+    const url = new URL(String(fetchSpy.mock.calls[0][0]));
+    expect(url.pathname).toBe('/repos/a/b/actions/workflows/build.yml/runs');
+    expect(url.searchParams.get('branch')).toBe('main');
   });
 });

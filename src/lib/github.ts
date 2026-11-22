@@ -4,7 +4,7 @@
 import { LocalizedError } from '../i18n/core';
 import type { MessageKey } from '../i18n/messages';
 import { isCommitSha, isPlainPath, parseManifest, type FirmwareManifest } from './manifest';
-import type { CompareStatus, ProvenanceRun, RunArtifact } from './provenance';
+import { BRANCH, type CompareStatus, type ProvenanceRun, type RunArtifact } from './provenance';
 
 export interface RepoRef {
   owner: string;
@@ -165,10 +165,14 @@ export async function getFirmwareText(
 }
 
 /** Recent runs of the config repo's build workflow (.github/workflows/build.yml). */
+/**
+ * The config repository's latest builds of main. Only main's builds publish firmware (and only
+ * they pass the provenance check), so a run on a side branch is never "the latest build".
+ */
 export async function getBuildRuns(r: RepoRef, token: string): Promise<WorkflowRun[]> {
   try {
     const res = await request(
-      `${repoPath(r)}/actions/workflows/build.yml/runs?per_page=5`,
+      `${repoPath(r)}/actions/workflows/build.yml/runs?branch=${encodeURIComponent(BRANCH)}&per_page=5`,
       token,
       'application/vnd.github+json',
     );
