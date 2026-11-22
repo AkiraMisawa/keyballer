@@ -61,9 +61,17 @@ keymaps/<keymap>/           QMK のキーマップ（keymap.c、config.h、rules
       "name": "Keyball+",
       "keyboard": "keyball/keyballplus",
       "keymap": "am338",
-      "keymap_dir": "keymaps/am338"
+      "keymap_dir": "keymaps/am338",
+      "ball": "right"
     }
-  ]
+  ],
+  "views": {
+    "keymaps/am338": {
+      "layers": ["Base", "Symbol", "Number", "Function"],
+      "ball": { "default": "cursor", "3": "scroll" },
+      "labels": { "SCRSHOT_AREA": { "en": "Area shot", "ja": "範囲スクショ" } }
+    }
+  }
 }
 ```
 
@@ -76,6 +84,8 @@ keymaps/<keymap>/           QMK のキーマップ（keymap.c、config.h、rules
 | `builds[].name` | アプリに表示する名前 |
 | `builds[].keyboard` / `keymap` | `qmk compile -kb <keyboard> -km <keymap>` に渡す値 |
 | `builds[].keymap_dir` | 設定リポジトリ内のキーマップのフォルダ。複数のビルドで共有できます |
+| `builds[].ball` | （省略可）キーマップ表示でのトラックボールの位置：`none`、`right`（既定）、`left`、`dual` |
+| `views` | （省略可）キーマップ表示での呼び名を、キーマップのフォルダごとに：`layers`（レイヤー名）、`ball`（レイヤーごとのボールの動作。`default` で既定）、`labels`（独自キーコードの名前。`en` と `ja`） |
 
 ### .github/workflows/build.yml
 
@@ -127,7 +137,13 @@ npm test        # Vitest（書き込み手順は模擬ブートローダーで�
 npm run build   # 型チェックとビルド
 ```
 
+ビルド用スクリプトのテストは `python3 -m unittest discover -s scripts -p 'test_*.py'` で動きます。
+
 `main` に push すると、テストとビルドのあと GitHub Pages に公開されます。
+
+### キーマップ表示
+
+ビルドのたびに、ファームウェアの隣に `<id>.view.json` も書き出します。キーボードの VIA 定義から取った実際の形の上のキーマップ、レイヤー、コンボ、`#define` の別名、キーマップのコードが扱うキーコードとその行番号が入っています。アプリでは「キーマップを見る」（`V`）で開きます。作れなかったときは manifest に理由が残り、ファームウェアには影響しません。計画：[docs/plans/keymap-view.md](docs/plans/keymap-view.md)（英語）
 
 デザインのルール（色、文字、キーキャップ、言葉づかい、アクセシビリティ、使わないもの）は [DESIGN.md](DESIGN.md) にあります（英語）。`npm test` で、そこで決めた色のコントラストを確かめます。
 
@@ -136,5 +152,5 @@ npm run build   # 型チェックとビルド
 ## これから
 
 1. ZMK のビルドと UF2 の書き込み
-2. キーマップの編集画面（保存＝commit）
+2. キーマップの編集画面（保存＝commit）。読み取り専用のキーマップ表示はできています
 3. トラックボール（物理単位での感度設定・校正）と LED の設定、GitHub ログイン、テンプレート

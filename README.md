@@ -61,9 +61,17 @@ keymaps/<keymap>/           QMK keymap (keymap.c, config.h, rules.mk)
       "name": "Keyball+",
       "keyboard": "keyball/keyballplus",
       "keymap": "am338",
-      "keymap_dir": "keymaps/am338"
+      "keymap_dir": "keymaps/am338",
+      "ball": "right"
     }
-  ]
+  ],
+  "views": {
+    "keymaps/am338": {
+      "layers": ["Base", "Symbol", "Number", "Function"],
+      "ball": { "default": "cursor", "3": "scroll" },
+      "labels": { "SCRSHOT_AREA": { "en": "Area shot", "ja": "範囲スクショ" } }
+    }
+  }
 }
 ```
 
@@ -76,6 +84,8 @@ keymaps/<keymap>/           QMK keymap (keymap.c, config.h, rules.mk)
 | `builds[].name` | Name shown in the app |
 | `builds[].keyboard` / `keymap` | Passed to `qmk compile -kb <keyboard> -km <keymap>` |
 | `builds[].keymap_dir` | Keymap folder in the config repository. Several builds can share one |
+| `builds[].ball` | (Optional) Where the trackball is, for the keymap view: `none`, `right` (default), `left` or `dual` |
+| `views` | (Optional) How the keymap view names things, per keymap folder: `layers` (layer names), `ball` (what the ball does per layer, with a `default`), `labels` (names for custom keycodes, in `en` and `ja`) |
 
 ### .github/workflows/build.yml
 
@@ -127,7 +137,13 @@ npm test        # Vitest (flashing is tested against an in-memory bootloader)
 npm run build   # type check and build
 ```
 
+Build scripts have their own tests: `python3 -m unittest discover -s scripts -p 'test_*.py'`.
+
 Pushing to `main` runs the tests and the build, then publishes to GitHub Pages.
+
+### Keymap view
+
+Each build also writes `<id>.view.json` next to the firmware: the keymap drawn on the board's real shape (from the keyboard's VIA definition), its layers, combos, `#define` aliases and the keycodes the keymap's code handles, with line numbers. The app shows it with "View keymap" (`V`). If it cannot be made, the manifest says why and the firmware is unaffected. Plan: [docs/plans/keymap-view.md](docs/plans/keymap-view.md).
 
 Design rules (colours, type, keycaps, words, accessibility, and what never to do) are in [DESIGN.md](DESIGN.md); `npm test` checks the colour contrast it requires.
 
@@ -136,5 +152,5 @@ All UI text is in `src/i18n/messages.ts`. English is the source; the type check 
 ## Roadmap
 
 1. ZMK builds and UF2 flashing
-2. Keymap editor (saving makes a commit)
+2. Keymap editor (saving makes a commit); the read-only keymap view is done
 3. Trackball settings in physical units with calibration, LED settings, GitHub sign-in, templates
