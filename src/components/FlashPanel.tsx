@@ -3,6 +3,8 @@ import { msg, type Localized } from '../i18n/core';
 import type { MessageKey } from '../i18n/messages';
 import { useI18n } from '../i18n/react';
 import { flashCaterina, type FlashPhase, type FlashProgress } from '../lib/caterina';
+import type { FirmwareSource } from '../lib/firmware';
+import { formatDateTime, shortSha } from '../lib/format';
 import { findGrantedBootloader, pickBootloader } from '../lib/serial';
 import { Kbd } from '../commands/keys';
 import { useCommand } from '../commands/react';
@@ -39,11 +41,13 @@ interface Props {
   title: string;
   image: Uint8Array;
   split: boolean;
+  /** Where the firmware came from, once checked against the build's record; none for a local file. */
+  source?: FirmwareSource;
   onClose: () => void;
 }
 
-export function FlashPanel({ title, image, split, onClose }: Props) {
-  const { t, show, err } = useI18n();
+export function FlashPanel({ title, image, split, source, onClose }: Props) {
+  const { t, show, err, lang } = useI18n();
   const [step, setStep] = useState<Step>('ready');
   const [eraseEeprom, setEraseEeprom] = useState(false);
   const [progress, setProgress] = useState<FlashProgress | null>(null);
@@ -193,6 +197,26 @@ export function FlashPanel({ title, image, split, onClose }: Props) {
           {t('common.close')}
         </button>
       </div>
+
+      {source && (
+        <div className="source stack" role="note" aria-label={t('flash.source')}>
+          <p>
+            <span className="badge ok">{t('flash.verified')}</span>{' '}
+            {t('flash.from', { repo: source.repository })}{' '}
+            <a href={source.url} target="_blank" rel="noreferrer">
+              <code>{shortSha(source.sha)}</code>
+            </a>
+          </p>
+          <p className="commit-line">{source.message.split('\n')[0]}</p>
+          <p className="note">
+            {t('flash.author', {
+              name: source.authorLogin ? `${source.authorName} (@${source.authorLogin})` : source.authorName,
+              date: formatDateTime(source.date, lang),
+            })}
+          </p>
+          <p className="note">{t('flash.checkSource')}</p>
+        </div>
+      )}
 
       {split && (
         <ol className="halves" aria-label={t('flash.halves')}>
