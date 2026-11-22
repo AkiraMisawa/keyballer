@@ -152,6 +152,8 @@ Commands on the flow pages: `connect <repo>`, `repo` (go to the repository field
 
 Commands: `keymap <id>`, `layer <n>` (or `layer <name>`, found by its title), `layer next`, `layer previous`, `layers all`, `ball`, `select left|right|up|down`, `display mac|windows|us|jis|uk`, `close keymap`.
 
+Changes (trackball settings now, keys next): ⌘Z / Ctrl+Z undo, ⇧⌘Z / Ctrl+Y redo, ⌘S / Ctrl+S review and save. Commands: `cursor speed <cpi>`, `scroll speed <divider>`, `ball size <mm>`, `try speed`, `measure sensor`, `undo`, `redo`, `review`, `discard`. Closing the keymap with unsaved changes asks first.
+
 ### Keymap editor (planned)
 
 | Key | Action |

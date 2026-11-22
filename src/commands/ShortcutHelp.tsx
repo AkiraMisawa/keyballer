@@ -3,7 +3,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useI18n } from '../i18n/react';
-import { Kbd, keyLabel, lineChord } from './keys';
+import { chordLabel, Kbd, keyLabel, lineChord } from './keys';
 import type { Command } from './model';
 
 interface Props {
@@ -26,8 +26,12 @@ export function ShortcutHelp({ open, commands, onClose }: Props) {
   const rows = [
     { keys: ['/', lineChord()], label: t('shortcut.line'), muted: false },
     ...commands
-      .filter((c) => c.shortcut)
-      .map((c) => ({ keys: [keyLabel(c.shortcut!)], label: show(c.title), muted: !!c.unavailable })),
+      .filter((c) => c.shortcut || c.chords?.length)
+      .map((c) => ({
+        keys: [...(c.shortcut ? [keyLabel(c.shortcut)] : []), ...(c.chords ?? []).map((ch) => chordLabel(ch))],
+        label: show(c.title),
+        muted: !!c.unavailable,
+      })),
     { keys: ['Tab', 'Shift+Tab'], label: t('shortcut.tab'), muted: false },
     { keys: ['Enter'], label: t('shortcut.enter'), muted: false },
     { keys: ['?'], label: t('shortcut.help'), muted: false },

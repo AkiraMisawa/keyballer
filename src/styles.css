@@ -198,7 +198,9 @@ p {
 /* ---- controls ---- */
 button,
 input[type="text"],
-input[type="password"] {
+input[type="password"],
+input[type="number"],
+textarea {
   font: inherit;
 }
 
@@ -243,14 +245,18 @@ button.link {
 
 button:focus-visible,
 input:focus-visible,
+textarea:focus-visible,
 summary:focus-visible,
-a:focus-visible {
+a:focus-visible,
+.pad:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
 input[type="text"],
-input[type="password"] {
+input[type="password"],
+input[type="number"],
+textarea {
   width: 100%;
   min-width: 0;
   min-height: 32px;
@@ -464,7 +470,8 @@ dialog.line > .note {
 }
 
 /* Keyboard shortcut list, opened with "?". */
-dialog.help {
+dialog.help,
+dialog.modal {
   width: min(520px, calc(100vw - 32px));
   padding: 20px;
   border: 1px solid var(--edge);
@@ -473,7 +480,8 @@ dialog.help {
   color: var(--text);
 }
 
-dialog.help::backdrop {
+dialog.help::backdrop,
+dialog.modal::backdrop {
   background: color-mix(in srgb, var(--scrim) 45%, transparent);
 }
 
@@ -918,6 +926,139 @@ dialog.help > * + * {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 12px;
+}
+
+/* Changes: the bar, the review dialog (docs/plans/keymap-editor.md) */
+
+.edit-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.edit-bar .primary {
+  margin-left: auto;
+}
+.edit-bar p {
+  margin: 0;
+}
+dialog.modal {
+  width: min(720px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+}
+pre.diff {
+  margin: 0;
+  padding: 8px 0;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--sunken);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+pre.diff span {
+  display: block;
+  padding: 0 12px;
+  white-space: pre;
+}
+pre.diff .add {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+pre.diff .del {
+  background: var(--err-soft);
+  color: var(--err);
+}
+pre.diff .hunk {
+  color: var(--muted);
+}
+textarea {
+  resize: vertical;
+}
+
+/* Trackball settings (docs/plans/trackball-settings.md) */
+
+.trackball .field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.trackball label {
+  font-weight: 600;
+}
+.trackball .field p {
+  margin: 0;
+}
+.trackball input[type="number"] {
+  width: 7em;
+}
+.range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.range input[type="range"] {
+  flex: 1;
+  min-width: 0;
+  min-height: 24px;
+  accent-color: var(--ink);
+}
+.pad {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 180px;
+  overflow: hidden;
+  border: 1px dashed var(--edge);
+  border-radius: 8px;
+  background: var(--sunken);
+  cursor: pointer;
+}
+.pad.on {
+  border-style: solid;
+  border-color: var(--text);
+  cursor: none;
+}
+.pad .dot {
+  position: absolute;
+  left: calc(50% - 6px);
+  top: calc(50% - 6px);
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--text);
+}
+.pad .steps {
+  position: absolute;
+  right: 8px;
+  top: 6px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.pad .roll-arrow {
+  width: 60%;
+  height: 20px;
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 2;
+}
+.pad .pad-hint {
+  position: absolute;
+  bottom: 6px;
+  left: 0;
+  right: 0;
+  text-align: center;
+}
+.row button[aria-pressed="true"] {
+  border-color: var(--text);
+  font-weight: 600;
 }
 
 footer {

@@ -145,6 +145,10 @@ Pushing to `main` runs the tests and the build, then publishes to GitHub Pages.
 
 Each build also writes `<id>.view.json` next to the firmware: the keymap drawn on the board's real shape (from the keyboard's VIA definition), its layers, combos, `#define` aliases and the keycodes the keymap's code handles, with line numbers. The app shows it with "View keymap" (`V`). If it cannot be made, the manifest says why and the firmware is unaffected. Plan: [docs/plans/keymap-view.md](docs/plans/keymap-view.md).
 
+### Trackball settings and saving
+
+Select the trackball on the keymap (`B`) to set cursor and scroll speed. Each is shown as the setting and as counts or scroll steps per centimetre of ball. A pad lets you try a speed with your own ball before flashing, and the sensor can be measured with one full turn of the ball. Changes collect in a bar with undo and redo (⌘Z / Ctrl+Z). "Review and save" (⌘S / Ctrl+S) shows each change and the file diff, then commits to `main` of the config repository, and the firmware build starts. Saving needs a fine-grained token for that repository with Contents: Read and write. Plans: [docs/plans/trackball-settings.md](docs/plans/trackball-settings.md), [docs/plans/keymap-editor.md](docs/plans/keymap-editor.md).
+
 Design rules (colours, type, keycaps, words, accessibility, and what never to do) are in [DESIGN.md](DESIGN.md); `npm test` checks the colour contrast it requires.
 
 All UI text is in `src/i18n/messages.ts`. English is the source; the type check fails if a Japanese string is missing, and a test fails if the two languages use different placeholders. The app opens in English unless `?lang=ja` or a saved choice says otherwise.
@@ -152,5 +156,5 @@ All UI text is in `src/i18n/messages.ts`. English is the source; the type check 
 ## Roadmap
 
 1. ZMK builds and UF2 flashing
-2. Keymap editor (saving makes a commit); the read-only keymap view is done
-3. Trackball settings in physical units with calibration, LED settings, GitHub sign-in, templates
+2. Keymap editor: keys, combos and layers (saving and the review screen are done, with the trackball settings)
+3. GitHub sign-in, LED settings, templates

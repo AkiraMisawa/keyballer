@@ -42,21 +42,44 @@ export function parseRepo(input: string): RepoRef | null {
 
 export const repoName = (r: RepoRef) => `${r.owner}/${r.repo}`;
 
-async function request(path: string, token: string, accept: string): Promise<Response> {
+interface FetchOptions {
+  token: string;
+  accept?: string;
+  method?: string;
+  body?: unknown;
+  fetchFn?: typeof fetch;
+}
+
+/** A request to the GitHub REST API; the token is sent only when there is one. */
+export function githubFetch(path: string, { token, accept, method = 'GET', body, fetchFn = fetch }: FetchOptions): Promise<Response> {
   const headers: Record<string, string> = {
-    Accept: accept,
+    Accept: accept ?? 'application/vnd.github+json',
     'X-GitHub-Api-Version': '2022-11-28',
   };
   if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(`https://api.github.com${path}`, { headers, cache: 'no-store' });
-  if (res.ok) return res;
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  return fetchFn(`https://api.github.com${path}`, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+    cache: 'no-store',
+  });
+}
 
-  if (res.status === 401) throw new GitHubError('gh.err.badToken', 401);
+/** The error for a failed response, for the statuses every caller treats the same way. */
+export function statusError(res: Response): GitHubError {
+  if (res.status === 401) return new GitHubError('gh.err.badToken', 401);
   if ((res.status === 403 || res.status === 429) && res.headers.get('x-ratelimit-remaining') === '0') {
-    throw new GitHubError('gh.err.rateLimit', res.status);
+    return new GitHubError('gh.err.rateLimit', res.status);
   }
-  if (res.status === 404) throw new GitHubError('gh.err.notFound', 404);
-  throw new GitHubError('gh.err.status', res.status, { status: String(res.status) });
+  if (res.status === 404) return new GitHubError('gh.err.notFound', 404);
+  return new GitHubError('gh.err.status', res.status, { status: String(res.status) });
+}
+
+async function request(path: string, token: string, accept: string): Promise<Response> {
+  const res = await githubFetch(path, { token, accept });
+  if (res.ok) return res;
+  throw statusError(res);
 }
 
 const repoPath = (r: RepoRef) => `/repos/${r.owner}/${r.repo}`;
@@ -120,6 +143,27 @@ export async function getBuildRuns(r: RepoRef, token: string): Promise<WorkflowR
     return body.workflow_runs;
   } catch (e) {
     if (e instanceof GitHubError && e.status === 404) return [];
+    throw e;
+  }
+}
+
+/** The commit a branch points at (the config repository's `main` when editing). */
+export async function getBranchHead(r: RepoRef, branch: string, token: string): Promise<string> {
+  const res = await request(
+    `${repoPath(r)}/git/ref/heads/${encodeURIComponent(branch)}`,
+    token,
+    'application/vnd.github+json',
+  );
+  const body = (await res.json()) as { object: { sha: string } };
+  return body.object.sha;
+}
+
+/** A file's text at a commit, or null when the file is not there. */
+export async function getTextAt(r: RepoRef, path: string, ref: string, token: string): Promise<string | null> {
+  try {
+    return await (await getRaw(r, path, ref, token)).text();
+  } catch (e) {
+    if (e instanceof GitHubError && e.status === 404) return null;
     throw e;
   }
 }

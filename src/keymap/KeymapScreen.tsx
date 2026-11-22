@@ -7,9 +7,13 @@ import { CommandRefused } from '../commands/model';
 import { useCommand } from '../commands/react';
 import { msg, type Lang, type Localized } from '../i18n/core';
 import { useI18n } from '../i18n/react';
-import { getFirmwareText, type RepoRef } from '../lib/github';
+import { EditBar, LeaveDialog } from '../edit/EditBar';
+import { useEditSession, type EditSession } from '../edit/useEditSession';
+import { getFirmwareText, repoName, type RepoRef, type WorkflowRun } from '../lib/github';
 import type { FirmwareBuild, FirmwareManifest } from '../lib/manifest';
 import { load, save } from '../lib/storage';
+import { pointerLockBusy, TrackballPanel, type PadMode, type PadRequest } from '../trackball/TrackballPanel';
+import { BALL_MM_MAX, BALL_MM_MIN, CPI_MAX, CPI_MIN, CPI_STEP, DIVIDER_MAX, DIVIDER_MIN } from '../trackball/speed';
 import { Board, type Selection } from './Board';
 import { LAYOUTS, OSES, type Layout, type Os } from './keycodes';
 import {
@@ -34,6 +38,12 @@ interface Props {
   /** The config repository's build runs on GitHub, for "build again". */
   buildsUrl: string;
   onClose: () => void;
+  /** After saving to the config repository: the commit, whose build to watch for. */
+  onSaved: (sha: string) => void;
+  onToken: (token: string) => void;
+  runFor: (sha: string) => WorkflowRun | undefined;
+  /** Lets the app ask before it leaves or switches this screen (browser Back, another keymap). */
+  setLeaveGuard: (guard: (go: () => void) => void) => void;
 }
 
 /** A layer tab: one layer, or all of them side by side. */
@@ -59,7 +69,8 @@ function toDisplay(value: string): { os: Os } | { layout: Layout } | undefined {
   return undefined;
 }
 
-export function KeymapScreen({ build, repo, firmwareSha, manifest, token, buildsUrl, onClose }: Props) {
+export function KeymapScreen(props: Props) {
+  const { build, repo, firmwareSha, manifest, token, buildsUrl, onClose, onSaved, onToken, runFor, setLeaveGuard } = props;
   const { t, err, lang } = useI18n();
   const [view, setView] = useState<ViewFile | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
@@ -67,6 +78,16 @@ export function KeymapScreen({ build, repo, firmwareSha, manifest, token, builds
   const [selected, setSelected] = useState<Selection>(null);
   const [os, setOs] = useState<Os>(savedOs);
   const [layout, setLayout] = useState<Layout>(savedLayout);
+  const edit = useEditSession(repo, token, build.id);
+  /** What to do once the person agrees to leave with unsaved changes; null when not asking. */
+  const [leaving, setLeaving] = useState<(() => void) | null>(null);
+  const [padRequest, setPadRequest] = useState<PadRequest | null>(null);
+  const padRequests = useRef(0);
+  const guard = (go: () => void) => (edit.dirty ? setLeaving(() => go) : go());
+  useEffect(() => setLeaveGuard(guard));
+  useEffect(() => () => setLeaveGuard((go) => go()), [setLeaveGuard]);
+  /** Close the keymap, asking first when there are unsaved changes. */
+  const close = () => guard(onClose);
   const root = useRef<HTMLElement>(null);
   const backButton = useRef<HTMLButtonElement>(null);
   const focusAfter = useRef(false);
@@ -173,7 +194,12 @@ export function KeymapScreen({ build, repo, firmwareSha, manifest, token, builds
     group: 'group.keymap',
     page: true,
     shortcut: 'Escape',
-    run: () => (selected !== null ? setSelected(null) : onClose()),
+    run: () => {
+      // The Esc that ends the try-out pad's pointer lock is the browser's, not ours.
+      if (pointerLockBusy()) return;
+      if (selected !== null) setSelected(null);
+      else close();
+    },
   });
   useCommand({
     id: 'keymap.next',
@@ -263,6 +289,11 @@ export function KeymapScreen({ build, repo, firmwareSha, manifest, token, builds
     },
   });
 
+  useTrackballCommands(edit, () => {
+    focusAfter.current = false;
+    setSelected('ball');
+  }, (mode) => setPadRequest({ mode, id: ++padRequests.current }));
+
   // Links to keymap.c lines: the view names its own source; older views fall back to the manifest.
   const sourceLink = (line: number) => {
     if (!view?.source) return undefined;
@@ -280,7 +311,7 @@ export function KeymapScreen({ build, repo, firmwareSha, manifest, token, builds
             {build.keyboard}:{build.keymap}
           </code>
         </div>
-        <button type="button" ref={backButton} onClick={onClose} aria-keyshortcuts="Escape">
+        <button type="button" ref={backButton} onClick={close} aria-keyshortcuts="Escape">
           {t('keymap.back')}
           <Kbd>Esc</Kbd>
         </button>
@@ -354,6 +385,8 @@ export function KeymapScreen({ build, repo, firmwareSha, manifest, token, builds
             </div>
           </div>
 
+          <EditBar edit={edit} repoName={repoName(repo)} token={token} onToken={onToken} runFor={runFor} onSaved={onSaved} />
+
           <div className="keymap-body">
             <div className="boards" role="tabpanel" id="keymap-panel" aria-labelledby={`keymap-tab-${tab}`}>
               {tab === 'all' ? (
@@ -394,13 +427,101 @@ export function KeymapScreen({ build, repo, firmwareSha, manifest, token, builds
                 selected={selected}
                 display={display}
                 sourceLink={sourceLink}
+                trackball={<TrackballPanel edit={edit} request={padRequest} />}
               />
             </aside>
           </div>
         </>
       )}
+
+      {leaving && (
+        <LeaveDialog
+          onKeep={() => setLeaving(null)}
+          onDiscard={() => {
+            const go = leaving;
+            setLeaving(null);
+            edit.discard();
+            go();
+          }}
+        />
+      )}
     </section>
   );
+}
+
+/** Commands for the trackball settings; they select the ball so its panel shows. */
+function useTrackballCommands(edit: EditSession, showBall: () => void, startPad: (mode: PadMode) => void) {
+  const numberArg = (name: string, hint: Localized, ok: (n: number) => boolean, bad: Localized) => ({
+    name,
+    required: true,
+    hint,
+    check: (value: string) => (ok(Number(value)) ? undefined : bad),
+  });
+  const cpiOk = (n: number) => Number.isInteger(n) && n >= CPI_MIN && n <= CPI_MAX && n % CPI_STEP === 0;
+  const dividerOk = (n: number) => Number.isInteger(n) && n >= DIVIDER_MIN && n <= DIVIDER_MAX;
+  const mmOk = (n: number) => Number.isFinite(n) && n >= BALL_MM_MIN && n <= BALL_MM_MAX;
+  const mmBad = msg('cmd.ballSize.bad', { min: BALL_MM_MIN, max: BALL_MM_MAX });
+  useCommand({
+    id: 'trackball.cpi',
+    words: 'cursor speed',
+    title: msg('cmd.cursorSpeed'),
+    group: 'group.keymap',
+    page: true,
+    args: [numberArg('cpi', msg('cmd.cursorSpeed.hint'), cpiOk, msg('cmd.cursorSpeed.bad'))],
+    run: ({ cpi }) => {
+      if (!cpiOk(Number(cpi))) throw new CommandRefused(msg('cmd.cursorSpeed.bad'));
+      showBall();
+      edit.edit({ type: 'cpi', value: Number(cpi) });
+    },
+  });
+  useCommand({
+    id: 'trackball.divider',
+    words: 'scroll speed',
+    title: msg('cmd.scrollSpeed'),
+    group: 'group.keymap',
+    page: true,
+    args: [numberArg('divider', msg('cmd.scrollSpeed.hint'), dividerOk, msg('cmd.scrollSpeed.bad'))],
+    run: ({ divider }) => {
+      if (!dividerOk(Number(divider))) throw new CommandRefused(msg('cmd.scrollSpeed.bad'));
+      showBall();
+      edit.edit({ type: 'divider', value: Number(divider) });
+    },
+  });
+  useCommand({
+    id: 'trackball.size',
+    words: 'ball size',
+    title: msg('cmd.ballSize'),
+    group: 'group.keymap',
+    page: true,
+    args: [numberArg('mm', msg('cmd.ballSize.hint'), mmOk, mmBad)],
+    run: ({ mm }) => {
+      if (!mmOk(Number(mm))) throw new CommandRefused(mmBad);
+      showBall();
+      edit.edit({ type: 'ballMm', value: Number(mm) });
+    },
+  });
+  useCommand({
+    id: 'trackball.try',
+    words: 'try speed',
+    title: msg('cmd.tryBall'),
+    group: 'group.keymap',
+    page: true,
+    run: () => {
+      showBall();
+      startPad('try');
+    },
+  });
+  useCommand({
+    id: 'trackball.measure',
+    words: 'measure sensor',
+    title: msg('cmd.measure'),
+    group: 'group.keymap',
+    page: true,
+    run: () => {
+      showBall();
+      startPad('measure');
+    },
+  });
 }
 
 function LayerTab({ view, n, current, onPick }: { view: ViewFile; n: number; current: boolean; onPick: () => void }) {
@@ -448,9 +569,11 @@ interface DetailsProps {
   selected: Selection;
   display: Display;
   sourceLink: (line: number) => string | undefined;
+  /** The trackball's settings, shown with its layer modes when the ball is selected. */
+  trackball: ReactNode;
 }
 
-function Details({ view, drawn, all, layer, selected, display, sourceLink }: DetailsProps) {
+function Details({ view, drawn, all, layer, selected, display, sourceLink, trackball }: DetailsProps) {
   const { t } = useI18n();
   const base = drawLayer(view, 0, display);
   const nameAt = (index: number) => base.keys.find((k) => k.index === index)?.legend.tap ?? '?';
@@ -510,6 +633,7 @@ function Details({ view, drawn, all, layer, selected, display, sourceLink }: Det
             </Fragment>
           ))}
         </dl>
+        {trackball}
       </>
     );
   }
