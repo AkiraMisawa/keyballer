@@ -4,3 +4,7 @@ dist/
 *.log
 __pycache__/
 .DS_Store
+
+# Local secrets (the GitHub App client secret for local sign-in). Never commit.
+.env.local
+.env.*.local

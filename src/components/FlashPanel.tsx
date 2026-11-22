@@ -43,10 +43,12 @@ interface Props {
   split: boolean;
   /** Where the firmware came from, once checked against the build's record; none for a local file. */
   source?: FirmwareSource;
+  /** After a half (or the board) has been flashed successfully. */
+  onFlashed?: () => void;
   onClose: () => void;
 }
 
-export function FlashPanel({ title, image, split, source, onClose }: Props) {
+export function FlashPanel({ title, image, split, source, onFlashed, onClose }: Props) {
   const { t, show, err, lang } = useI18n();
   const [step, setStep] = useState<Step>('ready');
   const [eraseEeprom, setEraseEeprom] = useState(false);
@@ -85,6 +87,7 @@ export function FlashPanel({ title, image, split, source, onClose }: Props) {
         }
         setDoneCount((n) => n + 1);
         setStep('done');
+        onFlashed?.();
       } catch (e) {
         setError(e);
         setStep('error');
@@ -92,7 +95,7 @@ export function FlashPanel({ title, image, split, source, onClose }: Props) {
         busy.current = false;
       }
     },
-    [eraseEeprom, image, log],
+    [eraseEeprom, image, log, onFlashed],
   );
 
   // While waiting, start as soon as an already-allowed bootloader appears.
@@ -202,18 +205,25 @@ export function FlashPanel({ title, image, split, source, onClose }: Props) {
         <div className="source stack" role="note" aria-label={t('flash.source')}>
           <p>
             <span className="badge ok">{t('flash.verified')}</span>{' '}
-            {t('flash.from', { repo: source.repository })}{' '}
-            <a href={source.url} target="_blank" rel="noreferrer">
-              <code>{shortSha(source.sha)}</code>
+            <a href={source.runUrl} target="_blank" rel="noreferrer">
+              {t('flash.run', { repo: source.repository, branch: source.branch })}
             </a>
           </p>
-          <p className="commit-line">{source.message.split('\n')[0]}</p>
-          <p className="note">
-            {t('flash.author', {
-              name: source.authorLogin ? `${source.authorName} (@${source.authorLogin})` : source.authorName,
-              date: formatDateTime(source.date, lang),
-            })}
+          <p>
+            <a href={source.url} target="_blank" rel="noreferrer">
+              <code>{shortSha(source.sha)}</code>
+            </a>{' '}
+            <span className="commit-line">{source.message.split('\n')[0]}</span>{' '}
+            <span className="muted">{formatDateTime(source.date, lang)}</span>
           </p>
+          {source.behindBy > 0 && <p className="note">{t('flash.behind', { n: source.behindBy, branch: source.branch })}</p>}
+          {source.sinceLast && (
+            <p>
+              <a href={source.sinceLast.url} target="_blank" rel="noreferrer">
+                {t('flash.sinceLast', { n: source.sinceLast.commits, sha: shortSha(source.sinceLast.sha) })}
+              </a>
+            </p>
+          )}
           <p className="note">{t('flash.checkSource')}</p>
         </div>
       )}

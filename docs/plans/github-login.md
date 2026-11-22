@@ -1,393 +1,234 @@
-# Sign in with GitHub
+# Sign in with GitHub, and firmware provenance
 
-Status: phase 1 in progress (2026-11-22). Since this was written, the owner deleted the user site (`AkiraMisawa/akiramisawa.github.io`), so Google's analytics tag no longer runs on Keyballer's origin. Two pieces are still open: the move to an organization (phase 2), and whether sign-in is hosted or local-only (phase 3); both are decided before those phases start. Decided with the owner:
-- Keyballer moves to an origin of its own: a free GitHub organization.
-- The personal access token stays as a fallback, kept for one tab only.
+Status: phase 1 built (2026-11-22); phase 2 next.
+
+Decided with the owner:
+- Sign-in is for running Keyballer on their own machine ("ローカル使用だけでいいや"). The hosted site keeps the personal access token, which is kept for one tab only.
 - A sign-in lasts one tab and at most 8 hours, with no refresh token.
+- The user site `akiramisawa.github.io` was deleted, which removed Google's analytics tag from Keyballer's origin.
+- Moving Keyballer to an organization's origin is no longer needed for sign-in, and stays out of scope.
 
-The design was reviewed adversarially before writing code; the findings are folded in below. Facts and sources: [../research/github-login.md](../research/github-login.md). Replaces the pasted token for saving ([keymap-editor.md](keymap-editor.md), [trackball-settings.md](trackball-settings.md)).
+Every phase is reviewed adversarially; the findings are folded in below. Facts and sources: [../research/github-login.md](../research/github-login.md).
 
 ## Problem
 
-Saving needs a fine-grained personal access token that I make on GitHub and paste into Keyballer. That is fiddly the first time, and the token is long-lived. Keyballer keeps it in `localStorage`. Without a token, reads are limited to 60 requests an hour.
+**The token.** Saving needs a fine-grained personal access token that I make on GitHub and paste into Keyballer. That is fiddly the first time, and the token is long-lived. Keyballer keeps it in `localStorage`, where every page on the same origin can read it: `akiramisawa.github.io` also serves `3style` and `ex-grid`. Without a token, reads are limited to 60 requests an hour.
 
-**What can read that token.** Keyballer is served from `akiramisawa.github.io`. Every page there is the same origin and can read its storage. Until 2026-11-22 that included the user site, which loaded Google's analytics tag (`gtag.js`, an inactive Universal Analytics ID) and a CDN stylesheet; the owner has since deleted it. `3style` (no scripts) and `ex-grid` (a Blazor app) remain.
+**What a token leads to.** Write access to a config repository means code on my keyboard, and a keyboard types into my computer. A stolen token could:
+- push a hex file straight to the `firmware` branch, so that I flash it with no build and no commit on `main`;
+- commit C code that the build turns into firmware.
 
-**What the token leads to.** Write access to a config repository means code on my keyboard, and a keyboard types into my computer. Today a stolen token could do two things:
-- Push a hex file straight to the `firmware` branch, so that I flash it without any build or commit on `main`.
-- Commit C code that the build turns into firmware.
-
-**Other gaps, found in review:**
-- A `?repo=` link can switch Keyballer to someone else's repository without asking, and the flash dialog does not say where the firmware came from.
-- A crafted manifest can make Keyballer send authenticated GET requests to other GitHub API paths (`../` in a file path).
+**Other gaps found in review.**
+- A `?repo=` link could switch Keyballer to someone else's repository without asking.
+- The flash dialog did not say where firmware came from.
+- A crafted manifest could make Keyballer send authenticated GETs to other API paths (`../` in a file path).
 
 ## Solution
 
-**Sign-in.** A **Keyballer GitHub App** and a **Cloudflare Worker** (free plan) that holds the app's client secret.
-- "Sign in with GitHub" opens GitHub's authorization page in a small window, so the page and its unsaved edits stay as they are.
-- Keyballer gets a token that lasts 8 hours and lives only in the page's memory. Reloading or closing the tab ends the sign-in. Signing in again is one click, with no consent page.
-- The app reaches only the repositories it is installed on: I install it on my config repository alone.
-- Signing out revokes the token.
+**Firmware provenance (phase 1).**
+- Before flashing, Keyballer checks that the bytes are what Keyballer's build workflow recorded in a successful run for the default branch.
+- The flash dialog shows that run and the commit.
+- A token that rewrites the `firmware` branch, or runs a workflow of its own on another branch, cannot make a run vouch for other bytes.
 
-**Firmware provenance.** Before flashing, Keyballer checks that the firmware's bytes are what GitHub Actions built from a commit on `main`, and shows that commit. A token, stolen or not, cannot fake that.
+**Hardening (phase 1).**
+- Ask before opening a linked repository.
+- Check manifest paths.
+- Refuse to run inside a frame.
+- Ship a CSP with Trusted Types.
+- Pin actions by commit SHA.
 
-**An origin of its own.** Keyballer moves to `https://keyballer-app.github.io/keyballer/`, an organization's site that holds only Keyballer. The token saved on the old origin is deleted, and I am pointed to the page where I can revoke it.
+**Tokens on the hosted site (phase 2).**
+- The personal access token is kept in memory for one tab, never in `localStorage`.
+- The token saved there today is deleted, and the page says once where to revoke it.
+- Classic tokens (`ghp_`) get a warning: they reach every repository, and they can carry the `workflow` scope.
+
+**Local sign-in (phase 3).**
+- Run locally (`npm run dev` or `npm run preview`, on `127.0.0.1`), Keyballer shows "Sign in with GitHub".
+- It uses a private **Keyballer** GitHub App, the web flow with PKCE, and a popup.
+- Vite's local server exchanges the code, using a client secret that the owner puts in `.env.local`.
+- The token lasts 8 hours, lives in memory, and reaches only the config repository.
 
 ## User stories
 
-1. As a Keyball owner, I want to sign in with GitHub in one click, so that I can save without making and pasting a token.
-2. As a Keyball owner, I want signing in to keep my unsaved changes, so that I can sign in from the review when saving needs it.
-3. As a Keyball owner, I want Keyballer to reach only my config repository, and only to read and write files and read build runs and checks, so that a mistake or a leak cannot touch anything else.
-4. As a Keyball owner, I want to be told when the app is not installed on my config repository, with a link to install it there, so that the first save works.
-5. As a Keyball owner, I want the sign-in to end when I close or reload the tab, and after 8 hours at most, so that nothing that can write to my repository stays on the computer.
-6. As a Keyball owner, I want signing out to revoke the token on GitHub, so that signing out means it.
-7. As a Keyball owner, I want to see who I am signed in as, so that I know which account will commit.
-8. As a Keyball owner whose sign-in expired, I want to sign in again without losing edits, so that the 8-hour limit costs one click.
-9. As a Keyball owner, I want Keyballer to refuse firmware that GitHub Actions did not build from `main`, and to show the commit it came from, so that a leaked token cannot put code on my keyboard unseen.
-10. As a Keyball owner, I want Keyballer to ask before opening a repository named in a link, if it differs from mine, so that a link cannot make me flash someone else's firmware.
-11. As a keyboard user, I want `sign in` and `sign out` as commands, so that the command line reaches them.
-12. As someone with my own config repository, I want the same sign-in, so that the app is not only for its author.
-13. As the owner of Keyballer, I want the client secret only in the Worker, and the Worker to do nothing but Keyballer's two calls, so that neither can be misused.
+1. As a Keyball owner, I want Keyballer to refuse firmware that its build did not record for my default branch, and to show the run and commit it came from, so that a leaked token cannot put code on my keyboard unseen.
+2. As a Keyball owner, I want Keyballer to ask before opening a repository named in a link, if it differs from mine, so that a link cannot make me flash someone else's firmware.
+3. As a Keyball owner, I want my token kept only while the tab is open on the hosted site, so that it does not sit in the browser for months.
+4. As a Keyball owner running Keyballer locally, I want to sign in with GitHub in one click, so that I can save without making and pasting a token.
+5. As a Keyball owner, I want signing in to keep my unsaved changes, so that I can sign in from the review when saving needs it.
+6. As a Keyball owner, I want the sign-in to reach only my config repository, only to read and write files and read build runs, and to end with the tab or after 8 hours, so that a leak is small.
+7. As a Keyball owner, I want signing out to revoke the token on GitHub, so that signing out means it.
+8. As a keyboard user, I want `sign in` and `sign out` as commands.
 
-## Phases
-
-Each phase is its own pull request, in this order.
-
-1. **Hardening that needs no setup.** This protects today's PAT users too.
-   - firmware provenance
-   - the `?repo=` prompt
-   - path and SHA checks
-   - showing the source in the flash dialog
-   - the framing guard
-   - the CSP and referrer tags
-   - publishing only from the default branch
-   - SHA-pinned actions and `npm ci --ignore-scripts`
-2. **Leaving the old origin.**
-   - A release on `akiramisawa.github.io/keyballer/` deletes the saved PAT and links to GitHub's token settings.
-   - The owner creates the organization, and Keyballer moves.
-   - A small page at the old URL deletes the PAT and links to the new site.
-3. **Sign-in.** The Worker, the auth module, the screen, the PAT fallback (tab only), and the owner's setup.
-4. **Abuse tests and reviews** against the deployed Worker and site (see Testing decisions).
-
-## Implementation decisions
-
-### The sign-in flow
-
-GitHub's web flow with PKCE (S256). The research rules out the alternatives:
-- A browser-only exchange: GitHub's token endpoint has no CORS and requires the client secret even with PKCE.
-- The device flow: the person has to copy a code by hand.
-
-1. **Before the click.** When the sign-in button appears, Keyballer makes a random `state` (32 bytes) and a PKCE `code_verifier` (32 random bytes, base64url) with Web Crypto, and computes the S256 challenge. Both values stay in the page's memory only.
-   - The click opens `github.com/login/oauth/authorize` synchronously. Safari blocks `window.open` after an `await`.
-   - It uses `window.open(url, 'keyballer-sign-in', 'popup,noopener')`, with `client_id`, the fixed `redirect_uri`, `state`, and `code_challenge` with method `S256`.
-2. **The callback.** GitHub sends the window to `callback.html`. This is a separate page in the same build, with its own CSP and one script file, and nothing else.
-   - It removes the query from the address bar (`history.replaceState`) first.
-   - It sends `{type: 'keyballer-sign-in', code, state}` on a `BroadcastChannel`, which only same-origin pages can hear.
-   - Then it closes. If it cannot close, it says the window can be closed.
-3. **Taking the code.** The page waiting for that exact `state` takes one message and forgets the `state`. It ignores any message of another shape or `state`, and any that arrives after 10 minutes, the code's lifetime. It POSTs `{code, code_verifier}` to the Worker.
-4. **The exchange.** The Worker adds the client ID, the client secret and the fixed `redirect_uri`, then calls `github.com/login/oauth/access_token`. It returns `{access_token, expires_in}` and nothing else. A response without an `access_token` is an error.
-5. **After sign-in.** The page keeps the token in memory. It calls `GET /user` for the login and avatar, then checks that the config repository is reachable through `GET /user/installations` and `GET /user/installations/{id}/repositories`.
-
-**No refresh token in the browser.** The Worker drops it. Keeping one would mean holding a 6-month credential in browser storage, or in a cross-site `Partitioned` cookie. The cookie is untested and would need its own CSRF defence.
-
-**Memory only.** `sessionStorage` would be written to disk and brought back by session restore and "Duplicate tab". So a reload means signing in again, which takes one click.
-
-**Signing out.** The page POSTs the token to the Worker's `/revoke`, which calls `DELETE /applications/{client_id}/token` with Basic auth. The page then forgets the token. If revoking fails, the page says so and links to GitHub's authorized apps page. A PAT is never sent to the Worker: signing out of a PAT only forgets it, and the page links to GitHub's token settings.
-
-### The Worker (`worker/`)
-
-**Shape.** One handler, no runtime dependencies, no state, no storage. The pinned `wrangler` is a development dependency with a lockfile.
-
-**Endpoints.** It answers only these and returns 404 for anything else:
-- `OPTIONS` and `POST /token`
-- `OPTIONS` and `POST /revoke`
-
-**Origin.**
-- `Origin` must exactly match the environment's single allowed origin. Production allows only the new site; the dev environment allows only `http://127.0.0.1:5173`.
-- Anything else, including a missing `Origin` or `null`, gets 403 with no CORS headers.
-- The allowed origin gets `Access-Control-Allow-Origin: <origin>` and `Vary: Origin`, with no `Allow-Credentials` and no cookies.
-
-**Body.**
-- `Content-Type` must be `application/json`, so every call needs a preflight and a cross-site form cannot post.
-- The body is read from the stream up to 1 KB and then cut off; `Content-Length` is not trusted.
-- It must be a JSON object with exactly the expected fields:
-  - `code`: `^[A-Za-z0-9_-]{1,64}$`
-  - `code_verifier`: `^[A-Za-z0-9._~-]{43,128}$` (RFC 7636)
-  - `access_token`: `^ghu_[A-Za-z0-9_]{16,255}$`
-- Every parse or validation failure gets the same `400 {"error":"bad_request"}`. Errors are caught everywhere, so no input is ever echoed: V8 quotes input in `JSON.parse` errors.
-
-**Calls to GitHub.**
-- The Worker never takes a URL or `redirect_uri` from the request.
-- It calls only `https://github.com/login/oauth/access_token` and `https://api.github.com/applications/{client_id}/token`.
-- It sends `Accept: application/json` and an explicit `User-Agent`.
-
-**Responses.**
-- Only the fields above are passed back.
-- GitHub errors become one of three short codes: `bad_verification_code`, `expired` or `github_error`.
-- `/revoke` answers `204` whether or not the token was valid, so it cannot tell a caller anything about a token.
-- Every response has `Cache-Control: no-store` and `Content-Type: application/json`.
-
-**Secrets and settings.**
-- `GITHUB_CLIENT_SECRET` is a Worker secret, set by the owner per environment. It is never in the repository, in CI or in this conversation.
-- The client ID and allowed origin are variables in `wrangler.toml`.
-
-**Logs and previews.**
-- `observability.enabled = false`, and nothing is logged anywhere.
-- `preview_urls = false`, because preview URLs run with the same secrets.
-- `workers_dev` is the only route.
-
-**Rate limits.** A flood can use up the free plan's 100,000 requests a day. That stops sign-in until midnight UTC, but no data is at risk. A rate-limit rule is added if the free plan offers one; that is to be checked during setup.
-
-**Deploying.** The owner runs `wrangler deploy` from a clone, with a Cloudflare API token limited to editing Workers rather than `wrangler login`. No Cloudflare credential is kept in GitHub.
-
-### Two apps, two Workers
-
-The production app's only callback is the production `callback.html`. A separate **Keyballer (dev)** app has the callback `http://127.0.0.1:5173/callback.html` and pairs with the Worker's `dev` environment.
-
-The split matters because of a loopback attack. Once someone has authorized the production app, authorization needs no consent. With a loopback callback on that app, any site could send them through it and catch the code on whatever listens on port 5173.
-
-The build picks its client ID, app slug and Worker URL by mode (`src/lib/auth-config.ts`). These are public values.
+## Phase 1: provenance and hardening (built)
 
 ### Firmware provenance
 
-**What the workflow adds** (`build-qmk.yml`):
-- The publish job runs only when the run is for the repository's default branch, on a push or a dispatch.
-- It records the source commit in `manifest.json`, as it does today.
-- It also creates a **check run** named `keyballer-firmware` on that commit. The check run is made with the job's `GITHUB_TOKEN`, which needs `checks: write`. Its output lists the file name and SHA-256 of each published firmware file.
-- Config repositories add `checks: write` to their `build.yml`; the README says how.
+**Recording (`build-qmk.yml`, `scripts/make_manifest.py`).**
+- The publish job runs only when the run is for the repository's default branch.
+- `manifest.json` lists the SHA-256 of each build's firmware file (`sha256`) and view (`view_sha256`).
+- The job uploads an artifact named `keyballer-manifest-<SHA-256 of manifest.json>`, holding the manifest, before it pushes the `firmware` branch.
 
-**What Keyballer checks before flashing:**
-- It downloads the firmware and computes its SHA-256.
-- It reads the check runs for `manifest.source.sha`.
-- It flashes only if a `keyballer-firmware` check run made by the `github-actions` app lists that file with that digest, and the commit is on the default branch.
-- Otherwise it refuses and says why. "Flash a file from my computer" stays as the deliberate way around.
+**Checking (`src/lib/provenance.ts`, `src/lib/firmware.ts`).** Keyballer downloads `manifest.json` and the firmware file from the `firmware` branch and hashes both. It reads the run named in the manifest (`run.id`) and the run's artifacts, from the connected repository only. It flashes only if all of these hold:
+- The run's commit is `source.sha`.
+- The run references `AkiraMisawa/keyballer/.github/workflows/build-qmk.yml` at any ref.
+- The run completed successfully.
+- The run's branch is the default branch, and it was started by a push or a manual dispatch.
+- The commit is still on the default branch: the compare API, from the branch head SHA to `source.sha`, reports `identical` or `behind`. SHAs are used, not names, so a tag named like the branch cannot answer for it. A commit force-pushed away from `main` is refused.
+- It holds an unexpired artifact named after the manifest's SHA-256.
+- The firmware's SHA-256 equals the manifest's `sha256`.
 
-**Why it holds.** Keyballer's app has no Checks write permission, and fine-grained tokens cannot create check runs. So a stolen token can replace the files on `firmware`, but it cannot vouch for them.
+The manifest that is checked is the one used to pick the file.
 
-**What it does not stop.** A token can still commit C code to `main`, and the build would vouch for that firmware. For that path the flash dialog shows the source: `owner/repo@sha`, the commit's author, its message and its time. A commit I did not make is visible before I flash.
+**Why it holds.** GitHub sets a run's branch, event, commit and referenced workflows, and only a run can upload artifacts. Rewriting the `firmware` branch changes the bytes but not any run.
 
-**What the app needs for this.** Checks: Read. Fine-grained PATs: to check during phase 1 whether they can read check runs. Public repositories can be read without a token.
+A token that can write workflows could run a workflow of its own on a side branch: its branch is not the default branch. To produce a run on the default branch, it would have to commit to `main`, which the flash dialog shows.
 
-### Smaller hardening (phase 1)
+An earlier version used a check run, which any workflow in the repository can create; the review found that, and this design replaced it.
 
-**`?repo=`.** A repository named in the URL that differs from the saved one is not opened directly. The repository section asks: "Open `owner/repo`? Firmware from it can run on your keyboard." It offers Open and Keep mine.
+**What it does not stop.**
+- **A commit to `main`.** A token can commit C code to `main`, and the build would vouch for that firmware. Defences:
+  - The flash dialog shows the run, the commit, its message and its date, so I can tell whether I recognise the change.
+  - It says plainly that a commit's author, date and message are written by whoever made it. A stolen token acts as my own account, so no identity check can tell the attacker from me.
+  - Tokens should be short-lived and scoped (phase 2 and phase 3).
+- **Rolling back** to an older firmware that a run did record is possible, while its commit is still on `main`. The dialog says how many commits `main` has gained since then.
+- **What changed.** Keyballer remembers (in `localStorage`; it is not a secret) the commit of the last firmware it flashed from each repository, and the dialog links to the comparison and counts the commits.
+- **Expiry.** Artifacts expire after 90 days; older firmware is built again before flashing.
 
-**Paths.**
-- `builds[].file` and `builds[].view` from a manifest must be plain relative paths: no empty, `.` or `..` segments, and no leading `/`.
-- `manifest.source.sha` must be 40 hex characters.
-- `getRaw` refuses any other path, so a manifest cannot reach other API paths.
+### The build's own inputs
 
-**Framing.** If the page is inside a frame (`window.top !== window.self`), it renders only a link: "Open Keyballer in its own tab". A `<meta>` CSP cannot set `frame-ancestors`, and inside a frame, flashing, signing in and saving can all be clickjacked.
+`keyballer.json` is untrusted input to the build: its values reach `$GITHUB_OUTPUT`, container images and git. The independent review showed that a newline in `qmk.image` could add lines to the plan job's outputs and run code in the publish job, which could then record a forged manifest in a genuine run. Now:
+- `build_qmk.py` checks every value with `fullmatch`:
+  - build ids;
+  - `qmk.version` (`0.22.14`);
+  - `qmk.image`, which must be pinned by `@sha256:`;
+  - `sources[].repo` (owner/name);
+  - `sources[].ref`, which must be a full commit SHA, because a branch or tag could change what `main` builds without a commit;
+  - `sources[].path` and `sources[].as`.
+- The workflow never puts expressions in shell text. Values arrive as environment variables and are quoted.
+- Checkouts do not keep their token (`persist-credentials: false`).
+- The publish job also checks the branch case-sensitively, because GitHub's `==` ignores case.
 
-**CSP.** GitHub Pages cannot send headers, so the production build puts a `<meta>` CSP first in `<head>`:
-- `default-src 'self'`
-- `script-src 'self'`
-- `connect-src 'self' https://api.github.com <worker>`
-- `img-src 'self' data: https://avatars.githubusercontent.com`
-- `style-src 'self'`
-- `object-src 'none'`
-- `base-uri 'none'`
-- `form-action 'none'`
-- `require-trusted-types-for 'script'`
+### Smaller hardening
 
-Notes on the policy:
-- React's style props go through the CSSOM, which CSP does not block.
-- Both forms call `preventDefault`, so `form-action 'none'` breaks nothing.
-- `callback.html` has its own policy.
-- The development server keeps Vite's needs.
+- **`?repo=`.** A repository named in the address that differs from the saved one is not opened; the repository section asks first, and the focus starts on keeping mine. The parameter is removed from the address once it has been answered.
+- **Paths.** `builds[].file` and `builds[].view` must be plain relative paths: segments of letters, digits, `_`, `-` and `.`, with none empty or starting with a dot. `source.sha` must be 40 hex characters. Digests must be 64 hex characters. `getRaw` refuses any other path before sending a request.
+- **Framing.** Inside a frame (`window.top !== window.self`), Keyballer renders only "Open Keyballer in its own tab". A `<meta>` CSP cannot set `frame-ancestors`.
+- **CSP** (production builds, `<meta>` right after the charset; the dev server keeps Vite's needs):
+  - `default-src 'self'`
+  - `script-src 'self'`
+  - `connect-src 'self' https://api.github.com`
+  - `img-src 'self' data:`
+  - `style-src 'self'`
+  - `font-src 'self'`
+  - `object-src 'none'`
+  - `base-uri 'none'`
+  - `form-action 'none'`
+  - `frame-src 'none'`
+  - `worker-src 'none'`
+  - `require-trusted-types-for 'script'`
+  - plus `no-referrer`
+- **Pinning.** Actions are pinned by commit SHA, and CI installs with `npm ci --ignore-scripts`.
 
-**Referrer.** `<meta name="referrer" content="no-referrer">`.
+## Phase 2: tokens on the hosted site
 
-**Pinning** (in Keyballer's own workflows):
-- actions are pinned by SHA
-- `npm ci --ignore-scripts`
-- `main` gets a ruleset that blocks force-pushes and deletion
+- **Storage.** The personal access token is kept in memory for the tab, typed in the repository section or in the review. Nothing token-like is written to `localStorage`.
+- **Removing the old token.** On load, `keyballer.token` is removed from `localStorage`. If it was there, a one-time notice says so and links to GitHub's token settings, because deleting a token does not revoke it.
+- **Classic tokens.** A token starting with `ghp_` gets a warning. Classic tokens reach every repository, and can carry `workflow`, which lets a stolen token change what `main` builds. The warning recommends a fine-grained token for the config repository only, with Contents: Read and write and Actions: Read.
 
-The README recommends the same ruleset for config repositories, and pinning `uses:` and `keyballer_ref` to a release tag.
+## Phase 3: local sign-in
 
-### Tokens in the page
+### The flow
 
-**The auth module** (`src/lib/auth.ts`) owns:
-- the PKCE values
-- checking the callback message
-- the token and its expiry
-- signing in and out
-- the installation check
+GitHub's web flow with PKCE (S256), in a popup, as reviewed. The device flow was rejected, because a device code can be phished and GitHub advises against enabling it without reason.
 
-**The token.** It lives in memory only. It never goes to storage, a URL or a log, and is sent only to `api.github.com` and to the Worker's `/revoke`.
+1. **Before the click.** When the button appears, Keyballer makes a random `state` (32 bytes) and a PKCE verifier (32 random bytes, base64url) with Web Crypto, and computes the challenge. Both stay in memory.
+2. **The click.** It opens `github.com/login/oauth/authorize` synchronously, because Safari blocks `window.open` after an `await`. The call is `window.open(url, 'keyballer-sign-in', 'popup,noopener')`.
+3. **The callback.** GitHub sends the window to `callback.html`: a separate page with its own CSP and one script. It calls `history.replaceState` first, sends `{type, code, state}` on a `BroadcastChannel`, and closes.
+4. **Taking the code.** The page waiting for that exact `state` takes one message within 10 minutes and forgets the `state`. It POSTs `{code, code_verifier}` to `/auth/token` on its own origin.
+5. **The exchange.** The local server adds the client ID, the client secret and the fixed `redirect_uri`, then calls `github.com/login/oauth/access_token`. It returns `{access_token, expires_in}` and nothing else; a response without an `access_token` is an error. The refresh token is dropped.
+6. **After sign-in.** The page keeps the token in memory, shows the login from `GET /user`, and checks that the installations reach the config repository. If they do not, it links to the install page.
 
-**Expiry.**
-- A token past `expires_in` counts as signed out.
-- A 401 forgets it and asks to sign in again.
-- Unsaved edits stay through both.
+**Signing out.** The page POSTs the token to `/auth/revoke`, which calls `DELETE /applications/{client_id}/token` with Basic auth, then forgets it.
 
-**The PAT fallback** ("Use a token instead"). It is kept in memory for the tab, like the signed-in token. Nothing token-like is ever written to `localStorage`, and the old `keyballer.token` key is removed on every load.
+### The local auth endpoints (`src/auth/server.ts`)
 
-### Installing the app
+**Shape.** One fetch-style handler, `(Request, env, fetch) → Response`, mounted by a Vite plugin in `configureServer` and `configurePreviewServer`. The same handler could later run in a Worker.
 
-"Request user authorization during installation" is off. When it is on, GitHub starts the authorization without Keyballer's `state` or PKCE. There is no Setup URL, because its `installation_id` can be spoofed.
+**What it accepts.**
+- Only `POST /auth/token`, `POST /auth/revoke` and `GET /auth/status`; anything else gets 404. `/auth/status` reports whether sign-in is configured.
+- `Origin` must equal the server's own origin exactly; `Host` must be `127.0.0.1:<port>` or `localhost:<port>`, which blocks DNS rebinding. Anything else gets 403.
+- The body must be `application/json`, read from the stream up to 1 KB, and an object with exactly the expected fields:
+  - `code`: `^[A-Za-z0-9_-]{1,64}$`
+  - `code_verifier`: `^[A-Za-z0-9._~-]{43,128}$`
+  - `access_token`: `^ghu_[A-Za-z0-9_]{16,255}$`
+- Any failure gets the same `400 {"error":"bad_request"}`, and input is never echoed.
 
-After sign-in, if the config repository is not among the installations, the repository section names the repository and links to `github.com/apps/<slug>/installations/new`:
-- For a public repository the link pre-selects it.
-- A private repository's ID cannot be read before installing, so the link opens without a selection, and the notice names the repository to choose.
+**What it sends.**
+- It calls only GitHub's two endpoints, with a fixed `redirect_uri`, `Accept: application/json` and an explicit `User-Agent`.
+- It returns `Cache-Control: no-store`.
+- `/revoke` answers `204` whatever happens.
+- It logs nothing.
 
-"Check again" re-reads the installations.
+**The secret.**
+- `KEYBALLER_GITHUB_CLIENT_SECRET` and `KEYBALLER_GITHUB_CLIENT_ID` live in `.env.local`, which git ignores. The owner writes them.
+- They are read with Vite's `loadEnv` on the server side only. Variables without the `VITE_` prefix never reach the client.
+- A build test asserts that `dist/` contains neither variable's name.
 
-### App settings (registered by the owner, by hand)
+### The GitHub App (registered by the owner, by hand)
 
-**Permissions** (repository permissions only):
-- Contents: Read and write
-- Actions: Read
-- Checks: Read
-- Metadata: Read
-
-There are no account permissions and no Workflows permission: Keyballer never commits under `.github/workflows`.
-
-**Other settings:**
-- Webhook: inactive.
-- "Expire user authorization tokens": on.
-- Device flow: off.
-- Callback URL: one per app, matched exactly.
-- Installable on any account (story 12).
-
-**Registering by hand, not by manifest.** A manifest registration hands the client secret and private key to a web page, and it cannot set token expiry. The owner generates the client secret on GitHub and passes it straight to `wrangler secret put`. No private key is generated.
-
-### The move
-
-**The organization.**
-- Name: `keyballer-app`. `keyballer` is taken.
-- No other repository in it gets a Pages site. The org settings turn off Pages creation for members, so the origin stays Keyballer's alone.
-- Passkeys or 2FA are on for the organization and for Cloudflare.
-
-**What changes:**
-- the Pages URL
-- `uses: AkiraMisawa/keyballer/...` and `repository: AkiraMisawa/keyballer` in `build-qmk.yml`, the config repositories and the docs
-- links in config repository READMEs
-- the Worker's allowed origin and the callback URL
-
-**Never recreate `AkiraMisawa/keyballer`.** GitHub redirects the old name. A new repository with that name would take over every config repository that still refers to it.
-
-**Old origin.**
-- Before the move, a release deletes `keyballer.token` from `localStorage` and says once that it did, with a link to GitHub's token settings to revoke the PAT. Deleting a token does not revoke it.
-- After the move, the user-site repository gets a `keyballer/` page at the old URL. It does the same deletion and links to the new site.
-
-### Screen
-
-- **Before sign-in**, the repository section shows "Sign in with GitHub". "Use a token instead" sits under it.
-- **After sign-in** it shows the avatar and login, "Sign out", and the install notice when needed.
-- **In the review**, when saving needs sign-in, the dialog shows the same button. The dialog and the edits stay open while the window is out.
-- **The flash dialog** shows the firmware's source commit and the provenance result.
-- **Commands:** `sign in`, `sign out`. Messages are in English and Japanese.
-
-### Owner setup
-
-Each step says what to click, and the setup goes in the README.
-
-1. Create the `keyballer-app` organization: passkeys, no other Pages. Transfer `keyballer` to it.
-2. Register the **Keyballer** and **Keyballer (dev)** GitHub Apps with the settings above, and generate a client secret for each.
-3. Create a Cloudflare account and an API token limited to editing Workers. Deploy both environments (`wrangler deploy`, `wrangler deploy --env dev`), then set each secret (`wrangler secret put GITHUB_CLIENT_SECRET [--env dev]`).
-4. Put both client IDs, slugs and Worker URLs into `src/lib/auth-config.ts`.
-5. Install the app on the config repository, selecting only that repository. Add `checks: write` to its `build.yml`.
+- **Visibility:** private ("Only on this account").
+- **Repository permissions:** Contents: Read and write, Actions: Read, Metadata: Read. No account permissions, no Workflows.
+- **Tokens:** "Expire user authorization tokens" on.
+- **Off:** the webhook, the device flow, "Request user authorization during installation", and the Setup URL.
+- **Callback URLs:** `http://127.0.0.1:5173/callback.html` and `http://127.0.0.1:4173/callback.html`, matched exactly.
+- **Secret and key:** the owner generates a client secret and writes it into `.env.local` themselves. No private key is generated.
 
 ## Threat model
 
 | Threat | What it could do | Defence |
 |---|---|---|
-| A stolen token pushes firmware to the `firmware` branch | Code on my keyboard with no build and no commit on `main` | Provenance: the digests must match a check run by `github-actions` for a commit on the default branch, and tokens cannot create check runs. Publishing runs only from the default branch. |
-| A stolen token commits C to `main` | Firmware built from the attacker's code | The flash dialog shows the commit, its author and its message. Tokens last 8 hours at most, and a sign-in reaches one repository. A ruleset blocks force-pushes and deletion on `main`. |
-| XSS in Keyballer (data from a config repository) | Steal the token | React escapes text, and there is no `innerHTML` (checked). A `script-src 'self'` CSP and Trusted Types back it up. The token lives in memory only, for 8 hours at most. |
-| Another page on the same origin | Read storage, script Keyballer's windows | The move to `keyballer-app.github.io`, with no other Pages. The old PAT is deleted on the old origin. |
-| A malicious `?repo=` link, or a page that navigates my tab | Me flashing someone else's firmware | Ask before opening another repository. The flash dialog names the source. |
-| A crafted manifest path (`../`) | Authenticated GETs to other API paths | Paths and SHAs are checked, and `getRaw` refuses anything else. |
-| A code or state leaking (history, Referer) | Exchanging the code | The code is useless without the verifier, which stays in memory. The callback clears its URL first. `no-referrer` is set. Codes are single-use and last 10 minutes. |
-| Login CSRF | Me committing as the attacker | `state` must match exactly and is used once, and the verifier must match. |
-| The loopback callback | An attacker catching codes on port 5173 | A separate dev app. The production app has only the production callback. |
-| Another site using the Worker through visitors' browsers | Using Keyballer's identity | An exact single origin, JSON only with a preflight, and no credentials or cookies. |
-| Scripts calling the Worker directly (forged `Origin`) | Exchanging stolen codes, using up the quota, probing tokens | Codes need the verifier. Strict validation returns one generic error. `/revoke` answers the same for every token. Running out of quota only stops sign-in. |
-| The client secret leaking | Impersonating the app | It lives only in Worker secrets: no logs, no previews, and a scoped Cloudflare token. If it leaks, it is rotated on GitHub. |
-| Owner accounts and pipelines (a Keyballer `main` push, devDependencies, action tags, wrangler, the Cloudflare account) | Code in the site or the Worker for every user, or in every config repository's build | A ruleset on `main`, SHA-pinned actions, `--ignore-scripts`, a pinned wrangler with a lockfile, a scoped API token, and passkeys. Config repositories are advised to pin `uses:` to a tag. |
-| Too much access | Damage beyond the config repository | Repository permissions only, an install on one repository, no Workflows permission, and Checks read only. |
-| Clickjacking | Tricking me into flashing, signing in or saving | When framed, only "Open in its own tab" is rendered. |
-| A popup message from elsewhere | Injecting a code | Same-origin channel, an exact shape and `state`, taken once, within 10 minutes. The verifier must still match. |
-| Worker logs and error text | Leaking tokens | Observability off, and no input echoed in errors. Secrets never go in URLs. |
+| A stolen token rewrites the `firmware` branch | Code on my keyboard with no build | Provenance: the bytes must match a manifest recorded by a successful default-branch run of Keyballer's workflow, and a token cannot change runs. Publishing runs only for the default branch. |
+| A stolen token commits a value to `keyballer.json` that injects into the workflow | Running code in the publish job and recording a forged manifest | Strict `fullmatch` validation of every value, environment variables instead of expressions in shell, and no persisted tokens. The commit itself stays on `main`, and force-pushing it away fails the branch check. |
+| A stolen token bumps a source branch or tag | New code with a one-line commit | `sources[].ref` must be a commit SHA and `qmk.image` a digest. |
+| A stolen token that can write workflows runs its own workflow | Forging a record | Only a run on the default branch counts; a side-branch run does not. Changing `main`'s workflow is a visible commit. Classic tokens get a warning (phase 2). Neither Keyballer's app nor the recommended fine-grained token can write workflows. |
+| A stolen token commits C to `main` | Firmware built from the attacker's code | Not preventable once a token can write. The flash dialog shows the run, commit, message and date, and says these are self-reported. Tokens are short-lived and scoped. A ruleset on `main` is recommended. |
+| A malicious `?repo=` link, or a page navigating my tab | Me flashing someone else's firmware | Asks first, with the focus on keeping mine. The flash dialog names the source. |
+| A crafted manifest path (`../`) | Authenticated GETs to other API paths | Path and SHA checks, and `getRaw` refuses unsafe paths. |
+| XSS (data from a config repository) | Steal the token | React escapes text, and there is no `innerHTML` (checked). A `script-src 'self'` CSP and Trusted Types (verified to block `innerHTML`). Tokens in memory only (phases 2 and 3). |
+| Other pages on the same origin (`3style`, `ex-grid`) | Read storage, script Keyballer's windows | Tokens are never in storage (phase 2). Local sign-in runs on `127.0.0.1`, its own origin. |
+| Clickjacking | Tricking me into flashing or saving | Framed, only a link renders (verified, including a sandboxed frame). |
+| Other websites calling the local auth endpoints | Using the app's identity | Exact `Origin` and `Host` checks, and JSON only. Codes are useless without the verifier, which stays in the page's memory. |
+| A code or state leaking | Exchanging the code | PKCE, single-use `state`, `replaceState` first, and `no-referrer`. |
+| The client secret leaking | Impersonating the app | It lives only in `.env.local` on the owner's machine; it is never bundled (build test) or logged. It can be rotated on GitHub. |
+| Owner accounts and pipelines | Code in the site or the build for every user | Actions pinned by SHA, `--ignore-scripts`, and the lockfile. A ruleset on `main` is recommended. |
 
 ## Testing decisions
 
 **Seams (TDD, expected values from independent sources):**
+- **Provenance** (`judgeProvenance`): checked against FIPS 180-2 SHA-256 vectors, with run fields as the Actions API returns them.
+- **Manifest paths and SHAs**
+- **`getRaw`:** it refuses unsafe paths before any request (checked with a stubbed `fetch`).
+- **`make_manifest.py` digests:** against the FIPS vector.
+- **The local auth handler:**
+  - abuse cases first: `Origin`, `Host`, method, path, content type, a streamed oversize body, fields, no echo;
+  - then the calls to GitHub and the response shaping.
+- **The auth module:** PKCE (RFC 7636 Appendix B), `state` and message handling, expiry, and no storage.
 
-1. **The Worker handler**, run with a stub `fetch` and env. This is the security seam, and abuse cases come first.
-   - Requests it must refuse:
-     - a wrong, missing or `null` `Origin`
-     - a wrong method or path
-     - a wrong content type
-     - a body over 1 KB (streamed, with a lying `Content-Length`)
-     - JSON that is not an object
-     - extra or missing fields
-     - a malformed code, verifier or token
-     - a supplied `redirect_uri`
-   - No input is echoed in any error.
-   - Calls to GitHub:
-     - the secret is added
-     - `redirect_uri` is fixed
-     - the `User-Agent` is set
-     - only the two fields pass back
-     - a 200 without `access_token` is an error
-     - errors map to short codes
-     - revoke uses Basic auth
-     - `/revoke` gives the same answer for valid and invalid tokens
-     - every response has `no-store`
-2. **The auth module**:
-   - The S256 challenge matches RFC 7636 Appendix B.
-   - The verifier and `state` have the right length and characters.
-   - The authorize URL is correct.
-   - Callback messages with a wrong `state`, a reused `state`, a wrong shape or a late arrival are refused.
-   - Expiry and 401s are handled.
-   - Nothing reaches `localStorage`, and the old key is removed.
-3. **Firmware provenance** (pure): a check-run list and a file digest give flash or refuse.
-   - wrong app
-   - wrong name
-   - missing file
-   - digest mismatch
-   - commit not on the default branch
-   - a good case taken from a real run's output
-4. **Manifest paths**: `..`, `.`, empty segments, a leading `/`, percent-encoded dots, and a bad SHA are all refused.
-5. **The command line `?repo=` prompt and the framing guard** are checked in the browser.
-
-**Reviews after implementing each phase:**
-- the security-review skill
-- an independent security review by an agent given only the code and this threat model
+**Reviews per phase:**
+- the security-review method
+- an independent security review given only the code and this threat model
 - the two-axis code review
 
-**Abuse tests against the deployed Worker with `curl`**, each refused:
-- a wrong `Origin`
-- no `Origin`
-- `Origin: null`
-- a form POST
-- a replayed code
-- a wrong verifier
-- a streamed 2 KB body
-- an unknown path
-- `/revoke` with a valid token and a junk token, which must answer the same
-
-Also checked: whether a wrong verifier burns the code (so a racing attacker could block sign-in).
-
-**In the browser:**
-- Sign in from the review with unsaved edits.
-- The code and state are gone from the address bar and history.
-- `localStorage` and `sessionStorage` hold no token.
-- The CSP shows no violations in normal use.
-- Framed, only the link renders.
-- The install notice works for a public and for a private repository.
-- Sign-out revokes the token: a later API call returns 401.
-- Provenance refuses a `firmware` branch edited by hand.
-- The flash dialog shows the source.
-
-**Recorded in the pull requests:** what was and was not checked, with screenshots.
+**In the browser, on a production build:**
+- the CSP holds (a `securitypolicyviolation` listener records nothing in normal use, and it blocks a probe);
+- the framing guard works;
+- the `?repo=` prompt works;
+- provenance refuses old and tampered firmware;
+- after a real build, provenance accepts the firmware and the dialog shows the source.
 
 ## Out of scope
 
-- Keeping sign-in across tabs or days (refresh tokens, a backend-for-frontend with a cookie). Possible later on a custom domain, where the page and the Worker share a site.
-- A rate-limit rule, if the free plan has none.
-- Verifying Sigstore build attestations in the browser. Check runs give the same guarantee here, and attestations need Enterprise for private repositories.
-- Organizations and teams beyond installing the app on one repository.
-- GitHub Enterprise.
+- Hosted sign-in, which needs a server such as a Worker and an origin of its own.
+- Refresh tokens.
+- Sigstore attestations: they need Enterprise for private repositories.
+- Organisations and teams.

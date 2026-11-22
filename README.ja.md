@@ -106,10 +106,9 @@ jobs:
     uses: AkiraMisawa/keyballer/.github/workflows/build-qmk.yml@main
     permissions:
       contents: write
-      checks: write
 ```
 
-既定ブランチのビルドが成功すると、`firmware` ブランチが `manifest.json` とファームウェアだけのコミットで置き換わります。あわせて、各ファイルの SHA-256 を、元の commit への `keyballer-firmware` チェックランとして記録します（`checks: write` はそのためです）。Keyballer はこれと一致するファームウェアだけを書き込み、元の commit を表示します。トークンで `firmware` ブランチを書き換えることはできても、チェックランは作れません。そのため、トークンが漏れても、気づかれないままキーボードにファームウェアを入れることはできません。`main` には、強制 push と削除を禁止するルールセットを設定するのがおすすめです。
+既定ブランチのビルドが成功すると、`firmware` ブランチが `manifest.json` とファームウェアだけのコミットで置き換わります。`manifest.json` には各ファイルの SHA-256 が入り、ビルドの実行はマニフェスト自体の SHA-256 を名前にした成果物（artifact）を残します。Keyballer は、既定ブランチ向けの成功したビルドの実行が記録したマニフェストと一致するファームウェアだけを書き込み、その実行と commit を表示します。トークンで `firmware` ブランチを書き換えることはできても、実行が記録した内容は変えられません。そのため、トークンが漏れても、`main` へのコミットなしにキーボードへファームウェアを入れることはできません。記録は GitHub が 90 日間保存し、それより古いファームウェアはビルドし直してから書き込みます。同じ理由で、`keyballer.json` では、ビルドが取り込むものを固定します。`sources[].ref` は commit の SHA（40 桁）で、`qmk.image` を書くなら `@sha256:` で固定してください。`main` には、強制 push と削除を禁止するルールセットを設定するのがおすすめです。
 
 ## 手元でビルドする
 

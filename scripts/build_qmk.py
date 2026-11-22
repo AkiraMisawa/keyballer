@@ -37,13 +37,27 @@ DEFAULT_IMAGE = (
 )
 FIRMWARE_EXTS = ("hex", "bin", "uf2")
 BALL_SIDES = ("none", "right", "left", "dual")
-ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+# keyballer.json is untrusted input: its values reach $GITHUB_OUTPUT, container images and git.
+# Patterns are used with fullmatch, so a trailing newline never passes.
+ID_PATTERN = re.compile(r"[a-z0-9][a-z0-9_-]*")
+VERSION_PATTERN = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
+# An image pinned by digest: a tag can be moved, a digest cannot.
+IMAGE_PATTERN = re.compile(r"[a-z0-9][a-z0-9./_-]*(:[A-Za-z0-9._-]+)?@sha256:[0-9a-f]{64}")
+# GitHub owners use letters, digits and "-"; repository names may also use "." and "_", but not be "." or "..".
+REPO_PATTERN = re.compile(r"[A-Za-z0-9-]+/(?!\.\.?$)[A-Za-z0-9_.-]+")
+COMMIT_PATTERN = re.compile(r"[0-9a-f]{40}")
+NAME_PATTERN = re.compile(r"[A-Za-z0-9_-]+")
+PATH_SEGMENT = re.compile(r"[A-Za-z0-9_][A-Za-z0-9._-]*")
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 SIZE_LINE = re.compile(r"firmware size .*?(\d+)/(\d+)")
 
 
 class ConfigError(Exception):
     pass
+
+
+def _full(pattern, value):
+    return isinstance(value, str) and pattern.fullmatch(value) is not None
 
 
 def load_config(config_dir):
@@ -59,11 +73,26 @@ def load_config(config_dir):
         raise ConfigError('"firmware" must be "qmk"')
     if not isinstance(cfg.get("qmk"), dict) or not cfg["qmk"].get("version"):
         raise ConfigError('"qmk.version" is required')
+    if not _full(VERSION_PATTERN, cfg["qmk"]["version"]):
+        raise ConfigError('"qmk.version" must look like 0.22.14')
+    image = cfg["qmk"].get("image")
+    if image is not None and not _full(IMAGE_PATTERN, image):
+        raise ConfigError('"qmk.image" must be pinned by digest (name@sha256:...)')
 
     for i, src in enumerate(cfg.get("sources", [])):
         for key in ("repo", "ref", "path", "as"):
             if not src.get(key):
                 raise ConfigError('sources[{}] needs "{}"'.format(i, key))
+        if not _full(REPO_PATTERN, src["repo"]):
+            raise ConfigError('sources[{}].repo must be owner/name'.format(i))
+        if not _full(COMMIT_PATTERN, src["ref"]):
+            raise ConfigError(
+                'sources[{}].ref must be a full commit SHA: a branch or tag can change without a commit here'.format(i)
+            )
+        if not (isinstance(src["path"], str) and all(_full(PATH_SEGMENT, seg) for seg in src["path"].split("/"))):
+            raise ConfigError('sources[{}].path must be a plain relative path'.format(i))
+        if not _full(NAME_PATTERN, src["as"]):
+            raise ConfigError('sources[{}].as may only use letters, digits, "-" and "_"'.format(i))
 
     builds = cfg.get("builds")
     if not isinstance(builds, list) or not builds:
@@ -73,7 +102,7 @@ def load_config(config_dir):
         for key in ("id", "name", "keyboard", "keymap", "keymap_dir"):
             if not b.get(key):
                 raise ConfigError('builds[{}] needs "{}"'.format(i, key))
-        if not ID_PATTERN.match(b["id"]):
+        if not _full(ID_PATTERN, b["id"]):
             raise ConfigError(
                 'builds[{}].id "{}" may only use a-z, 0-9, "-" and "_"'.format(i, b["id"])
             )

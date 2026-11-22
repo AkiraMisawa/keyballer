@@ -1,30 +1,40 @@
-// Firmware provenance: flash only bytes that GitHub Actions built from a commit
-// on the default branch. A token can rewrite the `firmware` branch, but it
-// cannot create check runs, so the check run is what vouches for the bytes.
+// Firmware provenance: flash only bytes that Keyballer's build workflow made for the default
+// branch. manifest.json lists each firmware file's SHA-256, and the publish job keeps an artifact
+// named after the manifest's own digest with its run. A run's branch, event, commit and workflows
+// are set by GitHub, so a token that rewrites the firmware branch cannot make a run vouch for it.
 
 import { describe, expect, it } from 'vitest';
-import { judgeProvenance, parseDigests, sha256Hex, type CheckRun } from './provenance';
+import { judgeProvenance, manifestArtifactName, sha256Hex, type ProvenanceRun } from './provenance';
 
-// FIPS 180-2, appendix B.1: SHA-256("abc").
+// FIPS 180-2, appendix B.1: SHA-256("abc"); and SHA-256 of the empty string.
 const ABC = 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad';
-const OTHER = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'; // SHA-256("")
-const SHA = '58e1bc2d3f4a5b6c7d8e9f00112233445566778a';
+const EMPTY = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+const SOURCE = '58e1bc2d3f4a5b6c7d8e9f00112233445566778a';
+const OTHER_SHA = '0123456789abcdef0123456789abcdef01234567';
 
-const run = (extra: Partial<CheckRun> = {}): CheckRun => ({
-  name: 'keyballer-firmware',
-  head_sha: SHA,
+const run = (extra: Partial<ProvenanceRun> = {}): ProvenanceRun => ({
+  id: 44975575890,
+  event: 'push',
+  head_branch: 'main',
+  head_sha: SOURCE,
   status: 'completed',
   conclusion: 'success',
-  app: { slug: 'github-actions' },
-  output: { text: `${ABC}  keyball39.hex\n${OTHER}  manifest.json\n` },
+  // As the Actions API reports it for a config repository's build.yml.
+  referenced_workflows: [{ path: 'AkiraMisawa/keyballer/.github/workflows/build-qmk.yml@main' }],
   ...extra,
 });
-const files = [
-  { path: 'keyball39.hex', digest: ABC },
-  { path: 'manifest.json', digest: OTHER },
-];
-const judge = (checkRuns: CheckRun[], over: Partial<Parameters<typeof judgeProvenance>[0]> = {}) =>
-  judgeProvenance({ sha: SHA, checkRuns, files, onDefaultBranch: true, ...over });
+const record = { name: `keyballer-manifest-${EMPTY}`, expired: false };
+const judge = (over: Partial<Parameters<typeof judgeProvenance>[0]> = {}) =>
+  judgeProvenance({
+    run: run(),
+    artifacts: [record],
+    defaultBranch: 'main',
+    manifest: { sourceSha: SOURCE, runId: 44975575890, digest: EMPTY },
+    file: { expected: ABC, actual: ABC },
+    // The compare API's status for <default branch head>...<source commit>.
+    onBranch: 'identical',
+    ...over,
+  });
 
 describe('sha256Hex', () => {
   it('matches the FIPS 180-2 example', async () => {
@@ -32,53 +42,63 @@ describe('sha256Hex', () => {
   });
 });
 
-describe('parseDigests', () => {
-  it('reads sha256sum output, in text and binary mode', () => {
-    expect(parseDigests(`${ABC}  a.hex\n${OTHER} *b.json\n`)).toEqual(
-      new Map([
-        ['a.hex', ABC],
-        ['b.json', OTHER],
-      ]),
-    );
-  });
-
-  it('ignores anything that is not a digest line', () => {
-    expect(parseDigests(`Firmware digests\n\n${ABC.toUpperCase()}  a.hex\nnot a digest  b\n`)).toEqual(new Map());
+describe('manifestArtifactName', () => {
+  it('names the record after the manifest digest', () => {
+    expect(manifestArtifactName(EMPTY)).toBe(`keyballer-manifest-${EMPTY}`);
   });
 });
 
 describe('judgeProvenance', () => {
-  it('accepts bytes listed by a successful keyballer-firmware run of GitHub Actions', () => {
-    expect(judge([run()])).toEqual({ ok: true });
+  it('accepts a file listed in a manifest that a default-branch build run kept a record of', () => {
+    expect(judge()).toEqual({ ok: true });
+    expect(judge({ run: run({ event: 'workflow_dispatch' }) })).toEqual({ ok: true });
+    expect(
+      judge({ run: run({ referenced_workflows: [{ path: 'AkiraMisawa/keyballer/.github/workflows/build-qmk.yml@v1.2.0' }] }) }),
+    ).toEqual({ ok: true });
   });
 
-  it('refuses when no run vouches for this commit', () => {
-    expect(judge([])).toEqual({ ok: false, reason: 'provenance.err.noCheck' });
-    expect(judge([run({ app: { slug: 'keyballer' } })])).toEqual({ ok: false, reason: 'provenance.err.noCheck' });
-    expect(judge([run({ app: null })])).toEqual({ ok: false, reason: 'provenance.err.noCheck' });
-    expect(judge([run({ name: 'build' })])).toEqual({ ok: false, reason: 'provenance.err.noCheck' });
-    expect(judge([run({ head_sha: OTHER.slice(0, 40) })])).toEqual({ ok: false, reason: 'provenance.err.noCheck' });
-    expect(judge([run({ conclusion: 'failure' })])).toEqual({ ok: false, reason: 'provenance.err.noCheck' });
-    expect(judge([run({ status: 'in_progress', conclusion: null })])).toEqual({ ok: false, reason: 'provenance.err.noCheck' });
-  });
-
-  it('refuses bytes that differ from what the build listed', () => {
-    expect(judge([run({ output: { text: `${OTHER}  keyball39.hex\n${OTHER}  manifest.json\n` } })])).toEqual({
+  it('refuses when the run keeps no record of this manifest', () => {
+    expect(judge({ artifacts: [] })).toEqual({ ok: false, reason: 'provenance.err.noRecord' });
+    expect(judge({ artifacts: [{ name: `keyballer-manifest-${ABC}`, expired: false }] })).toEqual({
       ok: false,
-      reason: 'provenance.err.mismatch',
+      reason: 'provenance.err.noRecord',
     });
-    expect(judge([run({ output: { text: `${OTHER}  manifest.json\n` } })])).toEqual({ ok: false, reason: 'provenance.err.mismatch' });
-    expect(judge([run({ output: { text: null } })])).toEqual({ ok: false, reason: 'provenance.err.mismatch' });
   });
 
-  it('needs one run to vouch for every file, not a mix of runs', () => {
-    const hexOnly = run({ output: { text: `${ABC}  keyball39.hex\n${ABC}  manifest.json\n` } });
-    const manifestOnly = run({ output: { text: `${OTHER}  keyball39.hex\n${OTHER}  manifest.json\n` } });
-    expect(judge([hexOnly, manifestOnly])).toEqual({ ok: false, reason: 'provenance.err.mismatch' });
-    expect(judge([hexOnly, run()])).toEqual({ ok: true });
+  it('refuses a record that has expired', () => {
+    expect(judge({ artifacts: [{ ...record, expired: true }] })).toEqual({ ok: false, reason: 'provenance.err.expired' });
   });
 
-  it('refuses a commit that is not on the default branch', () => {
-    expect(judge([run()], { onDefaultBranch: false })).toEqual({ ok: false, reason: 'provenance.err.notDefault' });
+  it('refuses a run that is not the manifest build of this commit by Keyballer workflow', () => {
+    const refused = { ok: false, reason: 'provenance.err.noRecord' };
+    expect(judge({ run: run({ id: 1 }) })).toEqual(refused);
+    expect(judge({ run: run({ head_sha: OTHER_SHA }) })).toEqual(refused);
+    expect(judge({ run: run({ referenced_workflows: [] }) })).toEqual(refused);
+    expect(judge({ run: run({ referenced_workflows: undefined }) })).toEqual(refused);
+    expect(judge({ run: run({ referenced_workflows: [{ path: 'someone/keyballer/.github/workflows/build-qmk.yml@main' }] }) })).toEqual(refused);
+    expect(judge({ run: run({ referenced_workflows: [{ path: 'AkiraMisawa/keyballer/.github/workflows/build-qmk.yml.evil@main' }] }) })).toEqual(refused);
+    expect(judge({ run: run({ conclusion: 'failure' }) })).toEqual(refused);
+    expect(judge({ run: run({ status: 'in_progress', conclusion: null }) })).toEqual(refused);
+  });
+
+  it('accepts an older build whose commit is still on the default branch', () => {
+    expect(judge({ onBranch: 'behind' })).toEqual({ ok: true });
+  });
+
+  it('refuses a commit that is no longer on the default branch (force-pushed away)', () => {
+    expect(judge({ onBranch: 'diverged' })).toEqual({ ok: false, reason: 'provenance.err.notDefault' });
+    expect(judge({ onBranch: 'ahead' })).toEqual({ ok: false, reason: 'provenance.err.notDefault' });
+  });
+
+  it('refuses a build run for another branch or started some other way', () => {
+    const refused = { ok: false, reason: 'provenance.err.notDefault' };
+    expect(judge({ run: run({ head_branch: 'x' }) })).toEqual(refused);
+    expect(judge({ run: run({ event: 'pull_request' }) })).toEqual(refused);
+    expect(judge({ run: run({ event: 'workflow_run' }) })).toEqual(refused);
+  });
+
+  it('refuses a file that differs from the manifest, or a manifest without digests', () => {
+    expect(judge({ file: { expected: ABC, actual: EMPTY } })).toEqual({ ok: false, reason: 'provenance.err.mismatch' });
+    expect(judge({ file: { expected: undefined, actual: ABC } })).toEqual({ ok: false, reason: 'provenance.err.noRecord' });
   });
 });

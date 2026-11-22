@@ -84,11 +84,16 @@ const sameRepo = (a: string, b: string) => {
  * until the person agrees: firmware from it would run on their keyboard, and anyone can make a link.
  */
 function linkedRepo(): string | null {
-  const fromUrl = new URLSearchParams(location.search).get('repo')?.trim();
-  if (!fromUrl) return null;
+  const ref = parseRepo(new URLSearchParams(location.search).get('repo')?.trim() ?? '');
+  // Shown and opened in its canonical form only, so the prompt names exactly what would open.
+  if (!ref) return null;
+  const linked = repoName(ref);
   const saved = load('keyballer.repo');
-  return saved && sameRepo(fromUrl, saved) ? null : fromUrl;
+  return saved && sameRepo(linked, saved) ? null : linked;
 }
+
+/** Where the source commit of the last firmware flashed from a repository is remembered. */
+const flashedKey = (ref: RepoRef) => `keyballer.flashed.${repoName(ref).toLowerCase()}`;
 
 /** The address without `?repo=`, once the link has been answered. */
 function dropRepoParam() {
@@ -383,7 +388,8 @@ export function App() {
     setError(null);
     try {
       // Only firmware that GitHub Actions built from the default branch, checked byte for byte.
-      const verified = await loadVerifiedFirmware(repo.ref, repo.firmwareSha, build.id, tokenRef.current);
+      const lastFlashed = load(flashedKey(repo.ref));
+      const verified = await loadVerifiedFirmware(repo.ref, repo.firmwareSha, build.id, tokenRef.current, lastFlashed);
       openTarget({ title: verified.build.name, image: verified.image, split: verified.build.split, source: verified.source });
     } catch (e) {
       setError(e);
@@ -581,6 +587,10 @@ export function App() {
           image={target.image}
           split={target.split}
           source={target.source}
+          onFlashed={() => {
+            // Remembered so the next flash can show what changed since (not a secret).
+            if (target.source && repo) save(flashedKey(repo.ref), target.source.sha);
+          }}
           onClose={closeTarget}
         />
       )}
