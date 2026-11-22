@@ -155,10 +155,11 @@ class Synthetic(unittest.TestCase):
         view = make_view(tiny('\t\tbase { display-name = "記号"; bindings = < &kp 0x70004 &kp 0x70005 >; };'))
         self.assertEqual(view["layers"][0]["name"], "記号")
 
-    def test_fills_a_short_layer_and_leaves_out_unused_layers_at_the_end(self):
+    def test_fills_a_short_layer_with_transparent_keys_and_leaves_out_unused_layers_at_the_end(self):
         view = make_view(tiny('\t\tbase { bindings = < &kp 0x70004 >; };\n'
                               '\t\textra { status = "reserved"; bindings = < &kp 0x70004 &kp 0x70004 >; };'))
-        self.assertEqual(view["layers"][0]["keys"], ["KC_A", "KC_NO"])
+        # The key past the last binding falls through to the layer below, as ZMK reads it.
+        self.assertEqual(view["layers"][0]["keys"], ["KC_A", "KC_TRNS"])
         self.assertEqual(len(view["layers"]), 1)
         # The source has one binding there, not two; the reserved layer is recorded for the editor.
         self.assertEqual(view["zmk"]["layers"], [{"node": "base", "status": "okay", "refs": ["kp"]},

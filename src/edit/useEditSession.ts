@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { LocalizedError } from '../i18n/core';
 import { commitFiles } from '../lib/commit';
 import type { ViewFile } from '../keymap/view';
-import { getBranchHead, getTextAt, type RepoRef } from '../lib/github';
+import { getBranchHead, getBytesAt, getTextAt, type RepoRef } from '../lib/github';
 import { sha256Hex } from '../lib/provenance';
 import {
   apply,
@@ -51,30 +51,47 @@ interface ConfigJson {
 
 /**
  * A ZMK keymap's files: keyballer.json and the .keymap file the build recorded, with what the
- * file means when it is the file built (docs/plans/zmk.md, phase 4).
+ * file means when it is the file built (docs/plans/zmk.md, phase 4). After a save the build is
+ * behind, so a file that is still the one saved keeps the meaning it was saved with.
  */
-async function loadZmk(repo: RepoRef, token: string, commit: string, json: string, config: ConfigJson, buildId: string, view: ViewFile) {
+async function loadZmk(repo: RepoRef, token: string, commit: string, json: string, config: ConfigJson, buildId: string, view: ViewFile, previous?: SessionBase) {
   const build = config.builds.find((b) => b.id === buildId);
   if (!build) throw new LocalizedError('edit.err.noBuild', { id: buildId });
   const files: Record<string, string> = { 'keyballer.json': json };
   const keymap = zmkKeymapOf(view);
   let zmk: SessionBase['zmk'] = { problem: 'edit.err.zmkNoSource' };
   if (keymap) {
-    const text = await getTextAt(repo, keymap.path, commit, token);
-    zmk = openZmk(view, text ?? undefined, text === null ? '' : await sha256Hex(new TextEncoder().encode(text)));
-    if (text !== null && 'base' in zmk) files[keymap.path] = text;
+    // Hashed as stored: a BOM or any byte that is not UTF-8 must not pass for the file built.
+    const bytes = await getBytesAt(repo, keymap.path, commit, token);
+    let text: string | undefined;
+    try {
+      text = bytes ? new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes) : undefined;
+    } catch {
+      text = undefined;
+    }
+    const saved = previous?.zmk && 'base' in previous.zmk && previous.zmk.base.path === keymap.path ? previous.zmk : undefined;
+    if (bytes && text === undefined) zmk = { problem: 'edit.err.zmkUnreadable' };
+    else if (saved && text !== undefined && text === previous!.files[keymap.path]) zmk = saved;
+    else zmk = openZmk(view, text, bytes ? await sha256Hex(bytes) : '');
+    if (text !== undefined && 'base' in zmk) files[keymap.path] = text;
   }
   // Builds of one keyboard need not share a .keymap file (meteorite40 and its low-profile build do
   // not), and only a split keyboard's central half uses it, so no other build is named.
   return { base: { commit, buildId, keymapDir: '', files, zmk }, sharedBy: [build.name] };
 }
 
-async function load(repo: RepoRef, token: string, buildId: string, zmkView: ViewFile | null): Promise<{ base: SessionBase; sharedBy: string[] }> {
+/** A ZMK build: its view (null until loaded), which says what its .keymap file means. */
+export interface ZmkSource {
+  view: ViewFile | null;
+}
+
+async function load(repo: RepoRef, token: string, buildId: string, zmk: ZmkSource | null, previous?: SessionBase): Promise<{ base: SessionBase; sharedBy: string[] }> {
+  if (zmk && !zmk.view) throw new LocalizedError('why.noView');
   const commit = await getBranchHead(repo, BRANCH, token);
   const json = await getTextAt(repo, 'keyballer.json', commit, token);
   if (json === null) throw new LocalizedError('edit.err.noConfig');
   const config = JSON.parse(json) as ConfigJson;
-  if (zmkView) return loadZmk(repo, token, commit, json, config, buildId, zmkView);
+  if (zmk?.view) return loadZmk(repo, token, commit, json, config, buildId, zmk.view, previous);
   const build = config.builds.find((b) => b.id === buildId);
   if (!build) throw new LocalizedError('edit.err.noBuild', { id: buildId });
   const dir = build.keymap_dir.replace(/\/+$/, '');
@@ -91,8 +108,8 @@ async function load(repo: RepoRef, token: string, buildId: string, zmkView: View
   };
 }
 
-/** `zmkView` is the build's view for a ZMK build, which says what its .keymap file means; null for QMK. */
-export function useEditSession(repo: RepoRef, token: string, buildId: string, zmkView: ViewFile | null = null) {
+/** `zmk` is set for a ZMK build; null for QMK. */
+export function useEditSession(repo: RepoRef, token: string, buildId: string, zmk: ZmkSource | null = null) {
   const [state, setState] = useState<EditState>({ status: 'idle' });
   const [saved, setSaved] = useState<Saved | null>(null);
   const [saving, setSaving] = useState(false);
@@ -105,7 +122,7 @@ export function useEditSession(repo: RepoRef, token: string, buildId: string, zm
     (keep: Session | null) => {
       const mine = ++generation.current;
       setState({ status: 'loading' });
-      load(repo, token, buildId, zmkView)
+      load(repo, token, buildId, zmk, keep?.base)
         .then(({ base, ...rest }) => {
           if (mine !== generation.current) return;
           let session = keep ? rebase(keep, base) : openSession(base);
@@ -115,7 +132,7 @@ export function useEditSession(repo: RepoRef, token: string, buildId: string, zm
         })
         .catch((error: unknown) => mine === generation.current && setState({ status: 'failed', error }));
     },
-    [repo, token, buildId, zmkView],
+    [repo, token, buildId, zmk],
   );
 
   // A new build or repository starts over.

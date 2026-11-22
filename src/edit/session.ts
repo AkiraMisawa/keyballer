@@ -609,9 +609,11 @@ function zmkReview(session: Session, zmk: ZmkBase): Review {
   const layers: LayerChange[] = [];
   for (let n = was.layers.length; n < now.layers.length; n++) layers.push({ change: 'added', layer: n });
   for (let n = now.layers.length; n < was.layers.length; n++) layers.push({ change: 'removed', layer: n });
-  for (let n = 0; n < Math.min(was.layers.length, now.layers.length); n++) {
+  for (let n = 0; n < now.layers.length; n++) {
+    // A new layer is named after its node until it is given a name.
     const name = now.layers[n].name;
-    if (name && name !== was.layers[n].name) layers.push({ change: 'renamed', layer: n, name });
+    const before = n < was.layers.length ? was.layers[n].name : now.layers[n].node;
+    if (name && name !== before) layers.push({ change: 'renamed', layer: n, name });
   }
   const before = session.base.files[zmk.path];
   const after = zmkDoc(session)!.src;

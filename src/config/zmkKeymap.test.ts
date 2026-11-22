@@ -10,6 +10,7 @@ import {
   dtsString,
   ensureInclude,
   freeName,
+  mask,
   readZmkKeymap,
   removeZmkCombo,
   removeZmkLayer,
@@ -87,9 +88,11 @@ describe('changing a key', () => {
     expect(after.split('\n').filter((l, i) => l !== roba.split('\n')[i])).toEqual([row]);
   });
 
-  it('fills a short layer with no action up to the key', () => {
+  it('fills a short layer with transparent keys up to the key, as ZMK reads the keys past its end', () => {
+    // ZMK finds no behaviour past a layer's last binding and goes on to the layer below
+    // (app/src/behavior.c, zmk_behavior_invoke_binding returns 1), as &trans does.
     const src = '/ {\n  keymap {\n    compatible = "zmk,keymap";\n    base {\n      bindings = <&kp A>;\n    };\n  };\n};\n';
-    expect(setZmkBinding(src, 'base', 2, '&kp C')).toContain('bindings = <&kp A &none &kp C>;');
+    expect(setZmkBinding(src, 'base', 2, '&kp C')).toContain('bindings = <&kp A &trans &kp C>;');
   });
 });
 
@@ -185,5 +188,78 @@ describe('headers and names', () => {
   it('finds a free node name', () => {
     expect(freeName('combo_tab', ['tab'])).toBe('combo_tab');
     expect(freeName('combo LS(TAB)', ['combo_ls_tab'])).toBe('combo_ls_tab_2');
+  });
+});
+
+/** A small keymap: two layers and a combos node, laid out as `parts` say. */
+const small = (parts: { before?: string; combos?: string; layers?: string; after?: string } = {}) =>
+  `${parts.before ?? ''}/ {\n${parts.combos ?? ''}    keymap {\n        compatible = "zmk,keymap";\n${
+    parts.layers ??
+    '        base {\n            bindings = <&kp A &kp B>;\n        };\n\n        upper {\n            bindings = <&kp C &kp D>;\n        };\n'
+  }    };\n};\n${parts.after ?? ''}`;
+
+describe('reading what the compiler reads', () => {
+  it('masks preprocessor directives, not properties that start with #', () => {
+    expect(mask('    #binding-cells = <2>;\n')).toBe('    #binding-cells = <2>;\n');
+    expect(mask('#define X 1\n').trim()).toBe('');
+    // A line comment ends with its line unless a backslash carries it on, as in cpp.
+    expect(mask('// a \\\nb\nc\n').replace(/\s/g, '')).toBe('c');
+    // A block comment opened in a directive belongs to the directive, through its end.
+    expect(mask('#define X /* a\nb */ y\nz\n').replace(/\s/g, '')).toBe('z');
+  });
+
+  it('refuses what the reader and the compiler could read differently', () => {
+    const refused = [
+      small({ before: '#if 0\n', after: '#endif\n' }),
+      small({ before: '#ifdef CONFIG_X\n#endif\n' }),
+      small({ layers: '        base {\n            bindings = <&kp A &kp B>;\n            bindings = <&kp C &kp D>;\n        };\n' }),
+      small({ layers: '        b: base {\n            bindings = <&kp A &kp B>;\n        };\n', after: '&b {\n    bindings = <&kp C &kp D>;\n};\n' }),
+      small({ after: '/ {\n    keymap {\n        extra {\n            bindings = <&kp E &kp F>;\n        };\n    };\n};\n' }),
+      small({ after: '/delete-node/ &kp;\n' }),
+      small().replace('compatible = "zmk,keymap"', 'compatible = KEYMAP'),
+    ];
+    for (const src of refused) expect(() => readZmkKeymap(src), src).toThrow(ZmkSourceError);
+    expect(readZmkKeymap(small()).layers).toHaveLength(2);
+  });
+
+  it('reads key positions in linear time', () => {
+    const combos = `    combos {\n        compatible = "zmk,combos";\n        x {\n            bindings = <&kp A>;\n            key-positions = <${'1'.repeat(5000)}a>;\n        };\n    };\n`;
+    const started = performance.now();
+    expect(() => readZmkKeymap(small({ combos }))).toThrow(ZmkSourceError);
+    expect(performance.now() - started).toBeLessThan(200);
+  });
+});
+
+describe('changes stay in their node', () => {
+  it('refuses to name a layer written on one line, and clears only the name on a shared line', () => {
+    const oneLine = small({ layers: '        base { bindings = <&kp A &kp B>; };\n' });
+    expect(() => setZmkLayerName(oneLine, 'base', 'Base')).toThrow(ZmkSourceError);
+    const shared = small({ layers: '        base {\n            display-name = "Base"; bindings = <&kp A &kp B>;\n        };\n' });
+    expect(setZmkLayerName(shared, 'base', '')).toBe(shared.replace('display-name = "Base"; ', ''));
+  });
+
+  it('adds a combo inside a combos node written on one line', () => {
+    const src = small({ combos: '    combos { compatible = "zmk,combos"; };\n\n' });
+    const after = addZmkCombo(src, 'combo_tab', [0, 1], '&kp TAB');
+    expect(readZmkKeymap(after).combos.map((c) => c.node)).toEqual(['combo_tab']);
+  });
+
+  it('removes only the combo when combos share a line', () => {
+    const src = small({ combos: '    combos {\n        compatible = "zmk,combos";\n        a { bindings = <&kp A>; key-positions = <0 1>; }; b { bindings = <&kp B>; key-positions = <0 1>; };\n    };\n' });
+    expect(readZmkKeymap(removeZmkCombo(src, 'a')).combos.map((c) => c.node)).toEqual(['b']);
+  });
+
+  it('keeps directives between layers when removing one', () => {
+    const src = small().replace('\n        upper {', '\n#define UPPER 1\n        upper {');
+    const after = removeZmkLayer(src, 'upper');
+    expect(after).toContain('#define UPPER 1');
+    expect(readZmkKeymap(after).layers.map((l) => l.node)).toEqual(['base']);
+  });
+
+  it('counts only real #include lines', () => {
+    const src = `#include <behaviors.dtsi>\n// #include <dt-bindings/zmk/outputs.h>\n${small()}`;
+    expect(ensureInclude(src, 'dt-bindings/zmk/outputs.h')).toBe(
+      `#include <behaviors.dtsi>\n#include <dt-bindings/zmk/outputs.h>\n// #include <dt-bindings/zmk/outputs.h>\n${small()}`,
+    );
   });
 });

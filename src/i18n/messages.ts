@@ -76,7 +76,8 @@ export const en = {
   'why.started': 'Flashing has already started.',
   'why.loading': 'The firmware is still loading.',
   'why.noReset': 'This keyboard has no settings reset build.',
-  'why.zmkNoEdit': 'This build did not record its .keymap file, so its keys cannot be edited here. Build again with the current Keyballer workflow.',
+  'why.zmkNoEdit': 'This build did not record a .keymap file in your config repository, so its keys cannot be edited here. Builds made before Keyballer recorded it have none: build again. A keymap that comes from a module cannot be edited here.',
+  'why.zmkBall': 'Keyballer does not set ZMK trackballs yet: their settings are in the keyboard’s .conf and devicetree files.',
 
   'common.close': 'Close',
   'common.cancel': 'Cancel',
@@ -623,7 +624,8 @@ export const ja: Record<MessageKey, string> = {
   'why.started': 'すでに書き込みを始めています。',
   'why.loading': 'ファームウェアを読み込んでいます。',
   'why.noReset': 'このキーボードには設定のリセットのビルドがありません。',
-  'why.zmkNoEdit': 'このビルドは .keymap ファイルを記録していないため、ここではキーを編集できません。今の Keyballer のワークフローでもう一度ビルドしてください。',
+  'why.zmkNoEdit': 'このビルドは設定リポジトリの .keymap ファイルを記録していないため、ここではキーを編集できません。Keyballer が記録するようになる前のビルドには記録がないので、もう一度ビルドしてください。モジュールから来るキーマップは、ここでは編集できません。',
+  'why.zmkBall': 'ZMK のトラックボールの設定は、まだ Keyballer では変えられません。設定はキーボードの .conf とデバイスツリーのファイルにあります。',
 
   'common.close': '閉じる',
   'common.cancel': 'やめる',

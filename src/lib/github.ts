@@ -164,9 +164,8 @@ export async function getFirmwareText(
   return res.text();
 }
 
-/** Recent runs of the config repo's build workflow (.github/workflows/build.yml). */
 /**
- * The config repository's latest builds of main. Only main's builds publish firmware (and only
+ * The config repository's latest builds of main (.github/workflows/build.yml). Only main's builds publish firmware (and only
  * they pass the provenance check), so a run on a side branch is never "the latest build".
  */
 export async function getBuildRuns(r: RepoRef, token: string): Promise<WorkflowRun[]> {
@@ -267,6 +266,16 @@ export async function getCommitInfo(r: RepoRef, sha: string, token: string): Pro
 }
 
 /** A file's text at a commit, or null when the file is not there. */
+/** A file's bytes at a commit, exactly as stored (a BOM included); null when it does not exist. */
+export async function getBytesAt(r: RepoRef, path: string, ref: string, token: string): Promise<Uint8Array | null> {
+  try {
+    return new Uint8Array(await (await getRaw(r, path, ref, token)).arrayBuffer());
+  } catch (e) {
+    if (e instanceof GitHubError && e.status === 404) return null;
+    throw e;
+  }
+}
+
 export async function getTextAt(r: RepoRef, path: string, ref: string, token: string): Promise<string | null> {
   try {
     return await (await getRaw(r, path, ref, token)).text();

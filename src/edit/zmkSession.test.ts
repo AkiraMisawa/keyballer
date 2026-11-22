@@ -80,6 +80,24 @@ describe('opening a ZMK keymap', () => {
   });
 });
 
+describe('a view that does not tell the truth', () => {
+  it('never decides what a key is written as', () => {
+    // The view names the &bootloader key F13; putting F13 on a key must still write F13.
+    const boot = ROBA_VIEW.layers[6].keys.indexOf('QK_BOOT');
+    const layers = ROBA_VIEW.layers.map((l, n) => (n === 6 ? { ...l, keys: l.keys.map((k, i) => (i === boot ? 'KC_F13' : k)) } : l));
+    const s = edits(session({ ...ROBA_VIEW, layers }, PATH, ROBA), { type: 'key', layer: 0, index: 1, keycode: 'KC_F13' });
+    expect(review(s).files[0].diff).toContain('+&mt LEFT_ALT Q      &kp F13           &kp E');
+    expect(fileOf(s).match(/&bootloader/g)).toHaveLength(1);
+  });
+
+  it('is refused when its sizes do not fit the board', () => {
+    const short = { ...ROBA_VIEW, layers: ROBA_VIEW.layers.map((l, n) => (n === 0 ? { ...l, keys: l.keys.slice(1) } : l)) };
+    expect(openZmk(short, ROBA, sha(ROBA))).toEqual({ problem: 'edit.err.zmkUnreadable' });
+    const many = { ...ROBA_VIEW, keys: [...ROBA_VIEW.keys, ...Array(2000).fill(ROBA_VIEW.keys[0])] };
+    expect(openZmk(many, ROBA, sha(ROBA))).toEqual({ problem: 'edit.err.zmkUnreadable' });
+  });
+});
+
 describe('changing keys', () => {
   it('writes the key, shows it on the board, and lists it for review', () => {
     const s = edits(roba(), { type: 'key', layer: 0, index: 1, keycode: 'KC_TAB' });
@@ -123,6 +141,29 @@ describe('changing keys', () => {
   });
 });
 
+describe('changes that are not changes', () => {
+  it('lists no change for the same key written another way', () => {
+    // SYMBOL has &kp EXCLAMATION, which the view reads as LSFT(KC_1); the picker calls it KC_EXLM.
+    const at = ROBA_VIEW.layers[1].keys.indexOf('LSFT(KC_1)');
+    expect(at).toBeGreaterThanOrEqual(0);
+    const s = edits(roba(), { type: 'key', layer: 1, index: at, keycode: 'KC_EXLM' });
+    expect(review(s)).toMatchObject({ keys: [], files: [] });
+  });
+
+  it('names a layer as ZMK will when its name is cleared', () => {
+    // A layer named by its label: clearing the name leaves the label, which ZMK shows.
+    const src = ROBA.replace('        NUM {\n', '        NUM {\n            label = "NUMBERS";\n');
+    const view = {
+      ...ROBA_VIEW,
+      layers: ROBA_VIEW.layers.map((l, n) => (n === 2 ? { ...l, name: 'NUMBERS' } : l)),
+      zmk: { ...ROBA_VIEW.zmk, keymap: { path: PATH, sha256: sha(src) } },
+    };
+    const s = edits(session(view, PATH, src), { type: 'layerName', layer: 2, name: '' });
+    expect(review(s)).toMatchObject({ layers: [], files: [] });
+    expect(editedView(view, s).layers[2].name).toBe('NUMBERS');
+  });
+});
+
 describe('combos', () => {
   it('adds, changes and removes combos by their node', () => {
     // The file writes Esc as &kp ESCAPE elsewhere, so the combo does too.
@@ -162,6 +203,22 @@ describe('layers', () => {
     expect(editedView(ROBA_VIEW, added).layers).toHaveLength(9);
     expect(review(added).layers).toEqual([{ change: 'added', layer: 8 }]);
     expect(fileOf(edits(added, { type: 'layerRemove' }))).toBe(ROBA);
+    // A new layer that is named lists its name too, as QMK's review does.
+    expect(review(edits(added, { type: 'layerName', layer: 8, name: 'Extra' })).layers).toEqual([
+      { change: 'added', layer: 8 },
+      { change: 'renamed', layer: 8, name: 'Extra' },
+    ]);
+  });
+
+  it('leaves no empty combos node after adding and removing a combo', () => {
+    const src = M40.slice(0, M40.indexOf('    combos {')) + M40.slice(M40.indexOf('    keymap {'));
+    const view = { ...M40_VIEW, combos: [], zmk: { ...M40_VIEW.zmk, keymap: { path: 'config/meteorite40.keymap', sha256: sha(src) } } };
+    const s = edits(session(view, 'config/meteorite40.keymap', src), { type: 'comboAdd', positions: [0, 1], output: 'KC_TAB' });
+    expect(currentFiles(s)['config/meteorite40.keymap']).toContain('combos {');
+    const name = editedView(view, s).combos[0].name!;
+    const back = edits(s, { type: 'comboRemove', name });
+    expect(currentFiles(back)['config/meteorite40.keymap']).toBe(src);
+    expect(review(back).files).toEqual([]);
   });
 
   it('names a layer with its display-name', () => {

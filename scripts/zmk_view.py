@@ -384,8 +384,9 @@ def make_view(dts_text):
         bindings = [conv.convert(*b) for b in conv.read(layer.prop("bindings") or [])]
         if len(bindings) > len(keys):
             raise ViewError("layer {} has {} bindings for {} keys".format(layer.name, len(bindings), len(keys)))
-        # ZMK leaves the keys past the last binding without one.
-        bindings += ["KC_NO"] * (len(keys) - len(bindings))
+        # ZMK finds no behaviour past a layer's last binding and goes on to the layer below
+        # (app/src/behavior.c: zmk_behavior_invoke_binding returns 1), as a transparent key does.
+        bindings += ["KC_TRNS"] * (len(keys) - len(bindings))
         name = (layer.prop("display-name") or layer.prop("label") or [layer.name])[0]
         layers.append({"name": name, "ball": None, "keys": bindings})
     if not layers:

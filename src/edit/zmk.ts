@@ -69,6 +69,25 @@ export function zmkKeymapOf(view: ViewFile): { path: string; sha256: string } | 
 
 const same = (a: unknown[], b: unknown[]) => a.length === b.length && a.every((x, i) => x === b[i]);
 
+// ZMK keeps layers in a 32-bit state; no keyboard Keyballer knows has more than a few hundred keys.
+const MAX_LAYERS = 32;
+const MAX_KEYS = 512;
+
+/**
+ * Whether the view's sizes fit its board: every layer has a key for each key of the layout and no
+ * more bindings than keys. The view comes from the firmware branch, so its sizes are not trusted.
+ */
+function fits(view: ViewFile, layers: { refs: string[] }[]): boolean {
+  const keys = view.keys.length;
+  return (
+    keys > 0 &&
+    keys <= MAX_KEYS &&
+    layers.length <= MAX_LAYERS &&
+    view.layers.every((l) => l.keys.length === keys) &&
+    layers.every((l) => l.refs.length <= keys)
+  );
+}
+
 /**
  * The editor's starting point for a ZMK build, or why there is none: the view must name the file,
  * the file on main must be the one built (`sha256` is the file's, worked out by the caller), and
@@ -96,7 +115,7 @@ export function openZmk(view: ViewFile, src: string | undefined, sha256: string)
       const s = source.combos.find((sc) => sc.node === c.name);
       return !!s && same(s.positions, c.positions);
     });
-  if (!matches) return { problem: 'edit.err.zmkUnreadable' };
+  if (!matches || !fits(view, layers)) return { problem: 'edit.err.zmkUnreadable' };
   return {
     base: {
       path: keymap.path,
@@ -136,10 +155,24 @@ export function zmkKeyProblem(doc: ZmkDoc, keycode: string): MessageKey | undefi
   return 'refused' in out ? out.refused : undefined;
 }
 
+const POINTING = 'dt-bindings/zmk/pointing.h';
+
 function write(doc: ZmkDoc, keycode: string): { src: string; text: string } {
   const out = zmkBinding(keycode, zmkContext(doc));
   if ('refused' in out) throw new ZmkSourceError(out.refused);
-  return { src: out.header ? ensureInclude(doc.src, out.header) : doc.src, text: out.text };
+  // Older ZMK has the mouse button names in mouse.h, which includes pointing.h where it exists.
+  const included = out.header === POINTING && /#[ \t]*include[ \t]*<dt-bindings\/zmk\/mouse\.h>/.test(doc.src);
+  return { src: out.header && !included ? ensureInclude(doc.src, out.header) : doc.src, text: out.text };
+}
+
+/**
+ * The change, checked: the file must still read, with every layer of the model where it was, or
+ * the change is not made (the session skips it), so a change can never leave a broken file.
+ */
+function checked(doc: ZmkDoc): ZmkDoc {
+  const nodes = readZmkKeymap(doc.src).layers.map((l) => l.node);
+  if (!doc.model.layers.every((l, n) => nodes[n] === l.node)) throw new ZmkSourceError('the layers moved');
+  return doc;
 }
 
 /** A node name from what a combo types: `&kp LS(TAB)` → combo_ls_tab. */
@@ -147,6 +180,10 @@ const comboBase = (binding: string) => `combo_${binding.replace(/^&(kp\s+)?/, ''
 
 /** One change to the model and the file; throws when it cannot be made (session.ts skips it). */
 export function applyZmkEdit(doc: ZmkDoc, e: ZmkEdit): ZmkDoc {
+  return checked(change(doc, e));
+}
+
+function change(doc: ZmkDoc, e: ZmkEdit): ZmkDoc {
   const layers = doc.model.layers.map((l) => ({ ...l, keys: [...l.keys] }));
   const combos = doc.model.combos.map((c) => ({ ...c }));
   switch (e.type) {
@@ -154,6 +191,9 @@ export function applyZmkEdit(doc: ZmkDoc, e: ZmkEdit): ZmkDoc {
       const layer = layers[e.layer];
       if (!layer || e.index >= layer.keys.length) throw new ZmkSourceError('no such key');
       const { src, text } = write(doc, e.keycode);
+      // The same binding by another name (KC_EXLM where the file has &kp EXCLAMATION) is no change.
+      const current = readZmkKeymap(doc.src).layers[e.layer]?.bindings[e.index]?.text;
+      if (current === text) return doc;
       layer.keys[e.index] = e.keycode;
       return { model: { layers, combos }, src: setZmkBinding(src, layer.node, e.index, text) };
     }
@@ -186,8 +226,10 @@ export function applyZmkEdit(doc: ZmkDoc, e: ZmkEdit): ZmkDoc {
     case 'layerName': {
       const layer = layers[e.layer];
       if (!layer) throw new ZmkSourceError('no such layer');
-      layer.name = e.name || layer.node;
-      return { model: { layers, combos }, src: setZmkLayerName(doc.src, layer.node, e.name) };
+      const src = setZmkLayerName(doc.src, layer.node, e.name);
+      // Without a display-name, ZMK names a layer by its label, then by its node.
+      layer.name = e.name || readZmkKeymap(src).layers[e.layer]?.label || layer.node;
+      return { model: { layers, combos }, src };
     }
   }
 }
