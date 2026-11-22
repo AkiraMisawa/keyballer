@@ -7,7 +7,8 @@ OUT_DIR holds the <id>.json files written by build_qmk.py or build_zmk.py.
 IDS_JSON is the build order from keyballer.json (the output of `--list`).
 Repository and run details come from the GitHub Actions environment.
 Each build gets the SHA-256 of its firmware file (`sha256`), of its keymap
-view (`view_sha256`) and, for ZMK, of its frozen west manifest (`west_sha256`). The publish job keeps an artifact named after the
+view (`view_sha256`) and, for ZMK, of its resolved west manifest
+(`west_sha256`). The publish job keeps an artifact named after the
 manifest's own SHA-256 with the run, so the app can check the bytes it
 flashes against a run of this workflow (src/lib/provenance.ts).
 Also appends a summary table to $GITHUB_STEP_SUMMARY when it is set.

@@ -1,7 +1,8 @@
 """The UF2 check (docs/plans/zmk.md). Blocks are built from the UF2 spec's constants
 (github.com/microsoft/uf2: magics 0x0A324655, 0x9E5D5157, 0x0AB16F30; flag 0x2000 = family ID
 present; family 0xADA52840 = nRF52840) and the Adafruit nRF52 bootloader's rules (family
-0xd663823c replaces the bootloader)."""
+0xd663823c replaces the bootloader). The application area, 0x27000 to 0xEC000, is Zephyr's
+nrf52840_partition_uf2_sdv7.dtsi for SoftDevice S140 v7."""
 
 import struct
 import unittest
@@ -55,14 +56,14 @@ class CheckUf2(unittest.TestCase):
                 check_uf2(image(size=size))
 
     def test_refuses_writes_outside_the_application_area(self):
-        # Below 0x26000 is the MBR and SoftDevice; from 0xEC000 the settings, bonds and bootloader.
-        for start in (0x0, 0x1000, 0x25F00, 0xEC000, 0xF4000, 0xEBF00 - 256 * 2):
+        # Below 0x27000 is the MBR and SoftDevice; from 0xEC000 the settings, bonds and bootloader.
+        for start in (0x0, 0x1000, 0x26000, 0x26F00, 0xEC000, 0xF4000, 0xEBF00 - 256 * 2):
             with self.subTest(start=hex(start)):
                 with self.assertRaises(UF2Error):
                     check_uf2(image(4, start))
 
     def test_accepts_the_edges_of_the_application_area(self):
-        self.assertEqual(check_uf2(image(1, 0x26000))["start"], 0x26000)
+        self.assertEqual(check_uf2(image(1, 0x27000))["start"], 0x27000)
         self.assertEqual(check_uf2(image(1, 0xEBF00))["end"], 0xEC000)
 
     def test_refuses_misaligned_addresses(self):
