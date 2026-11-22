@@ -8,7 +8,7 @@ import type { EditSession } from '../edit/useEditSession';
 import { useI18n } from '../i18n/react';
 import { LAYER_FUNCTIONS } from './catalogue';
 import { KeyPicker, type PickerContext } from './KeyPicker';
-import { layerName, legendOf, parseKeycode, type ViewFile } from './view';
+import { comboFiresOn, layerName, legendOf, parseKeycode, type ViewCombo, type ViewFile } from './view';
 
 /** What still leads to a layer: keys on other layers, and combos whose output is a layer key. */
 export function leadingTo(context: PickerContext, target: number): string[] {
@@ -22,8 +22,40 @@ export function leadingTo(context: PickerContext, target: number): string[] {
   return [...keys, ...combos];
 }
 
-const comboKeys = (view: ViewFile, positions: (number | null)[], context: PickerContext) =>
-  positions.map((p) => (p === null ? '?' : legendOf(view, view.layers[0].keys[p], context.display).tap));
+/** A combo's keys as a layer has them: the base layer for QMK, whose combos name its keys. */
+const comboKeys = (view: ViewFile, positions: (number | null)[], context: PickerContext, layer = 0) =>
+  positions.map((p) => (p === null ? '?' : legendOf(view, view.layers[layer]?.keys[p] ?? 'KC_NO', context.display).tap));
+
+/** Where a combo's keys are read: the shown layer when the combo fires there, else the first it fires on. */
+function keysLayer(view: ViewFile, combo: ViewCombo, shown: number): number {
+  if (!view.zmk) return 0;
+  if (comboFiresOn(view, combo, shown)) return shown;
+  return combo.layers?.find((l) => l < view.layers.length) ?? 0;
+}
+
+/** The layers a ZMK combo fires on: every layer, or the ones chosen. */
+function ComboLayers({ view, value, onChange }: { view: ViewFile; value: number[] | null; onChange: (layers: number[] | null) => void }) {
+  const { t, lang } = useI18n();
+  const toggle = (n: number) => {
+    const next = value === null ? [n] : value.includes(n) ? value.filter((l) => l !== n) : [...value, n].sort((a, b) => a - b);
+    onChange(next.length > 0 ? next : null);
+  };
+  return (
+    <div className="stack">
+      <span id="combo-layers">{t('edit.comboLayers')}</span>
+      <div className="seg layers" role="group" aria-labelledby="combo-layers">
+        <button type="button" aria-pressed={value === null} onClick={() => onChange(null)}>
+          {t('edit.comboEveryLayer')}
+        </button>
+        {view.layers.map((_, n) => (
+          <button key={n} type="button" aria-pressed={value?.includes(n) ?? false} onClick={() => toggle(n)}>
+            {layerName(view, n, lang)}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 interface Props {
   edit: EditSession;
@@ -100,10 +132,13 @@ export function EditPanel({ edit, context, layer, sharedBy, onAddCombo, onChange
       <ul className="combo-list">
         {view.combos.map((c, i) => (
           <li key={c.name ?? i}>
-            <span>{comboKeys(view, c.positions, context).join(' + ')}</span>
+            <span>{comboKeys(view, c.positions, context, keysLayer(view, c, layer)).join(' + ')}</span>
             <span className="out">
               <span className="muted">=</span>
               <span>{legendOf(view, c.output, display).tap}</span>
+              {view.zmk && c.layers?.length ? (
+                <span className="muted">{t('edit.comboOnly', { layers: list(c.layers.map((n) => layerName(view, n, lang))) })}</span>
+              ) : null}
               {c.name && (
                 <>
                   <button type="button" className="link" onClick={() => onChangeCombo(c.name!)}>
@@ -128,27 +163,42 @@ export function EditPanel({ edit, context, layer, sharedBy, onAddCombo, onChange
 interface ComboProps {
   edit: EditSession;
   context: PickerContext;
+  /** The layer shown on the board, where a ZMK combo's keys are picked. */
+  layer: number;
   /** Making a combo: the keys picked on the board so far. Changing one: its name. */
   picked?: number[];
   change?: string;
   onDone: () => void;
 }
 
-/** Making a combo (keys picked on the board, then its output) or changing a combo's output. */
-export function ComboPanel({ edit, context, picked, change, onDone }: ComboProps) {
+/**
+ * Making a combo (keys picked on the board, then its output) or changing a combo's output, and for
+ * ZMK the layers it fires on.
+ */
+export function ComboPanel({ edit, context, layer, picked, change, onDone }: ComboProps) {
   const { view } = context;
   const { t, lang } = useI18n();
+  // A new ZMK combo made on the base layer fires on every layer, as ZMK's are without `layers`;
+  // one made on another layer, only there.
+  const [layers, setLayers] = useState<number[] | null>(layer === 0 ? null : [layer]);
   if (!edit.session) return null;
   const existing = change ? view.combos.find((c) => c.name === change) : undefined;
   const positions = existing ? existing.positions.filter((p): p is number => p !== null) : (picked ?? []);
   const problem = existing ? undefined : comboProblem(edit.session, positions);
-  const keys = new Intl.ListFormat(lang, { type: 'conjunction' }).format(comboKeys(view, positions, context));
+  const from = existing ? keysLayer(view, existing, layer) : view.zmk ? layer : 0;
+  const keys = new Intl.ListFormat(lang, { type: 'conjunction' }).format(comboKeys(view, positions, context, from));
   return (
     <div className="stack">
       <h3>{existing ? t('edit.comboOutput', { keys }) : t('edit.addCombo')}</h3>
       {!existing && <p className="note">{t('edit.comboPick')}</p>}
       {!existing && positions.length > 0 && <p>{t('edit.comboKeys', { keys })}</p>}
       {problem && positions.length > 0 && <p className="note">{t(problem)}</p>}
+      {view.zmk &&
+        (existing && change ? (
+          <ComboLayers view={view} value={existing.layers?.length ? existing.layers : null} onChange={(l) => edit.edit({ type: 'comboLayers', name: change, layers: l })} />
+        ) : (
+          <ComboLayers view={view} value={layers} onChange={setLayers} />
+        ))}
       {!problem && (
         <KeyPicker
           context={context}
@@ -161,7 +211,7 @@ export function ComboPanel({ edit, context, picked, change, onDone }: ComboProps
           focusOnMount
           onAssign={(output) => {
             if (existing && change) edit.edit({ type: 'comboSet', name: change, positions, output });
-            else edit.edit({ type: 'comboAdd', positions, output });
+            else edit.edit({ type: 'comboAdd', positions, output, ...(view.zmk ? { layers } : {}) });
             onDone();
           }}
         />

@@ -3,7 +3,9 @@
 
 import { describe, expect, it } from 'vitest';
 import fixture from './fixtures/am338.view.json';
-import { drawLayer, nextKey, type Display, type ViewFile } from './view';
+import meteorite40 from '../edit/fixtures/meteorite40.view.json';
+import roba from '../edit/fixtures/roba-right.view.json';
+import { drawLayer, nextKey, parseView, type Display, type ViewFile } from './view';
 
 const view = fixture as unknown as ViewFile;
 const mac: Display = { lang: 'en', os: 'mac', layout: 'us' };
@@ -197,6 +199,26 @@ describe('trackball and combos', () => {
     ]);
     expect(drawLayer(view, 0, { ...mac, layout: 'jis' }).combos[2].output).toEqual({ tap: ']' });
     expect(drawLayer(view, 1, mac).combos).toEqual([]);
+  });
+
+  it('draws a ZMK combo on each layer it fires on', () => {
+    // meteorite40.keymap: D+F and J+K type LANG1 and LANG2 on layer 0; J+K types Home on layer 2.
+    const m40 = meteorite40 as unknown as ViewFile;
+    const at = (layer: number) => drawLayer(m40, layer, mac).combos.map((c) => `${c.positions.join('+')}=${c.output.tap}`);
+    expect(at(0)).toEqual(['12+13=かな', '16+17=英数', '20+21=Esc', '0+1=Tab']);
+    expect(at(1)).toEqual([]);
+    expect(at(2)).toEqual(['16+17=Home', '18+19=End', '16+18=⌃Home', '17+19=⌃End']);
+    // roBa's combos have no layers, so they fire on every layer.
+    const r = roba as unknown as ViewFile;
+    expect(drawLayer(r, 3, mac).combos.length).toBe(r.combos.length);
+  });
+
+  it('keeps a combo’s layers only when they are layer numbers', () => {
+    // The view comes from the firmware branch, so its shape is not trusted.
+    const combo = (layers: unknown) => ({ name: 'c', keys: [], positions: [0, 1], output: 'KC_A', line: 1, layers });
+    const read = (layers: unknown) => parseView({ ...meteorite40, combos: [combo(layers)] }).combos[0].layers;
+    expect(read([0, 2])).toEqual([0, 2]);
+    for (const bad of ['2', [1.5], [-1], [32], { 0: 1 }, [null]]) expect(read(bad), JSON.stringify(bad)).toBeUndefined();
   });
 });
 

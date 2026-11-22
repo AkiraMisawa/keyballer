@@ -22,7 +22,7 @@ import { readCustomKeycodes } from '../config/keymap';
 import { basicLegend } from '../keymap/keycodes';
 import type { ViewFile } from '../keymap/view';
 import { zmkLabel } from '../keymap/zmkKeys';
-import { applyZmkEdit, zmkKeyProblem, type ZmkBase, type ZmkDoc, type ZmkEdit, type ZmkModel } from './zmk';
+import { applyZmkEdit, zmkKeyProblem, type ZmkBase, type ZmkCombo, type ZmkDoc, type ZmkEdit, type ZmkModel } from './zmk';
 
 export interface SessionBase {
   /** The commit the files were read from. */
@@ -46,10 +46,15 @@ export type BallMode = 'cursor' | 'scroll';
 export type Edit =
   | { type: Setting; value: number }
   | { type: 'key'; layer: number; index: number; keycode: string }
-  /** A combo by its positions on the board; it names the base layer's keys there. */
-  | { type: 'comboAdd'; positions: number[]; output: string }
+  /**
+   * A combo by its positions on the board; in QMK it names the base layer's keys there. A ZMK
+   * combo fires on `layers`, or on every layer without them.
+   */
+  | { type: 'comboAdd'; positions: number[]; output: string; layers?: number[] | null }
   /** Combos by name, so a change still finds its combo after the repository moved on. */
   | { type: 'comboSet'; name: string; positions: number[]; output: string }
+  /** The layers a ZMK combo fires on; null for every layer. */
+  | { type: 'comboLayers'; name: string; layers: number[] | null }
   | { type: 'comboRemove'; name: string }
   | { type: 'layerAdd' }
   | { type: 'layerRemove' }
@@ -89,8 +94,10 @@ export interface KeyChange {
 }
 
 export type ComboChange =
-  | { change: 'added' | 'removed'; keys: string[]; output: string }
-  | { change: 'changed'; keys: string[]; output: string; was: string };
+  | { change: 'added' | 'removed'; keys: string[]; output: string; layers?: number[] }
+  | { change: 'changed'; keys: string[]; output: string; was: string }
+  /** A ZMK combo now fires on these layers; null for every layer. */
+  | { change: 'layers'; keys: string[]; output: string; layers: number[] | null };
 
 export type LayerChange =
   | { change: 'added' | 'removed'; layer: number }
@@ -347,6 +354,9 @@ function applyKeymapEdit(base: SessionBase, files: Record<string, string>, e: Ed
       if (at >= 0) files[path] = removeCombo(files[path], at);
       return;
     }
+    case 'comboLayers':
+      // QMK's combos fire from the base layer's keys on every layer (COMBO_ONLY_FROM_LAYER 0).
+      return;
     case 'layerAdd':
       files[path] = addLayer(files[path]);
       return;
@@ -495,10 +505,13 @@ function draftMessage(c: Changes, base: SessionBase, names: (string | null)[]): 
     const layers = [...new Set(c.keys.map((k) => k.layer))].sort((a, b) => a - b);
     clauses.push(`change ${c.keys.length} keys on ${englishList(layers.map(layerName))}`);
   }
+  const onLayers = (layers: number[]) => `${englishList(layers.map(layerName))} only`;
   for (const combo of c.combos) {
     if (combo.change === 'changed' && combo.was === combo.output) clauses.push(`change the keys of the combo for ${said(combo.output)}`);
     else if (combo.change === 'changed') clauses.push(`make the combo for ${said(combo.was)} type ${said(combo.output)}`);
-    else if (combo.change === 'added') clauses.push(`add a combo for ${said(combo.output)}`);
+    else if (combo.change === 'layers') {
+      clauses.push(`make the combo for ${said(combo.output)} fire on ${combo.layers ? onLayers(combo.layers) : 'every layer'}`);
+    } else if (combo.change === 'added') clauses.push(`add a combo for ${said(combo.output)}${combo.layers ? ` on ${onLayers(combo.layers)}` : ''}`);
     else clauses.push(`remove the combo for ${said(combo.output)}`);
   }
   for (const l of c.layers) {
@@ -585,6 +598,12 @@ export function review(session: Session): Review {
   return { changes, keys, combos, layers, files, message };
 }
 
+/** A ZMK combo's keys, as the first layer it fires on has them. */
+function zmkComboKeys(model: ZmkModel, combo: ZmkCombo): string[] {
+  const layer = combo.layers?.find((l) => l < model.layers.length) ?? 0;
+  return combo.positions.map((p) => model.layers[layer]?.keys[p] ?? 'KC_NO');
+}
+
 /** What a ZMK session changes: the model before and after, and the .keymap file's diff. */
 function zmkReview(session: Session, zmk: ZmkBase): Review {
   const was = zmk.model;
@@ -596,16 +615,18 @@ function zmkReview(session: Session, zmk: ZmkBase): Review {
       if (from !== to) keys.push({ layer, index, from, to });
     });
   }
-  const keysAt = (model: ZmkModel, positions: number[]) => positions.map((p) => model.layers[0]?.keys[p] ?? 'KC_NO');
   const combos: ComboChange[] = [];
   for (const c of now.combos) {
     const old = was.combos.find((w) => w.name === c.name);
-    if (!old) combos.push({ change: 'added', keys: keysAt(now, c.positions), output: c.output });
-    else if (old.output !== c.output || old.positions.join() !== c.positions.join()) {
-      combos.push({ change: 'changed', keys: keysAt(now, c.positions), output: c.output, was: old.output });
+    if (!old) combos.push({ change: 'added', keys: zmkComboKeys(now, c), output: c.output, ...(c.layers ? { layers: c.layers } : {}) });
+    else {
+      if (old.output !== c.output || old.positions.join() !== c.positions.join()) {
+        combos.push({ change: 'changed', keys: zmkComboKeys(now, c), output: c.output, was: old.output });
+      }
+      if ((old.layers ?? []).join() !== (c.layers ?? []).join()) combos.push({ change: 'layers', keys: zmkComboKeys(now, c), output: c.output, layers: c.layers });
     }
   }
-  for (const w of was.combos) if (!now.combos.some((c) => c.name === w.name)) combos.push({ change: 'removed', keys: keysAt(was, w.positions), output: w.output });
+  for (const w of was.combos) if (!now.combos.some((c) => c.name === w.name)) combos.push({ change: 'removed', keys: zmkComboKeys(was, w), output: w.output });
   const layers: LayerChange[] = [];
   for (let n = was.layers.length; n < now.layers.length; n++) layers.push({ change: 'added', layer: n });
   for (let n = now.layers.length; n < was.layers.length; n++) layers.push({ change: 'removed', layer: n });
@@ -644,10 +665,11 @@ export function editedView(view: ViewFile, session: Session | null): ViewFile {
       layers: doc.model.layers.map((l) => ({ name: l.name, ball: null, keys: l.keys })),
       combos: doc.model.combos.map((c, i) => ({
         name: c.name,
-        keys: c.positions.map((p) => doc.model.layers[0]?.keys[p] ?? 'KC_NO'),
+        keys: zmkComboKeys(doc.model, c),
         positions: c.positions,
         output: c.output,
         line: view.combos.find((v) => v.name === c.name)?.line ?? view.combos.length + i + 1,
+        ...(c.layers ? { layers: c.layers } : {}),
       })),
     };
   }

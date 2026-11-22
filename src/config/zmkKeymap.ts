@@ -504,6 +504,30 @@ function nodeRemoval(src: string, n: Node): Splice {
   return { start, end: Math.min(src.length, end + 1), text: '' };
 }
 
+/** Removes a property: its whole line when it has the line to itself, else just the property. */
+function propRemoval(src: string, current: Prop): Splice {
+  const start = lineStart(src, current.start);
+  const end = lineEnd(src, current.end);
+  const alone = /^[ \t]*$/.test(src.slice(start, current.start)) && /^[ \t]*$/.test(src.slice(current.end, end));
+  if (alone) return { start, end: Math.min(src.length, end + 1), text: '' };
+  const after = /^[ \t]*/.exec(src.slice(current.end))![0].length;
+  return { start: current.start, end: current.end + after, text: '' };
+}
+
+/**
+ * Adds a property after a node's last one: on a line of its own when that property ends its line
+ * (comments aside), else on the same line.
+ */
+function propAddition(p: Parsed, n: Node, text: string): Splice {
+  const { src, m } = p;
+  const last = n.props.at(-1);
+  if (!last) throw new ZmkSourceError(`${n.name} has no properties`);
+  const end = lineEnd(src, last.end);
+  const ownLine = /^[ \t]*$/.test(src.slice(lineStart(src, last.start), last.start)) && /^[ \t]*$/.test(m.slice(last.end, end));
+  if (ownLine && end < n.close) return { start: end, end, text: `\n${indentAt(src, last.start)}${text}` };
+  return { start: last.end, end: last.end, text: ` ${text}` };
+}
+
 /** Removes a layer node, and the blank line before it. */
 export function removeZmkLayer(src: string, node: string): string {
   const p = parsed(src);
@@ -523,15 +547,7 @@ export function setZmkLayerName(src: string, node: string, name: string): string
   const p = parsed(src);
   const n = layerNode(p, node);
   const current = prop(n, 'display-name');
-  if (current && name === '') {
-    // Its whole line when it has the line to itself, else just the property.
-    const start = lineStart(src, current.start);
-    const end = lineEnd(src, current.end);
-    const alone = /^[ \t]*$/.test(src.slice(start, current.start)) && /^[ \t]*$/.test(src.slice(current.end, end));
-    if (alone) return apply(src, [{ start, end: Math.min(src.length, end + 1), text: '' }]);
-    const after = /^[ \t]*/.exec(src.slice(current.end))![0].length;
-    return apply(src, [{ start: current.start, end: current.end + after, text: '' }]);
-  }
+  if (current && name === '') return apply(src, [propRemoval(src, current)]);
   if (current) return apply(src, [{ start: current.valueStart, end: current.valueEnd, text: dtsString(name) }]);
   if (name === '') return src;
   // A new line goes inside the node, before its first property, which must start a line of its own.
@@ -558,17 +574,26 @@ function indentStep(src: string, p: Parsed): string {
   return inner.startsWith(outer) && inner.length > outer.length ? inner.slice(outer.length) : '    ';
 }
 
-const comboBody = (indent: string, step: string, binding: string, positions: number[]) =>
-  `${indent}${step}bindings = <${binding}>;\n${indent}${step}key-positions = <${positions.join(' ')}>;\n`;
+/** A combo's `layers` value, or null for every layer. ZMK keeps the layers as bits of 32. */
+function layerList(layers: number[] | null | undefined): string | null {
+  if (!layers?.length) return null;
+  if (!layers.every((l) => Number.isInteger(l) && l >= 0 && l < 32)) throw new ZmkSourceError('a layer number ZMK cannot have');
+  return `<${layers.join(' ')}>`;
+}
 
-/** Adds a combo; without a combos node, one goes before the keymap node. */
-export function addZmkCombo(src: string, node: string, positions: number[], binding: string): string {
+const comboBody = (indent: string, step: string, binding: string, positions: number[], layers: string | null) =>
+  `${indent}${step}bindings = <${binding}>;\n${indent}${step}key-positions = <${positions.join(' ')}>;\n` +
+  (layers ? `${indent}${step}layers = ${layers};\n` : '');
+
+/** Adds a combo, for these layers or every layer; without a combos node, one goes before the keymap node. */
+export function addZmkCombo(src: string, node: string, positions: number[], binding: string, layers: number[] | null = null): string {
   const p = parsed(src);
+  const list = layerList(layers);
   const step = indentStep(src, p);
   if (p.combos) {
     if (p.combos.children.some((c) => c.name === node)) throw new ZmkSourceError(`a combo named ${node} already`);
     const indent = p.combos.children[0] ? indentAt(src, p.combos.children[0].start) : indentAt(src, p.combos.start) + step;
-    const child = `${indent}${node} {\n${comboBody(indent, step, binding, positions)}${indent}};\n`;
+    const child = `${indent}${node} {\n${comboBody(indent, step, binding, positions, list)}${indent}};\n`;
     const at = lineStart(src, p.combos.close);
     if (!/^[ \t]*$/.test(src.slice(at, p.combos.close))) {
       // The node closes on a line with other text (`combos { … };`): the combo goes on lines of
@@ -582,7 +607,7 @@ export function addZmkCombo(src: string, node: string, positions: number[], bind
   const child = indent + step;
   const text =
     `${indent}combos {\n${child}compatible = "zmk,combos";\n\n` +
-    `${child}${node} {\n${comboBody(child, step, binding, positions)}${child}};\n${indent}};\n\n`;
+    `${child}${node} {\n${comboBody(child, step, binding, positions, list)}${child}};\n${indent}};\n\n`;
   const at = lineStart(src, p.keymap.start);
   return apply(src, [{ start: at, end: at, text }]);
 }
@@ -598,6 +623,17 @@ export function setZmkCombo(src: string, node: string, positions: number[], bind
   edits.push({ start: bindings.valueStart, end: bindings.valueEnd, text: `<${binding}>` });
   edits.push({ start: keys.valueStart, end: keys.valueEnd, text: `<${positions.join(' ')}>` });
   return apply(src, edits);
+}
+
+/** Limits a combo to these layers, or lets it fire on every layer (null or none): its `layers`. */
+export function setZmkComboLayers(src: string, node: string, layers: number[] | null): string {
+  const p = parsed(src);
+  const n = comboNode(p, node);
+  const current = prop(n, 'layers');
+  const list = layerList(layers);
+  if (!list) return current ? apply(src, [propRemoval(src, current)]) : src;
+  if (current) return apply(src, [{ start: current.valueStart, end: current.valueEnd, text: list }]);
+  return apply(src, [propAddition(p, n, `layers = ${list};`)]);
 }
 
 /**

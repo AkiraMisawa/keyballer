@@ -48,6 +48,8 @@ export interface ViewCombo {
   positions: (number | null)[];
   output: string;
   line: number;
+  /** A ZMK combo's `layers`: it fires only when the highest active layer is one of them. Without, on every layer. */
+  layers?: number[];
 }
 
 export interface ViewFile {
@@ -136,6 +138,20 @@ export interface DrawnLayer {
   combos: DrawnCombo[];
 }
 
+/**
+ * Whether a combo fires on this layer. QMK's combos fire from the base layer's keys
+ * (COMBO_ONLY_FROM_LAYER 0), so they are drawn there. A ZMK combo is a set of positions that fires
+ * on its `layers`, or on every layer without them (app/src/combo.c, combo_active_on_layer).
+ */
+export function comboFiresOn(view: ViewFile, combo: ViewCombo, layer: number): boolean {
+  if (!view.zmk) return layer === 0;
+  return !combo.layers?.length || combo.layers.includes(layer);
+}
+
+/** ZMK keeps a combo's layers as bits of 32. */
+const isLayerList = (value: unknown): value is number[] =>
+  Array.isArray(value) && value.every((l) => Number.isInteger(l) && l >= 0 && l < 32);
+
 /** Checks the shape of a fetched view file; throws a readable error when it is not one. */
 export function parseView(value: unknown): ViewFile {
   const v = value as Partial<ViewFile> | null;
@@ -147,7 +163,9 @@ export function parseView(value: unknown): ViewFile {
     balls: v.balls ?? [],
     labels: v.labels ?? {},
     defines: v.defines ?? {},
-    combos: v.combos ?? [],
+    combos: (Array.isArray(v.combos) ? v.combos : [])
+      .filter((c): c is ViewCombo => !!c && typeof c === 'object')
+      .map(({ layers, ...c }) => (isLayerList(layers) ? { ...c, layers } : c)),
     code: v.code ?? {},
   } as ViewFile;
 }
@@ -383,17 +401,14 @@ export function drawLayer(view: ViewFile, layer: number, display: Display): Draw
   const mode = view.layers[layer]?.ball;
   const balls = view.balls.map((b) => (mode ? { ...b, mode: ballModeWord(mode, display.lang) } : { ...b }));
 
-  // Combos fire from the base layer's keys (COMBO_ONLY_FROM_LAYER 0), so they are drawn there.
   const combos: DrawnCombo[] = [];
-  if (layer === 0) {
-    for (const c of view.combos) {
-      if (c.positions.some((p) => p === null)) continue;
-      combos.push({
-        positions: c.positions as number[],
-        output: describe(parseKeycode(c.output), ctx).legend,
-        line: c.line,
-      });
-    }
+  for (const c of view.combos) {
+    if (!comboFiresOn(view, c, layer) || c.positions.some((p) => p === null)) continue;
+    combos.push({
+      positions: c.positions as number[],
+      output: describe(parseKeycode(c.output), ctx).legend,
+      line: c.line,
+    });
   }
   return { keys, balls, combos };
 }

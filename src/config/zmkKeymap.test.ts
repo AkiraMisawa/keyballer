@@ -16,6 +16,7 @@ import {
   removeZmkLayer,
   setZmkBinding,
   setZmkCombo,
+  setZmkComboLayers,
   setZmkLayerName,
   ZmkSourceError,
 } from './zmkKeymap';
@@ -164,6 +165,32 @@ describe('combos', () => {
     );
   });
 
+  it('limits a combo to layers, changes them, and lets it fire on every layer again', () => {
+    // A combo without layers gets them on a line after its last property.
+    onlyChanged(
+      roba,
+      setZmkComboLayers(roba, 'tab', [0, 3]),
+      '            key-positions = <11 12>;\n',
+      '            key-positions = <11 12>;\n            layers = <0 3>;\n',
+    );
+    onlyChanged(
+      m40,
+      setZmkComboLayers(m40, 'home', [0, 2]),
+      'key-positions = <16 17>; /* J + K (on layer 2) */\n            layers = <2>;',
+      'key-positions = <16 17>; /* J + K (on layer 2) */\n            layers = <0 2>;',
+    );
+    // Every layer: the property goes, with its line.
+    onlyChanged(m40, setZmkComboLayers(m40, 'lang1', null), '/* D + F */\n            layers = <0>;\n', '/* D + F */\n');
+    expect(readZmkKeymap(setZmkComboLayers(m40, 'lang1', [])).combos[0].layers).toBeNull();
+    expect(setZmkComboLayers(roba, 'tab', null)).toBe(roba);
+  });
+
+  it('adds a combo for some layers only', () => {
+    const after = addZmkCombo(m40, 'combo_pg_up', [16, 19], '&kp PG_UP', [2]);
+    expect(readZmkKeymap(after).combos.at(-1)).toMatchObject({ node: 'combo_pg_up', positions: [16, 19], layers: [2] });
+    expect(after).toContain('        combo_pg_up {\n            bindings = <&kp PG_UP>;\n            key-positions = <16 19>;\n            layers = <2>;\n        };\n');
+  });
+
   it('removes a combo with the blank line before it', () => {
     onlyChanged(
       roba,
@@ -242,6 +269,14 @@ describe('changes stay in their node', () => {
     const src = small({ combos: '    combos { compatible = "zmk,combos"; };\n\n' });
     const after = addZmkCombo(src, 'combo_tab', [0, 1], '&kp TAB');
     expect(readZmkKeymap(after).combos.map((c) => c.node)).toEqual(['combo_tab']);
+  });
+
+  it('adds layers inside a combo written on one line', () => {
+    const src = '/ {\n    combos {\n        compatible = "zmk,combos";\n        tab { bindings = <&kp TAB>; key-positions = <0 1>; };\n    };\n' +
+      '    keymap {\n        compatible = "zmk,keymap";\n        base {\n            bindings = <&kp A &kp B>;\n        };\n    };\n};\n';
+    const after = setZmkComboLayers(src, 'tab', [1]);
+    expect(after).toContain('tab { bindings = <&kp TAB>; key-positions = <0 1>; layers = <1>; };');
+    expect(setZmkComboLayers(after, 'tab', null)).toBe(src);
   });
 
   it('removes only the combo when combos share a line', () => {
