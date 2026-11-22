@@ -141,7 +141,7 @@ npm run build   # 型チェックとビルド。dist/ にサインインの設�
 
 Keyballer を手元で動かしているとき（`npm run dev`、または `npm run build` のあと `npm run preview` で http://127.0.0.1:4173）は、トークンを貼り付ける代わりに GitHub でサインインできます。公開サイトでは、これまでどおりトークンを貼り付けます。
 
-サインインは、タブを閉じるか 8 時間たつと終わります。アクセスできるのは、アプリをインストールしたリポジトリだけです。サインアウトすると、そのサインインは GitHub 上でも取り消されます。計画と脅威モデル：[docs/plans/github-login.md](docs/plans/github-login.md)（英語）
+サインインは、タブを閉じるか 8 時間たつと終わります。アクセスできるのは、アプリをインストールしたリポジトリだけです。サインアウトするかタブを閉じると、そのサインインは GitHub 上でも取り消されます。計画と脅威モデル：[docs/plans/github-login.md](docs/plans/github-login.md)（英語）
 
 自分用の GitHub App が必要です。<https://github.com/settings/apps/new> で登録します。
 

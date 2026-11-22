@@ -141,7 +141,7 @@ npm run build   # type check, build, and check that dist/ holds no sign-in setti
 
 When Keyballer runs on your computer (`npm run dev`, or `npm run build` then `npm run preview` at http://127.0.0.1:4173), it can sign in with GitHub instead of a pasted token. The hosted site keeps the pasted token.
 
-The sign-in lasts until the tab closes, or 8 hours. It reaches only the repositories you install the app on. Signing out revokes it. Plan and threat model: [docs/plans/github-login.md](docs/plans/github-login.md).
+The sign-in lasts until the tab closes, or 8 hours. It reaches only the repositories you install the app on. Signing out, or closing the tab, revokes it. Plan and threat model: [docs/plans/github-login.md](docs/plans/github-login.md).
 
 It needs a GitHub App of your own. Register one at <https://github.com/settings/apps/new>:
 

@@ -16,7 +16,6 @@ import { useCommand, useCommandLine } from './commands/react';
 import { LocalizedError, msg, type Lang, type Localized } from './i18n/core';
 import { useI18n } from './i18n/react';
 import {
-  appReaches,
   checkRepo,
   getBuildRuns,
   getFirmwareHead,
@@ -121,17 +120,25 @@ export function App({ forgottenToken = null }: { forgottenToken?: ForgottenToken
   };
   const [repoInput, setRepoInput] = useState(() => load('keyballer.repo'));
   // The token lives in this tab's memory only (src/lib/token.ts).
-  const signIn = useSignIn();
-  const tokenField = useTokenField(signIn);
+  const tokenField = useTokenField();
   const [repo, setRepo] = useState<RepoState | null>(null);
+  const signIn = useSignIn(repo?.ref ?? null);
+  // A valid pasted token wins (the review asks for one when a save fails), else the sign-in's.
+  const token = tokenField.value || signIn?.token || '';
+  // Signing in replaces whatever was pasted before.
+  const signedIn = !!signIn?.login;
+  const clearPasted = tokenField.set;
+  useEffect(() => {
+    if (signedIn) clearPasted('');
+  }, [signedIn, clearPasted]);
   const [connecting, setConnecting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [loadingBuild, setLoadingBuild] = useState('');
   const [target, setTarget] = useState<FlashTarget | null>(null);
   const [keymapId, setKeymapId] = useState<string | null>(keymapInHash);
-  const tokenRef = useRef(tokenField.value);
-  tokenRef.current = tokenField.value;
+  const tokenRef = useRef(token);
+  tokenRef.current = token;
   const repoField = useRef<HTMLInputElement>(null);
   // Where focus goes back to when the flash panel closes.
   const returnFocus = useRef<HTMLElement | null>(null);
@@ -178,26 +185,6 @@ export function App({ forgottenToken = null }: { forgottenToken?: ForgottenToken
       setRefreshing(false);
     }
   }, [repo, fetchState]);
-
-  // Signed in: does the app's installation reach the connected repository? Without it, the token
-  // can read a public repository but not save to it.
-  const signedInToken = signIn?.token ?? '';
-  const connectedRepo = repo?.ref ?? null;
-  const connectedName = connectedRepo ? repoName(connectedRepo) : '';
-  const [reaches, setReaches] = useState<boolean | null>(null);
-  useEffect(() => {
-    setReaches(null);
-    if (!signedInToken || !connectedRepo) return;
-    let live = true;
-    appReaches(connectedRepo, signedInToken).then(
-      (r) => live && setReaches(r),
-      () => live && setReaches(null),
-    );
-    return () => {
-      live = false;
-    };
-    // Keyed on the repository's name: a refresh gives a new object for the same one.
-  }, [signedInToken, connectedName]);
 
   // Connect on load when a repository is remembered. A ?repo= link waits for an answer instead.
   const autoConnected = useRef(false);
@@ -503,7 +490,7 @@ export function App({ forgottenToken = null }: { forgottenToken?: ForgottenToken
               {connecting ? t('repo.connecting') : t('repo.connect')}
             </button>
           </form>
-          {signIn && <SignInPanel signIn={signIn} repo={repo ? repoName(repo.ref) : null} reaches={reaches} />}
+          {signIn && <SignInPanel signIn={signIn} repo={repo ? repoName(repo.ref) : null} />}
           {!signIn?.login && (
           <details className="token">
             <summary>{t('token.summary')}</summary>
@@ -541,7 +528,9 @@ export function App({ forgottenToken = null }: { forgottenToken?: ForgottenToken
           repo={repo.ref}
           firmwareSha={repo.firmwareSha}
           manifest={repo.manifest}
+          token={token}
           tokenField={tokenField}
+          signIn={signIn}
           buildsUrl={`${repoUrl}/actions/workflows/build.yml`}
           onClose={closeKeymap}
           onSaved={(sha) => setAwaitingRun(sha)}

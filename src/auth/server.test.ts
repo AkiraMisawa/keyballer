@@ -3,7 +3,7 @@
 // GitHub, whose URLs and fields come from GitHub's documentation for GitHub App user tokens.
 
 import { describe, expect, it, vi } from 'vitest';
-import { handleAuth, parseAuthConfig, type AuthConfig } from './server';
+import { handleAuth as handle, parseAuthConfig, type AuthConfig } from './server';
 
 const CONFIG: AuthConfig = { clientId: 'Iv23liTestClient01', clientSecret: 'f'.repeat(40), appSlug: 'keyballer-test' };
 const ORIGIN = 'http://127.0.0.1:5173';
@@ -23,6 +23,9 @@ function request(path: string, init: { method?: string; host?: string; origin?: 
   } as RequestInit);
 }
 
+/** The handler as the dev server on port 5173 mounts it. */
+const handleAuth = (request: Request, config: AuthConfig | null, fetch: Parameters<typeof handle>[2]) => handle(request, config, fetch, '127.0.0.1:5173');
+
 const tokenBody = (fields: Record<string, unknown> = { code: CODE, code_verifier: VERIFIER }) => JSON.stringify(fields);
 
 /** A fetch that must not be called. */
@@ -35,7 +38,7 @@ describe('handleAuth: what it refuses', () => {
   });
 
   it('refuses any host but the loopback address, which stops DNS rebinding', async () => {
-    for (const host of ['evil.example:5173', '127.0.0.1.evil.example:5173', 'localhost:5173', '[::1]:5173', '127.0.0.2:5173', '0.0.0.0:5173', '127.0.0.1']) {
+    for (const host of ['evil.example:5173', '127.0.0.1.evil.example:5173', 'localhost:5173', '[::1]:5173', '127.0.0.2:5173', '0.0.0.0:5173', '127.0.0.1', '127.0.0.1:4173']) {
       const fetch = noFetch();
       const res = await handleAuth(request('/auth/token', { host, origin: `http://${host}`, body: tokenBody() }), CONFIG, fetch);
       expect(res?.status, host).toBe(403);
@@ -144,7 +147,7 @@ describe('handleAuth: exchanging the code', () => {
     const headers = new Headers(init?.headers);
     expect(headers.get('accept')).toBe('application/json');
     expect(headers.get('content-type')).toBe('application/json');
-    expect(headers.get('user-agent')).toBeTruthy();
+    expect(headers.get('user-agent')).toBe('Keyballer-local-sign-in');
     expect(JSON.parse(String(init?.body))).toEqual({
       client_id: CONFIG.clientId,
       client_secret: CONFIG.clientSecret,
@@ -187,6 +190,7 @@ describe('handleAuth: exchanging the code', () => {
       const headers = new Headers(init?.headers);
       expect(headers.get('authorization')).toBe(`Basic ${btoa(`${CONFIG.clientId}:${CONFIG.clientSecret}`)}`);
       expect(headers.get('accept')).toBe('application/vnd.github+json');
+      expect(headers.get('user-agent')).toBe('Keyballer-local-sign-in');
       expect(JSON.parse(String(init?.body))).toEqual({ access_token: USER_TOKEN });
     }
   });

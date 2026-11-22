@@ -15,6 +15,7 @@ import { getFirmwareText, repoName, type RepoRef, type WorkflowRun } from '../li
 import type { FirmwareBuild, FirmwareManifest } from '../lib/manifest';
 import { load, save } from '../lib/storage';
 import type { TokenField } from '../components/TokenInput';
+import type { SignIn } from '../auth/useSignIn';
 import { pointerLockBusy, TrackballPanel, type PadMode, type PadRequest } from '../trackball/TrackballPanel';
 import { BALL_MM_MAX, BALL_MM_MIN, CPI_MAX, CPI_MIN, CPI_STEP, DIVIDER_MAX, DIVIDER_MIN } from '../trackball/speed';
 import { Board, type Selection } from './Board';
@@ -41,7 +42,10 @@ interface Props {
   repo: RepoRef;
   firmwareSha: string;
   manifest: FirmwareManifest;
+  /** The token to send: pasted, or from the local sign-in. */
+  token: string;
   tokenField: TokenField;
+  signIn: SignIn | null;
   /** The config repository's build runs on GitHub, for "build again". */
   buildsUrl: string;
   onClose: () => void;
@@ -77,8 +81,7 @@ function toDisplay(value: string): { os: Os } | { layout: Layout } | undefined {
 }
 
 export function KeymapScreen(props: Props) {
-  const { build, repo, firmwareSha, manifest, tokenField, buildsUrl, onClose, onSaved, runFor, setLeaveGuard } = props;
-  const token = tokenField.value;
+  const { build, repo, firmwareSha, manifest, token, tokenField, signIn, buildsUrl, onClose, onSaved, runFor, setLeaveGuard } = props;
   const { t, err, lang } = useI18n();
   const [builtView, setView] = useState<ViewFile | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
@@ -661,7 +664,9 @@ export function KeymapScreen(props: Props) {
           <EditBar
             edit={edit}
             repoName={repoName(repo)}
+            token={token}
             tokenField={tokenField}
+            signIn={signIn}
             runFor={runFor}
             onSaved={onSaved}
             describe={{
