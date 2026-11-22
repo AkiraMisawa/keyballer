@@ -46,6 +46,7 @@ from config_checks import (
     run,
 )
 from uf2check import UF2Error, check_uf2
+from zmk_view import ViewError, make_view
 
 CONFIG_FILE = "keyballer.json"
 # Zephyr board names, with an optional revision and qualifiers: nice_nano@2.0.0, xiao_ble//zmk.
@@ -254,6 +255,23 @@ def prepare_workspace(config_dir, work_dir):
     return Workspace(ws, projects, resolved)
 
 
+def write_view(build, build_dir, out_dir):
+    """Writes <id>.view.json from the final devicetree; returns view, or view_error. A view that
+    cannot be made never fails the build."""
+    try:
+        view = make_view((build_dir / "zephyr" / "zephyr.dts").read_text(encoding="utf-8"))
+    except ViewError as e:
+        print("No keymap view for {}: {}".format(build["id"], e), flush=True)
+        return {"view_error": str(e)}
+    except Exception as e:  # the view must never fail the build
+        print("No keymap view for {}: {!r}".format(build["id"], e), flush=True)
+        return {"view_error": "Keyballer could not read the build's devicetree ({}: {})".format(type(e).__name__, e)}
+    view["keyboard"] = "{} {}".format(build["board"], build["shield"])
+    name = "{}.view.json".format(build["id"])
+    (out_dir / name).write_text(json.dumps(view, ensure_ascii=False) + "\n", encoding="utf-8")
+    return {"view": name}
+
+
 def build_one(build, cfg, config_dir, workspace, out_dir):
     ws = workspace.path
     build_dir = ws / "build" / build["id"]
@@ -306,6 +324,8 @@ def build_one(build, cfg, config_dir, workspace, out_dir):
     }
     if build.get("snippet"):
         meta["snippet"] = build["snippet"]
+    if role != "settings_reset":
+        meta.update(write_view(build, build_dir, out_dir))
     (out_dir / "{}.json".format(build["id"])).write_text(
         json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
