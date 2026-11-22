@@ -1,5 +1,8 @@
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import { Readable } from 'node:stream';
 import react from '@vitejs/plugin-react';
-import { defineConfig, type Plugin } from 'vite';
+import { defineConfig, loadEnv, type Plugin } from 'vite';
+import { handleAuth, parseAuthConfig, type AuthConfig } from './src/auth/server';
 
 /**
  * The production page's security policy. GitHub Pages cannot send headers, so it goes in <meta>
@@ -41,9 +44,52 @@ function securityMeta(): Plugin {
   };
 }
 
+/**
+ * Local sign-in (docs/plans/github-login.md, phase 3): mounts src/auth/server.ts on the dev and
+ * preview servers. The GitHub App's settings come from .env.local, read here on the server only;
+ * Vite exposes only VITE_ variables to the page, and `npm run build` checks dist/ for them.
+ */
+function localSignIn(config: AuthConfig | null): Plugin {
+  const mount = (server: { middlewares: { use: (fn: (req: IncomingMessage, res: ServerResponse, next: () => void) => void) => void } }) => {
+    server.middlewares.use((req, res, next) => {
+      if (!req.url?.startsWith('/auth/')) return next();
+      void serveAuth(req, res, config);
+    });
+  };
+  return { name: 'keyballer-local-sign-in', configureServer: mount, configurePreviewServer: mount };
+}
+
+async function serveAuth(req: IncomingMessage, res: ServerResponse, config: AuthConfig | null) {
+  try {
+    // The URL is built from the Host header, which the handler checks against the loopback address.
+    const url = new URL(req.url ?? '/', `http://${req.headers.host ?? ''}`);
+    const headers = new Headers();
+    for (const [name, value] of Object.entries(req.headers)) {
+      if (value !== undefined) headers.set(name, Array.isArray(value) ? value.join(', ') : value);
+    }
+    const hasBody = req.method !== 'GET' && req.method !== 'HEAD';
+    const request = new Request(url, {
+      method: req.method,
+      headers,
+      body: hasBody ? (Readable.toWeb(req) as ReadableStream<Uint8Array>) : undefined,
+      duplex: 'half',
+    } as RequestInit);
+    const response = (await handleAuth(request, config, fetch)) ?? new Response(null, { status: 404 });
+    res.statusCode = response.status;
+    response.headers.forEach((value, name) => res.setHeader(name, value));
+    res.end(Buffer.from(await response.arrayBuffer()));
+  } catch {
+    res.statusCode = 400;
+    res.end();
+  }
+}
+
 // Relative asset paths so the same build works at any URL path,
 // such as https://<user>.github.io/keyballer/.
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   base: './',
-  plugins: [react(), securityMeta()],
-});
+  plugins: [react(), securityMeta(), localSignIn(parseAuthConfig(loadEnv(mode, process.cwd(), 'KEYBALLER_GITHUB_')))],
+  // Loopback only, on fixed ports: the GitHub App's callback URLs name exactly these.
+  server: { host: '127.0.0.1', port: 5173, strictPort: true },
+  preview: { host: '127.0.0.1', port: 4173, strictPort: true },
+}));

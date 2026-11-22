@@ -96,6 +96,36 @@ export async function checkRepo(r: RepoRef, token: string): Promise<void> {
   }
 }
 
+/** The login of the account a token belongs to. */
+export async function getLogin(token: string): Promise<string> {
+  const res = await request('/user', token, 'application/vnd.github+json');
+  const { login } = (await res.json()) as { login?: unknown };
+  if (typeof login !== 'string' || !NAME.test(login)) throw new GitHubError('gh.err.status', res.status, { status: String(res.status) });
+  return login;
+}
+
+/**
+ * Whether a GitHub App user token reaches a repository: the app must be installed on it, for all of
+ * the owner's repositories or for that one. (The first 100 installations and repositories.)
+ */
+export async function appReaches(r: RepoRef, token: string): Promise<boolean> {
+  const accept = 'application/vnd.github+json';
+  const res = await request('/user/installations?per_page=100', token, accept);
+  const { installations = [] } = (await res.json()) as {
+    installations?: { id?: unknown; account?: { login?: unknown } | null; repository_selection?: unknown }[];
+  };
+  for (const installation of installations) {
+    const login = installation.account?.login;
+    if (typeof login !== 'string' || login.toLowerCase() !== r.owner.toLowerCase()) continue;
+    if (installation.repository_selection === 'all') return true;
+    if (typeof installation.id !== 'number' || !Number.isSafeInteger(installation.id)) continue;
+    const list = await request(`/user/installations/${installation.id}/repositories?per_page=100`, token, accept);
+    const { repositories = [] } = (await list.json()) as { repositories?: { full_name?: unknown }[] };
+    if (repositories.some((x) => typeof x.full_name === 'string' && x.full_name.toLowerCase() === repoName(r).toLowerCase())) return true;
+  }
+  return false;
+}
+
 /** Commit SHA at the head of the `firmware` branch, or null before the first build. */
 export async function getFirmwareHead(r: RepoRef, token: string): Promise<string | null> {
   try {

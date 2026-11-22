@@ -12,6 +12,7 @@ import { useI18n } from '../i18n/react';
 import type { WorkflowRun } from '../lib/github';
 import type { Change, Setting } from './session';
 import { BRANCH, type EditSession } from './useEditSession';
+import { SignInButton } from '../components/SignInPanel';
 import { TokenInput, type TokenField } from '../components/TokenInput';
 
 const TOKEN_PAGE = 'https://github.com/settings/personal-access-tokens/new';
@@ -368,6 +369,7 @@ function ReviewDialog({ edit, repoName, describe, tokenField, draft, onClose, on
         )}
         {needsToken && (
           <div className="stack">
+            {tokenField.signIn && !tokenField.signIn.login && <SignInButton signIn={tokenField.signIn} />}
             <label htmlFor="review-token">{t('edit.tokenLabel')}</label>
             <TokenInput id="review-token" tokenField={tokenField} />
             <a href={TOKEN_PAGE} target="_blank" rel="noreferrer">

@@ -3,7 +3,9 @@ import { BuildStatus } from './components/BuildStatus';
 import { FirmwareCard } from './components/FirmwareCard';
 import { FlashPanel } from './components/FlashPanel';
 import { ForgottenToken } from './components/ForgottenToken';
+import { SignInCommands, SignInPanel } from './components/SignInPanel';
 import { TokenInput, useTokenField } from './components/TokenInput';
+import { useSignIn } from './auth/useSignIn';
 import { LanguageSwitch } from './components/LanguageSwitch';
 import { LinkPrompt } from './components/LinkPrompt';
 import { LocalFirmware } from './components/LocalFirmware';
@@ -14,6 +16,7 @@ import { useCommand, useCommandLine } from './commands/react';
 import { LocalizedError, msg, type Lang, type Localized } from './i18n/core';
 import { useI18n } from './i18n/react';
 import {
+  appReaches,
   checkRepo,
   getBuildRuns,
   getFirmwareHead,
@@ -118,7 +121,8 @@ export function App({ forgottenToken = null }: { forgottenToken?: ForgottenToken
   };
   const [repoInput, setRepoInput] = useState(() => load('keyballer.repo'));
   // The token lives in this tab's memory only (src/lib/token.ts).
-  const tokenField = useTokenField();
+  const signIn = useSignIn();
+  const tokenField = useTokenField(signIn);
   const [repo, setRepo] = useState<RepoState | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -174,6 +178,26 @@ export function App({ forgottenToken = null }: { forgottenToken?: ForgottenToken
       setRefreshing(false);
     }
   }, [repo, fetchState]);
+
+  // Signed in: does the app's installation reach the connected repository? Without it, the token
+  // can read a public repository but not save to it.
+  const signedInToken = signIn?.token ?? '';
+  const connectedRepo = repo?.ref ?? null;
+  const connectedName = connectedRepo ? repoName(connectedRepo) : '';
+  const [reaches, setReaches] = useState<boolean | null>(null);
+  useEffect(() => {
+    setReaches(null);
+    if (!signedInToken || !connectedRepo) return;
+    let live = true;
+    appReaches(connectedRepo, signedInToken).then(
+      (r) => live && setReaches(r),
+      () => live && setReaches(null),
+    );
+    return () => {
+      live = false;
+    };
+    // Keyed on the repository's name: a refresh gives a new object for the same one.
+  }, [signedInToken, connectedName]);
 
   // Connect on load when a repository is remembered. A ?repo= link waits for an answer instead.
   const autoConnected = useRef(false);
@@ -434,6 +458,8 @@ export function App({ forgottenToken = null }: { forgottenToken?: ForgottenToken
         </p>
       )}
 
+      {signIn && <SignInCommands signIn={signIn} />}
+
       {!keymapBuild && (
         <section className="panel" aria-labelledby="repo-title">
           <h2 id="repo-title">{t('repo.title')}</h2>
@@ -477,6 +503,8 @@ export function App({ forgottenToken = null }: { forgottenToken?: ForgottenToken
               {connecting ? t('repo.connecting') : t('repo.connect')}
             </button>
           </form>
+          {signIn && <SignInPanel signIn={signIn} repo={repo ? repoName(repo.ref) : null} reaches={reaches} />}
+          {!signIn?.login && (
           <details className="token">
             <summary>{t('token.summary')}</summary>
             <div className="stack">
@@ -487,6 +515,7 @@ export function App({ forgottenToken = null }: { forgottenToken?: ForgottenToken
               <TokenInput id="token" tokenField={tokenField} />
             </div>
           </details>
+          )}
           {error !== null && (
             <p className="err" role="alert">
               {err(error)}
