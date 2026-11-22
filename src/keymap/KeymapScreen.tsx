@@ -17,6 +17,7 @@ import { load, save } from '../lib/storage';
 import type { TokenField } from '../components/TokenInput';
 import type { SignIn } from '../auth/useSignIn';
 import { pointerLockBusy, TrackballPanel, type PadMode, type PadRequest } from '../trackball/TrackballPanel';
+import { LedPanel } from '../leds/LedPanel';
 import { BALL_MM_MAX, BALL_MM_MIN, CPI_MAX, CPI_MIN, CPI_STEP, DIVIDER_MAX, DIVIDER_MIN } from '../trackball/speed';
 import { Board, type Selection } from './Board';
 import { checkKeycode, compose, decompose, makeCatalogue, type Hold } from './catalogue';
@@ -108,6 +109,12 @@ export function KeymapScreen(props: Props) {
   /** The combo whose output is being changed, by name; null when not changing one. */
   const [comboChange, setComboChange] = useState<string | null>(null);
   const [removingLayer, setRemovingLayer] = useState(false);
+  /** The LED panel is open in the side panel (docs/plans/led-settings.md). */
+  const [ledsOpen, setLedsOpen] = useState(false);
+  // Selecting a key or the ball shows that instead.
+  useEffect(() => {
+    if (selected !== null) setLedsOpen(false);
+  }, [selected]);
   /** Requests to the key picker: wait for a key press, or take focus. */
   const [listen, setListen] = useState(0);
   const [pickerFocus, setPickerFocus] = useState(0);
@@ -245,6 +252,8 @@ export function KeymapScreen(props: Props) {
       if (comboPick !== null || comboChange !== null) {
         setComboPick(null);
         setComboChange(null);
+      } else if (ledsOpen) {
+        setLedsOpen(false);
       } else if (inPanel && typeof selected === 'number') {
         // From the key picker, Esc goes back to the key on the board.
         root.current?.querySelector<HTMLElement>(`.cap[data-index="${selected}"]`)?.focus();
@@ -282,6 +291,21 @@ export function KeymapScreen(props: Props) {
     shortcut: 'a',
     unavailable: noLayerSwitch,
     run: () => setTab('all'),
+  });
+  useCommand({
+    id: 'keymap.leds',
+    words: 'leds',
+    title: msg('cmd.leds'),
+    group: 'group.keymap',
+    page: true,
+    shortcut: 'l',
+    unavailable: noView ?? (isZmk(build) ? msg('why.zmkLeds') : undefined),
+    run: () => {
+      setSelected(null);
+      setComboPick(null);
+      setComboChange(null);
+      setLedsOpen(true);
+    },
   });
   useCommand({
     id: 'keymap.ball',
@@ -426,6 +450,14 @@ export function KeymapScreen(props: Props) {
     setComboPick([]);
   };
   const leading = pickerContext && view ? leadingTo(pickerContext, view.layers.length - 1) : [];
+  const ledsLink = isZmk(build) ? undefined : (
+    <p>
+      <button type="button" className="link" onClick={() => setLedsOpen(true)}>
+        {t('cmd.leds')}
+      </button>{' '}
+      <Kbd>L</Kbd>
+    </p>
+  );
   /** ZMK combos that fire only on the last layer, which go with it. */
   const onlyOnLast =
     view?.zmk && pickerContext
@@ -768,7 +800,12 @@ export function KeymapScreen(props: Props) {
               )}
             </div>
             <aside className="panel side" aria-live="polite">
-              {editing && editProblem ? (
+              {ledsOpen && !isZmk(build) ? (
+                <div className="stack">
+                  <h3>{t('led.title')}</h3>
+                  <LedPanel edit={edit} build={build} />
+                </div>
+              ) : editing && editProblem ? (
                 <div className="stack">
                   <p className="note">
                     {t('edit.cannotEdit')} {t(editProblem)}
@@ -782,6 +819,7 @@ export function KeymapScreen(props: Props) {
                     display={display}
                     sourceLink={sourceLink}
                     trackball={<TrackballPanel edit={edit} request={padRequest} />}
+                    leds={ledsLink}
                   />
                 </div>
               ) : editing && !edit.session ? (
@@ -835,6 +873,7 @@ export function KeymapScreen(props: Props) {
                   display={display}
                   sourceLink={sourceLink}
                   trackball={<TrackballPanel edit={edit} request={padRequest} />}
+                    leds={ledsLink}
                 />
               )}
             </aside>
@@ -1015,9 +1054,11 @@ interface DetailsProps {
   sourceLink: (line: number) => string | undefined;
   /** The trackball's settings, shown with its layer modes when the ball is selected. */
   trackball: ReactNode;
+  /** A way to the LED panel, when the board can have LEDs. */
+  leds?: ReactNode;
 }
 
-function Details({ view, drawn, all, layer, selected, display, sourceLink, trackball }: DetailsProps) {
+function Details({ view, drawn, all, layer, selected, display, sourceLink, trackball, leds }: DetailsProps) {
   const { t } = useI18n();
   // QMK's combos use the base layer's keys; a ZMK combo, the keys of a layer it fires on.
   const comboLayer = view.zmk ? layer : 0;
@@ -1066,6 +1107,7 @@ function Details({ view, drawn, all, layer, selected, display, sourceLink, track
       <>
         <p className="note">{t('keymap.choose')}</p>
         {combos()}
+        {leds}
       </>
     );
   }

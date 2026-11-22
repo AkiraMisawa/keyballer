@@ -30,6 +30,7 @@ Keyballer（このアプリ） ◀──GitHub API で取得───┘
 | Pro Micro（ATmega32U4 / Caterina）への書き込み | 対応 |
 | nRF52840（UF2、ZMK）への書き込み | 対応：確認済みのファイルをキーボードのドライブにコピーします。ページからの直接書き込みと RP2040 は予定 |
 | キーマップの編集画面 | 対応（キー、コンボ、レイヤー） |
+| LED の設定 | QMK（RGB Lighting）で対応：ビルドごとの LED の有無、エフェクト、色、明るさ、LED キーで切り替えるエフェクト、ファームウェア容量の見積もり |
 
 ## 設定リポジトリ
 
@@ -85,6 +86,7 @@ keymaps/<keymap>/           QMK のキーマップ（keymap.c、config.h、rules
 | `builds[].keyboard` / `keymap` | `qmk compile -kb <keyboard> -km <keymap>` に渡す値 |
 | `builds[].keymap_dir` | 設定リポジトリ内のキーマップのフォルダ。複数のビルドで共有できます |
 | `builds[].ball` | （省略可）キーマップ表示でのトラックボールの位置：`none`、`right`（既定）、`left`、`dual` |
+| `builds[].leds` | （省略可）キーボードに LED が付いているか。`true` なら RGB Lighting 入り、`false` なしでビルドします。省略するとキーマップの `rules.mk` に従います |
 | `views` | （省略可）キーマップ表示での呼び名を、キーマップのフォルダごとに：`layers`（レイヤー名）、`ball`（レイヤーごとのボールの動作。`default` で既定）、`labels`（独自キーコードの名前。`en` と `ja`） |
 
 ### .github/workflows/build.yml
@@ -210,6 +212,16 @@ KEYBALLER_GITHUB_APP_SLUG=<アプリの URL 上の名前。インストールへ
 ### キーマップの編集
 
 キーマップで `E` を押すと編集を始めます。キーを選び、キー選択から新しい動作を割り当てます。QMK の名前、印字される文字、英語や日本語の言葉で探せるほか、パソコンのキーを押して割り当てることもできます（`K`）。長押しの動作も付けられます。コンボはボード上で追加・削除でき、レイヤーの追加・削除・名前の変更もできます。変わるのは `keymap.c` のデータ部分（レイヤーの配列、コンボ、`KEYBALLER_SCROLL_LAYERS`）だけで、自分で書いたコードはそのまま残ります。レイヤーの名前とスクロールするレイヤーは `keyballer.json` にも書きます。最初のコンボを足すと、コンボを有効にするため `rules.mk` に `COMBO_ENABLE = yes`、`config.h` に `#define COMBO_ONLY_FROM_LAYER 0` も書きます。どの操作もコマンドラインから使えます（`assign KC_ESC`、`assign KC_A hold=ctrl`、`combo add`、`layer rename Mouse keys`、`save Fix the comma combo`）。保存は下と同じです。計画：[docs/plans/keymap-editor.md](docs/plans/keymap-editor.md)（英語）
+
+### LED の設定
+
+キーマップで `L` を押すと、LED を設定できます。
+- このキーボードに LED が付いているか
+- 起動時のエフェクトと、その速さや向き
+- 色と明るさ、起動時に LED をつけるか
+- LED キーで切り替えられるほかのエフェクト
+
+パネルには、最新のビルドから見積もったファームウェアの容量が出ます。Pro Micro は容量が少なく、Keyball+ では RGB Lighting だけで約 2.4KB、エフェクトごとにさらに使います。LED のキー（オン/オフ、次のエフェクト、色相、明るさなど）は、キー選択の「LED」にあります。キーマップに Keyballer の stamps ブロックがあれば（am338 にはあります）、ここで保存した設定は、LED キーで変えたあとでも書き込み後に反映されます。計画：[docs/plans/led-settings.md](docs/plans/led-settings.md)（英語）
 
 ### トラックボールの設定と保存
 

@@ -30,6 +30,7 @@ Keyballer (this app) ◀──── GitHub API ──────────�
 | Flashing Pro Micro (ATmega32U4 / Caterina) | Supported |
 | Flashing nRF52840 (UF2, ZMK) | Supported: a checked file to copy onto the keyboard's drive. Writing it from the page, and RP2040, are planned |
 | Keymap editor | Supported (keys, combos, layers), for QMK and ZMK |
+| LED settings | Supported for QMK (RGB Lighting): LEDs per build, effect, colour, brightness, the effects the LED keys switch between, and a firmware size estimate |
 
 ## Config repository
 
@@ -85,6 +86,7 @@ keymaps/<keymap>/           QMK keymap (keymap.c, config.h, rules.mk)
 | `builds[].keyboard` / `keymap` | Passed to `qmk compile -kb <keyboard> -km <keymap>` |
 | `builds[].keymap_dir` | Keymap folder in the config repository. Several builds can share one |
 | `builds[].ball` | (Optional) Where the trackball is, for the keymap view: `none`, `right` (default), `left` or `dual` |
+| `builds[].leds` | (Optional) Whether the board has LEDs: `true` builds it with RGB Lighting, `false` without. Without it, the keymap's `rules.mk` decides |
 | `views` | (Optional) How the keymap view names things, per keymap folder: `layers` (layer names), `ball` (what the ball does per layer, with a `default`), `labels` (names for custom keycodes, in `en` and `ja`) |
 
 ### .github/workflows/build.yml
@@ -218,6 +220,16 @@ ZMK keymaps are edited the same way, in the `.keymap` file the build used.
 - **ZMK Studio.** If you have changed a keyboard's keymap in ZMK Studio, the keyboard keeps those changes over the file until you choose "Restore Stock Settings" in ZMK Studio.
 
 Plan: [docs/plans/zmk.md](docs/plans/zmk.md), phase 4.
+
+### LED settings
+
+Press `L` on the keymap to set the LEDs:
+- whether this board has LEDs;
+- the effect at start-up, with its speed or direction;
+- the colour and brightness, and whether the LEDs start on;
+- which other effects the LED keys can switch between.
+
+The panel estimates the firmware size from the latest build. Pro Micro boards have little room: on Keyball+, RGB Lighting takes about 2.4 KB and each effect more. The LED keys (on/off, next effect, hue, brightness…) are in the key picker's Lighting group. Settings saved here are applied after flashing, even if you changed them with the LED keys before, when the keymap has Keyballer's stamps block (am338 does). Plan: [docs/plans/led-settings.md](docs/plans/led-settings.md)
 
 ### Trackball settings and saving
 

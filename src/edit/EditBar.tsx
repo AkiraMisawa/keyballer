@@ -10,7 +10,8 @@ import { LocalizedError, msg, type Localized } from '../i18n/core';
 import type { MessageKey } from '../i18n/messages';
 import { useI18n } from '../i18n/react';
 import type { WorkflowRun } from '../lib/github';
-import type { Change, Setting } from './session';
+import { ledEffectsOf, ledModeOf, type Change, type Setting } from './session';
+import { effectOf, variantCount } from '../leds/leds';
 import { BRANCH, type EditSession } from './useEditSession';
 import { InstallApp, SignInButton } from '../components/SignInPanel';
 import type { SignIn } from '../auth/useSignIn';
@@ -252,6 +253,13 @@ const SETTING_LABEL: Record<Setting, MessageKey> = {
   cpi: 'setting.cpi',
   divider: 'setting.divider',
   ballMm: 'setting.ballMm',
+  leds: 'setting.leds',
+  ledMode: 'setting.ledMode',
+  ledHue: 'setting.ledHue',
+  ledSat: 'setting.ledSat',
+  ledVal: 'setting.ledVal',
+  ledStartOn: 'setting.ledStartOn',
+  ledEffects: 'setting.ledEffects',
 };
 
 /** Errors that the token field in the dialog answers. */
@@ -291,8 +299,30 @@ function ReviewDialog({ edit, repoName, describe, token, tokenField, signIn, dra
   if (!pending) return null;
 
   const layerList = (layers: number[]) => new Intl.ListFormat(lang, { type: 'conjunction' }).format(layers.map(describe.layer));
-  const value = (c: Change, v: number) =>
-    c.setting === 'cpi' ? t('unit.cpi', { n: v }) : c.setting === 'ballMm' ? t('unit.mm', { n: v }) : String(v);
+  const value = (c: Change, v: number): string => {
+    switch (c.setting) {
+      case 'cpi':
+        return t('unit.cpi', { n: v });
+      case 'ballMm':
+        return t('unit.mm', { n: v });
+      case 'leds':
+      case 'ledStartOn':
+        return t(v ? 'led.yes' : 'led.no');
+      case 'ledMode': {
+        const mode = ledModeOf(v);
+        if (!mode) return t('led.unknownMode');
+        const name = t(effectOf(mode.effect).label);
+        const count = variantCount(mode.effect);
+        return count > 1 ? t('led.variantOf', { name, n: mode.variant + 1, count }) : name;
+      }
+      case 'ledEffects': {
+        const ids = ledEffectsOf(v);
+        return ids.length ? new Intl.ListFormat(lang, { type: 'conjunction' }).format(ids.map((id) => t(effectOf(id).label))) : t('led.none');
+      }
+      default:
+        return String(v);
+    }
+  };
   const key = error instanceof LocalizedError ? error.key : null;
   const needsToken = !token || (key !== null && TOKEN_ERRORS.has(key));
 

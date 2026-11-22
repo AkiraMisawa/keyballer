@@ -27,6 +27,8 @@ export interface QmkBuild extends BuildBase {
   processor: string | null;
   bootloader: string | null;
   split: boolean;
+  /** Whether it was built with LEDs (builds[].leds); missing when keyballer.json did not say. */
+  leds?: boolean;
 }
 
 /**

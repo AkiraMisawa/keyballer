@@ -1205,3 +1205,32 @@ footer {
 .flash .source .commit-line {
   font-weight: 600;
 }
+
+/* The LED panel (src/leds/LedPanel.tsx). */
+.leds .field {
+  display: grid;
+  gap: 6px;
+}
+.leds select {
+  justify-self: start;
+}
+.leds fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+.leds legend {
+  padding: 0;
+  margin-bottom: 4px;
+}
+.leds .check .muted {
+  margin-left: auto;
+  font-size: 0.85rem;
+}
+.swatch {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--edge);
+}

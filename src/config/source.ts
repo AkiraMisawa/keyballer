@@ -25,6 +25,23 @@ export function setDefine(text: string, name: string, value: string): string {
   return `${text}${ending}#define ${name} ${value}\n`;
 }
 
+/** A `#define NAME` line, with or without a value: what `#ifdef NAME` sees. */
+const flagLine = (name: string) => new RegExp(`^[ \\t]*#[ \\t]*define[ \\t]+${escape(name)}(?=[ \\t\\r\\n/]|$)[^\\n]*(?:\\n|$)`, 'm');
+
+/** Whether the file defines NAME as a switch (`#define NAME`). */
+export function readFlag(text: string, name: string): boolean {
+  return flagLine(name).test(text);
+}
+
+/** Adds `#define NAME` at the end, or removes its line. */
+export function setFlag(text: string, name: string, on: boolean): string {
+  const line = flagLine(name);
+  if (!on) return text.replace(line, '');
+  if (line.test(text)) return text;
+  const ending = text === '' || text.endsWith('\n') ? '' : '\n';
+  return `${text}${ending}#define ${name}\n`;
+}
+
 /** Sets `NAME = value` in a rules.mk: in place when set, else at the end. */
 export function setRule(text: string, name: string, value: string): string {
   const line = new RegExp(`^([ \\t]*${escape(name)}[ \\t]*=[ \\t]*)(.*?)([ \\t]*(?:#.*)?)$`, 'm');
@@ -63,19 +80,22 @@ function buildSpans(text: string): { start: number; end: number }[] {
 }
 
 /** Sets the trackball diameter of one build in keyballer.json, leaving the rest of the text as is. */
-export function setBallMm(text: string, buildId: string, mm: number): string {
+export const setBallMm = (text: string, buildId: string, mm: number) => setBuildValue(text, buildId, 'ball_mm', mm);
+
+/** Sets a number or true/false field of one build in keyballer.json, leaving the rest of the text as is. */
+export function setBuildValue(text: string, buildId: string, key: string, value: number | boolean): string {
   const span = buildSpans(text).find((s) => (JSON.parse(text.slice(s.start, s.end + 1)) as { id?: string }).id === buildId);
   if (!span) throw new Error(`keyballer.json has no build ${buildId}`);
   const body = text.slice(span.start, span.end + 1);
-  const existing = /("ball_mm"[ \t]*:[ \t]*)(-?\d+(?:\.\d+)?)/.exec(body);
+  const existing = new RegExp(`("${escape(key)}"[ \\t]*:[ \\t]*)(true|false|-?\\d+(?:\\.\\d+)?)`).exec(body);
   let next: string;
   if (existing) {
-    next = body.replace(existing[0], `${existing[1]}${mm}`);
+    next = body.replace(existing[0], `${existing[1]}${value}`);
   } else {
     // After the last field, on its own line, indented like the object's fields.
     const lastField = body.slice(0, body.lastIndexOf('}')).trimEnd();
     const indent = /^\{[ \t]*\r?\n([ \t]*)"/.exec(body)?.[1] ?? '  ';
-    next = `${lastField},\n${indent}"ball_mm": ${mm}${body.slice(lastField.length)}`;
+    next = `${lastField},\n${indent}"${key}": ${value}${body.slice(lastField.length)}`;
   }
   return text.slice(0, span.start) + next + text.slice(span.end + 1);
 }
