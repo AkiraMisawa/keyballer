@@ -258,25 +258,36 @@ def prepare_workspace(config_dir, work_dir):
 
 def keymap_source(cmake_cache, workspace, repo):
     """The .keymap file ZMK built from (KEYMAP_FILE, which ZMK's keymap module sets), as its path in
-    the config repository and its SHA-256, for the editor; None when it is not the repository's.
+    the config repository and its SHA-256, for the editor; None when it is not plainly the
+    repository's own .keymap file.
 
     The workspace has a copy of the repository's config/ folder; the repository itself is where ZMK
     reads boards and shields from when it is a module. Anything else in the workspace (ZMK, Zephyr,
-    modules) is not the repository's, even when the workspace is inside it, as in a local build."""
-    m = re.search(r"^KEYMAP_FILE:[A-Z]+=(.+)$", cmake_cache, re.M)
+    modules) is not the repository's, even when the workspace is inside it, as in a local build.
+    Like the view, this never fails the build: a value it cannot follow is no keymap."""
+    m = re.search(r"^KEYMAP_FILE:[A-Z]+=([^\r\n]+)$", cmake_cache, re.M)
     if not m:
         return None
-    # Links are resolved first, so that a link cannot name a file outside the repository.
-    path = Path(m.group(1).strip()).resolve()
-    if not path.is_file():
+    try:
+        path = Path(m.group(1).strip()).resolve()
+        copy = (workspace / "config").resolve()
+        if path.is_relative_to(copy):
+            name = "config/" + path.relative_to(copy).as_posix()
+        elif path.is_relative_to(workspace.resolve()) or not path.is_relative_to(repo.resolve()):
+            return None
+        else:
+            name = path.relative_to(repo.resolve()).as_posix()
+        # The repository's own file, with no link on the way: the workspace copy follows links, a
+        # link out of the repository would publish another file's digest, and the editor would
+        # write a plain file over a link. The build runs the repository's own CMake, which could
+        # name any of its files, so only a .keymap file with a plain path counts.
+        original = repo / name
+        if not (plain_path(name) and name.endswith(".keymap") and original.is_file()
+                and original.resolve() == repo.resolve() / name):
+            return None
+        return {"path": name, "sha256": hashlib.sha256(original.read_bytes()).hexdigest()}
+    except (OSError, RuntimeError, ValueError):
         return None
-    if path.is_relative_to((workspace / "config").resolve()):
-        name = "config/" + path.relative_to((workspace / "config").resolve()).as_posix()
-    elif path.is_relative_to(workspace.resolve()) or not path.is_relative_to(repo.resolve()):
-        return None
-    else:
-        name = path.relative_to(repo.resolve()).as_posix()
-    return {"path": name, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
 
 
 def write_view(build, build_dir, out_dir, keymap=None):
@@ -354,7 +365,7 @@ def build_one(build, cfg, config_dir, workspace, out_dir):
         try:
             cache = (build_dir / "CMakeCache.txt").read_text(encoding="utf-8", errors="replace")
             keymap = keymap_source(cache, ws, config_dir)
-        except OSError as e:  # like the view, this must never fail the build
+        except Exception as e:  # like the view, this must never fail the build
             print("No keymap source for {}: {!r}".format(build["id"], e), flush=True)
             keymap = None
         meta.update(write_view(build, build_dir, out_dir, keymap))

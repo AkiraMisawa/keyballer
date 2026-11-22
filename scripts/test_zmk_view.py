@@ -116,6 +116,8 @@ class Meteorite40View(unittest.TestCase):
         outputs = {tuple(c["positions"]): c["output"] for c in view["combos"]}
         self.assertEqual((outputs[(12, 13)], outputs[(16, 17)]), ("KC_LNG1", "KC_LNG2"))
         self.assertEqual(len({c["line"] for c in view["combos"]}), len(view["combos"]))
+        # Each combo kept is named by its own node, after those left out too.
+        self.assertEqual([c["name"] for c in view["combos"]], ["lang1", "lang2", "esc", "tab"])
         self.assertEqual(view["balls"], [])
 
 
@@ -158,8 +160,9 @@ class Synthetic(unittest.TestCase):
                               '\t\textra { status = "reserved"; bindings = < &kp 0x70004 &kp 0x70004 >; };'))
         self.assertEqual(view["layers"][0]["keys"], ["KC_A", "KC_NO"])
         self.assertEqual(len(view["layers"]), 1)
-        # The source has one binding there, not two.
-        self.assertEqual(view["zmk"]["layers"], [{"node": "base", "refs": ["kp"]}])
+        # The source has one binding there, not two; the reserved layer is recorded for the editor.
+        self.assertEqual(view["zmk"]["layers"], [{"node": "base", "status": "okay", "refs": ["kp"]},
+                                                 {"node": "extra", "status": "reserved", "refs": ["kp", "kp"]}])
 
     def test_reads_sticky_keys_outputs_and_bluetooth(self):
         # &sk LSHIFT, &sl 2 / &out OUT_USB (1), &bt BT_NXT (1)
