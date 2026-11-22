@@ -122,9 +122,11 @@ export function useSignIn(repo: RepoRef | null): SignIn | null {
     void code
       .then((c) => exchangeCode(c, once.verifier))
       .then(async (s) => {
+        // A newer sign-in started meanwhile: this token is not kept, so it is revoked.
+        if (controller.signal.aborted) return revokeToken(s.token);
         try {
           const login = await getLogin(s.token);
-          // A newer sign-in started meanwhile: this token is not kept, so it is revoked.
+          // Or it started while the login was looked up.
           if (controller.signal.aborted) revokeToken(s.token);
           else setSession({ ...s, login });
         } catch (e) {

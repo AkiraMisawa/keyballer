@@ -275,8 +275,11 @@ function ReviewDialog({ edit, repoName, describe, token, tokenField, signIn, dra
   const saveButton = useRef<HTMLButtonElement>(null);
   const signedIn = !!signIn?.login;
   useEffect(() => {
+    if (!signedIn) return;
+    // The old token error no longer applies, and the paste field goes away with it.
+    setError(null);
     const lost = !document.activeElement || document.activeElement === document.body;
-    if (signedIn && lost) saveButton.current?.focus();
+    if (lost) saveButton.current?.focus();
   }, [signedIn]);
   const pending = edit.pending;
   // While saving, the dialog stays: closing it could hide the result.

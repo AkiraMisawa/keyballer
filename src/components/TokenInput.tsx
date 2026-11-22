@@ -38,6 +38,10 @@ export function TokenInput({ id, tokenField }: { id: string; tokenField: TokenFi
   useEffect(() => {
     if (field.current) field.current.value = initial.current;
   }, []);
+  // Cleared from outside (signing in replaces a pasted token): empty the field too.
+  useEffect(() => {
+    if (tokenField.input === '' && field.current) field.current.value = '';
+  }, [tokenField.input]);
   return (
     <>
       <input
