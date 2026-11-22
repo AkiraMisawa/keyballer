@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from build_zmk import ConfigError, check_resolved, check_west, load_config, role_and_studio
+from build_zmk import ConfigError, check_resolved, check_west, keymap_source, load_config, role_and_studio
 
 SHA = "edf5c08139c6a2a2a5e02cb4d6a3e4e3a1b7f2c0"
 IMAGE = "docker.io/zmkfirmware/zmk-build-arm@sha256:" + "0" * 64
@@ -231,6 +231,59 @@ class Role(unittest.TestCase):
         self.assertEqual(role_and_studio(peripheral, "roBa_L"), ("peripheral", False))
         self.assertEqual(role_and_studio(single, "meteorite40"), ("standalone", True))
         self.assertEqual(role_and_studio("# CONFIG_ZMK_SPLIT is not set\n", "settings_reset"), ("settings_reset", False))
+
+
+class KeymapSource(unittest.TestCase):
+    """Which .keymap file ZMK built from (KEYMAP_FILE in CMakeCache.txt), for the editor: its path in
+    the config repository and its SHA-256, or None when the file is not the repository's."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.repo = self.root / "repo"
+        self.ws = self.root / "ws"
+        self.config = self.ws / "config"
+        (self.repo / "boards" / "shields" / "x").mkdir(parents=True)
+        self.config.mkdir(parents=True)
+        (self.config / "roBa.keymap").write_bytes(b"/ { keymap { }; };\n")
+        (self.repo / "boards" / "shields" / "x" / "x.keymap").write_bytes(b"x\n")
+
+    def cache(self, path):
+        return "ZMK_CONFIG:PATH={}\nKEYMAP_FILE:STRING={}\nSHIELD:STRING=roBa_R\n".format(self.config, path)
+
+    def test_a_keymap_in_config_is_config_slash_its_name(self):
+        found = keymap_source(self.cache(self.config / "roBa.keymap"), self.ws, self.repo)
+        # sha256 of b"/ { keymap { }; };\n"
+        self.assertEqual(found, {"path": "config/roBa.keymap",
+                                 "sha256": "4e2753da3201fad45b5b684046a3d8c3ac39edad71625bd371cbf4a00a5392a2"})
+
+    def test_a_keymap_in_the_repository_as_a_module_keeps_its_path(self):
+        found = keymap_source(self.cache(self.repo / "boards" / "shields" / "x" / "x.keymap"), self.ws, self.repo)
+        self.assertEqual(found["path"], "boards/shields/x/x.keymap")
+
+    def test_a_keymap_from_elsewhere_or_none_is_not_the_repositorys(self):
+        other = self.root / "zmk" / "app" / "boards" / "shields" / "y.keymap"
+        other.parent.mkdir(parents=True)
+        other.write_bytes(b"y")
+        self.assertIsNone(keymap_source(self.cache(other), self.ws, self.repo))
+        self.assertIsNone(keymap_source(self.cache(self.config / ".." / ".." / "zmk" / "app" / "boards" / "shields" / "y.keymap"), self.ws, self.repo))
+        self.assertIsNone(keymap_source("SHIELD:STRING=roBa_R\n", self.ws, self.repo))
+        self.assertIsNone(keymap_source(self.cache(self.config / "missing.keymap"), self.ws, self.repo))
+
+    def test_a_workspace_inside_the_repository_is_still_not_the_repositorys(self):
+        # Building locally from the config repository puts the workspace (.keyballer-work) inside it.
+        module = self.ws / "zmk" / "app" / "boards" / "shields" / "y" / "y.keymap"
+        module.parent.mkdir(parents=True)
+        module.write_bytes(b"y")
+        self.assertIsNone(keymap_source(self.cache(module), self.ws, self.root))
+        self.assertEqual(keymap_source(self.cache(self.config / "roBa.keymap"), self.ws, self.root)["path"], "config/roBa.keymap")
+
+    def test_a_link_out_of_the_repository_is_not_followed(self):
+        outside = self.root / "secret.keymap"
+        outside.write_bytes(b"s")
+        (self.config / "link.keymap").symlink_to(outside)
+        self.assertIsNone(keymap_source(self.cache(self.config / "link.keymap"), self.ws, self.repo))
 
 
 if __name__ == "__main__":

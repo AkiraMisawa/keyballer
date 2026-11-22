@@ -375,9 +375,13 @@ def make_view(dts_text):
     nodes = list(keymap.children)
     while nodes and (nodes[-1].prop("status") or ["okay"])[0] != "okay":
         nodes.pop()
-    layers = []
+    layers, structure = [], []
     for layer in nodes:
-        bindings = [conv.convert(*b) for b in conv.read(layer.prop("bindings") or [])]
+        read = conv.read(layer.prop("bindings") or [])
+        # For the editor: which node each layer is, and the behaviour each of its bindings refers
+        # to, so that it can match the .keymap source to this build before it changes anything.
+        structure.append({"node": layer.name, "refs": [ref[1:] for _, ref, _ in read]})
+        bindings = [conv.convert(*b) for b in read]
         if len(bindings) > len(keys):
             raise ViewError("layer {} has {} bindings for {} keys".format(layer.name, len(bindings), len(keys)))
         # ZMK leaves the keys past the last binding without one.
@@ -397,8 +401,8 @@ def make_view(dts_text):
         if not bound or any(not 0 <= p < len(keys) for p in positions) or (only and 0 not in only):
             continue
         # There is no source line to link to; `line` only has to tell combos apart.
-        combos.append({"keys": [layers[0]["keys"][p] for p in positions], "positions": positions,
-                       "output": conv.convert(*bound[0]), "line": n + 1})
+        combos.append({"name": combo.name, "keys": [layers[0]["keys"][p] for p in positions],
+                       "positions": positions, "output": conv.convert(*bound[0]), "line": n + 1})
 
     return {
         "schema": 1,
@@ -410,4 +414,5 @@ def make_view(dts_text):
         "defines": {},
         "combos": combos,
         "code": {},
+        "zmk": {"layers": structure},
     }
