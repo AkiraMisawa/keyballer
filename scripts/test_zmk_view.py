@@ -112,13 +112,22 @@ class Meteorite40View(unittest.TestCase):
         self.assertEqual(base["name"], "BASE")
         # &mt LSHIFT A, &kp MINUS, &mkp MB1, &lt 4 SLASH
         self.assertEqual([base["keys"][i] for i in (10, 19, 25, 31)], ["LSFT_T(KC_A)", "KC_MINS", "KC_BTN1", "LT(4,KC_SLSH)"])
-        # Combos D+F and J+K for layer 0 (LANG1, LANG2); the ones for layer 2 only are left out.
-        outputs = {tuple(c["positions"]): c["output"] for c in view["combos"]}
-        self.assertEqual((outputs[(12, 13)], outputs[(16, 17)]), ("KC_LNG1", "KC_LNG2"))
         self.assertEqual(len({c["line"] for c in view["combos"]}), len(view["combos"]))
-        # Each combo kept is named by its own node, after those left out too.
-        self.assertEqual([c["name"] for c in view["combos"]], ["lang1", "lang2", "esc", "tab"])
         self.assertEqual(view["balls"], [])
+
+    def test_lists_combos_with_the_layers_they_fire_on(self):
+        combos = {c["name"]: c for c in make_view(M40)["combos"]}
+        self.assertEqual(list(combos), ["lang1", "lang2", "esc", "tab", "home", "end", "ctrl_home", "ctrl_end"])
+        # D+F types LANG1 on layer 0 only (`layers = <0>`).
+        self.assertEqual((combos["lang1"]["positions"], combos["lang1"]["output"], combos["lang1"]["layers"]), ([12, 13], "KC_LNG1", [0]))
+        # J+K types HOME on layer 2 only, where those keys are LEFT and UP.
+        home = combos["home"]
+        self.assertEqual((home["positions"], home["output"], home["layers"], home["keys"]), ([16, 17], "KC_HOME", [2], ["KC_LEFT", "KC_UP"]))
+        self.assertEqual(combos["ctrl_home"]["output"], "LCTL(KC_HOME)")
+
+    def test_a_combo_without_layers_fires_on_every_layer(self):
+        # roBa's combos have no `layers` property.
+        self.assertTrue(all("layers" not in c for c in make_view(ROBA)["combos"]))
 
 
 def tiny(layers, extra=""):
