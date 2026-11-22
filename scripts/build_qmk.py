@@ -28,12 +28,15 @@ import subprocess
 import sys
 from pathlib import Path
 
+from keyballer_view import ViewError, make_view
+
 CONFIG_FILE = "keyballer.json"
 DEFAULT_IMAGE = (
     "ghcr.io/qmk/qmk_cli@sha256:"
     "2dc05fc9f32efebd6b05c2b8676ee548358bc7e151e9dbf4dac6b6eed4513b07"
 )
 FIRMWARE_EXTS = ("hex", "bin", "uf2")
+BALL_SIDES = ("none", "right", "left", "dual")
 ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 SIZE_LINE = re.compile(r"firmware size .*?(\d+)/(\d+)")
@@ -81,6 +84,13 @@ def load_config(config_dir):
             raise ConfigError(
                 'builds[{}].keymap_dir "{}" is not a directory'.format(i, b["keymap_dir"])
             )
+        if b.get("ball", "right") not in BALL_SIDES:
+            raise ConfigError(
+                'builds[{}].ball must be one of {}'.format(i, ", ".join(BALL_SIDES))
+            )
+    views = cfg.get("views", {})
+    if not isinstance(views, dict) or not all(isinstance(v, dict) for v in views.values()):
+        raise ConfigError('"views" must map keymap directories to settings')
     return cfg
 
 
@@ -151,15 +161,20 @@ def fetch_source(src, work_dir, qmk):
     link.symlink_to(target, target_is_directory=True)
 
 
-def keyboard_info(qmk, keyboard):
+def qmk_json(qmk, args):
+    """Runs a qmk command that prints JSON; None when it fails or prints something else."""
     out = subprocess.run(
-        ["qmk", "info", "-kb", keyboard, "-f", "json"],
-        cwd=qmk, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+        ["qmk"] + args, cwd=qmk, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
         env=qmk_env(qmk),
     ).stdout
     try:
-        info = json.loads(out)
+        return json.loads(out)
     except json.JSONDecodeError:
+        return None
+
+
+def keyboard_summary(info):
+    if not info:
         return {}
     split = info.get("split", {})
     return {
@@ -169,7 +184,58 @@ def keyboard_info(qmk, keyboard):
     }
 
 
-def build_one(build, config_dir, qmk, out_dir):
+def find_via(qmk, keyboard):
+    """The keyboard's VIA definition, looking from its folder up to its source root."""
+    folder = qmk / "keyboards" / keyboard
+    root = qmk / "keyboards"
+    while folder != root and folder.parent != folder:
+        candidate = folder / "via.json"
+        if candidate.is_file():
+            return json.loads(candidate.read_text(encoding="utf-8"))
+        folder = folder.parent
+    return None
+
+
+def write_view(build, cfg, qmk, keymap_in_qmk, info, out_dir):
+    """Writes <id>.view.json and returns the manifest fields: view, or view_error."""
+    keymap_dir = build["keymap_dir"]
+    keymap_c = keymap_in_qmk / "keymap.c"
+    try:
+        if not keymap_c.is_file():
+            raise ViewError("{} has no keymap.c".format(keymap_dir))
+        c2json = qmk_json(qmk, ["c2json", "--no-cpp", "-kb", build["keyboard"], "-km", build["keymap"], str(keymap_c)])
+        if not c2json or "layers" not in c2json:
+            raise ViewError("QMK could not read the layers in keymap.c")
+        if not info:
+            raise ViewError("QMK could not describe keyboard {}".format(build["keyboard"]))
+        view = make_view(
+            c2json=c2json,
+            info=info,
+            via=find_via(qmk, build["keyboard"]),
+            keymap_c=keymap_c.read_text(encoding="utf-8"),
+            config=cfg.get("views", {}).get(keymap_dir, {}),
+            ball=build.get("ball", "right"),
+        )
+    except ViewError as e:
+        print("No keymap view for {}: {}".format(build["id"], e), flush=True)
+        return {"view_error": str(e)}
+    except Exception as e:  # the view must never fail the build
+        print("No keymap view for {}: {!r}".format(build["id"], e), flush=True)
+        return {"view_error": "Keyballer could not read the keyboard definition or keymap ({}: {})".format(
+            type(e).__name__, e)}
+    view["keyboard"] = build["keyboard"]
+    view["keymap"] = build["keymap"]
+    view["source"] = {"path": "{}/keymap.c".format(keymap_dir)}
+    # Set by GitHub Actions: where the links to keymap.c lines point.
+    if os.environ.get("GITHUB_REPOSITORY") and os.environ.get("GITHUB_SHA"):
+        view["source"]["repository"] = os.environ["GITHUB_REPOSITORY"]
+        view["source"]["commit"] = os.environ["GITHUB_SHA"]
+    name = "{}.view.json".format(build["id"])
+    (out_dir / name).write_text(json.dumps(view, ensure_ascii=False) + "\n", encoding="utf-8")
+    return {"view": name}
+
+
+def build_one(build, cfg, config_dir, qmk, out_dir):
     keyboard, keymap = build["keyboard"], build["keymap"]
     print("::group::Build {} ({}:{})".format(build["id"], keyboard, keymap), flush=True)
     try:
@@ -215,7 +281,9 @@ def build_one(build, config_dir, qmk, out_dir):
         "size": int(size.group(1)) if size else None,
         "max_size": int(size.group(2)) if size else None,
     }
-    meta.update(keyboard_info(qmk, keyboard))
+    info = qmk_json(qmk, ["info", "-kb", keyboard, "-f", "json"])
+    meta.update(keyboard_summary(info))
+    meta.update(write_view(build, cfg, qmk, dst, info, out_dir))
     (out_dir / "{}.json".format(build["id"])).write_text(
         json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
@@ -264,7 +332,7 @@ def main():
         for src in cfg.get("sources", []):
             fetch_source(src, work_dir, qmk)
         for build in builds:
-            meta = build_one(build, config_dir, qmk, out_dir)
+            meta = build_one(build, cfg, config_dir, qmk, out_dir)
             print("Built {}: {} ({} / {} bytes)".format(
                 meta["id"], meta["file"], meta["size"], meta["max_size"]), flush=True)
     except (ConfigError, RuntimeError) as e:
