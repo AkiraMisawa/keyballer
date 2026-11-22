@@ -55,6 +55,12 @@ function localSignIn(config: AuthConfig | null): Plugin {
     const host = `127.0.0.1:${port}`;
     server.middlewares.use((req: IncomingMessage, res: ServerResponse, next: () => void) => {
       if (!req.url?.startsWith('/auth/')) return next();
+      // Only this machine, even if the server is started with --host: Host and Origin are only
+      // headers, which another computer could send.
+      if (!LOOPBACK_PEERS.has(req.socket.remoteAddress ?? '')) {
+        res.statusCode = 403;
+        return res.end();
+      }
       void serveAuth(req, res, config, host);
     });
   };
@@ -64,6 +70,8 @@ function localSignIn(config: AuthConfig | null): Plugin {
     configurePreviewServer: (server) => mount(server, server.config.preview.port),
   };
 }
+
+const LOOPBACK_PEERS = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 
 async function serveAuth(req: IncomingMessage, res: ServerResponse, config: AuthConfig | null, host: string) {
   try {

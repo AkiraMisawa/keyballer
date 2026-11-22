@@ -182,6 +182,7 @@ GitHub's web flow with PKCE (S256), in a popup, as reviewed. The device flow was
   - Vite's own host check runs before the handler, too.
   - The servers listen on `127.0.0.1` only, on those fixed ports (`strictPort`), because the callback URLs name them.
   - Vite's CORS is off (`cors: false`).
+  - The plugin also refuses any client whose socket address is not loopback, so starting the server with `--host` does not open the endpoints to the network.
 - On the POSTs, `Origin` must equal `http://` and that host exactly.
 - Anything else gets 403.
 - The body must be `application/json`, read from the stream up to 1 KB, and an object with exactly the expected fields:
