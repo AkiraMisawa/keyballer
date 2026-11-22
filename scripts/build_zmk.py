@@ -208,6 +208,8 @@ def prepare_workspace(config_dir, work_dir):
     shutil.copytree(config_dir / "config", ws / "config")
     run(["west", "init", "-l", "config"], cwd=ws)
     run(["west", "update", "--fetch-opt=--filter=tree:0"], cwd=ws)
+    # Registers this Zephyr with CMake, as ZMK's own workflow does, so `west build` can find it.
+    run(["west", "zephyr-export"], cwd=ws)
 
     resolved = read_yaml(run(["west", "manifest", "--resolve"], cwd=ws, capture=True))
     projects = resolved["manifest"]["projects"]
