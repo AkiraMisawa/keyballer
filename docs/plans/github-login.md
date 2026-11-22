@@ -1,12 +1,12 @@
 # Sign in with GitHub, and firmware provenance
 
-Status: phases 1 and 2 built (2026-11-22); phase 3 next.
+Status: phase 1 built; phase 2 built except an origin of its own (2026-11-22); phase 3 next.
 
 Decided with the owner:
 - Sign-in is for running Keyballer on their own machine ("ローカル使用だけでいいや"). The hosted site keeps the personal access token, which is kept for one tab only.
 - A sign-in lasts one tab and at most 8 hours, with no refresh token.
 - The user site `akiramisawa.github.io` was deleted, which removed Google's analytics tag from Keyballer's origin.
-- Sign-in does not need an origin of its own. Moving Keyballer to an organization's origin is still the only fix for the pages it shares an origin with; it needs the owner to create the organization, so it stays open (see phase 2).
+- Moving Keyballer to an organization's origin is no longer needed for sign-in, and stays out of scope.
 
 Every phase is reviewed adversarially; the findings are folded in below. Facts and sources: [../research/github-login.md](../research/github-login.md).
 
@@ -134,12 +134,12 @@ This validation guards the workflow's own shell. It is not a boundary against th
   - plus `no-referrer`
 - **Pinning.** Actions are pinned by commit SHA, and CI installs with `npm ci --ignore-scripts`.
 
-## Phase 2: tokens on the hosted site (built)
+## Phase 2: tokens on the hosted site (built, except its own origin)
 
-- **Storage.** The personal access token is kept in memory for the tab (`src/lib/token.ts`), typed in the repository section or in the review; both show the same field. Nothing token-like is written to `localStorage`.
-- **Removing the old token.** On load, before anything renders, `keyballer.token` is removed from `localStorage`. If it was there, a notice in the repository section says so and links to the GitHub page where that kind of token is revoked (classic or fine-grained), because deleting a token does not revoke it. The command `revoke token` opens the same page. The notice shows once, since the token is gone afterwards. A framed Keyballer leaves the token alone, as no one would see the notice.
-- **Classic tokens are refused.** Tokens starting with `ghp_` are refused with the reason, and anything else that is not a fine-grained token (`github_pat_` followed by letters, digits and `_`) is refused too, so nothing pasted can add to the `Authorization` header. A classic token reaches every repository, `AkiraMisawa/keyballer` included, so a stolen one is an owner compromise: it could change the build workflow itself. Only fine-grained tokens (`github_pat_`) and, locally, the app's tokens (`ghu_`) are taken. The recommended fine-grained token covers the config repository only, with Contents: Read and write and Actions: Read.
-- **Its own origin (open; needs the owner).** Web Serial permission belongs to the origin. `3style` and `ex-grid` share `akiramisawa.github.io` with Keyballer, so a script on either could use the keyboard's port and set Keyballer's `localStorage`. Only an origin of its own fixes this: the owner creates an organization (for example `keyballer-app`), Keyballer moves there, and callers update `uses:`. Until then, this row is unmitigated.
+- **Storage.** The personal access token is kept in memory for the tab (`useTokenField` in `src/components/TokenInput.tsx`; the checks are in `src/lib/token.ts`), typed in the repository section or in the review; both show the same field. Nothing token-like is written to `localStorage`. The field is uncontrolled, so React does not copy the token into its `value` attribute.
+- **Removing the old token.** On load, before anything renders, `keyballer.token` is removed from `localStorage`. If it was there, a notice in the repository section says so and links to the GitHub page where that kind of token is revoked (classic or fine-grained), because deleting a token does not revoke it. The command `open tokens` opens the same page. The notice shows once, since the token is gone afterwards. A framed Keyballer leaves the token alone, as no one would see the notice.
+- **Classic tokens are refused.** Tokens starting with `ghp_` are refused with the reason, and anything else that is not a fine-grained token (`github_pat_` followed by letters, digits and `_`) is refused too, so nothing pasted can add to the `Authorization` header. A classic token reaches every repository, `AkiraMisawa/keyballer` included, so a stolen one is an owner compromise: it could change the build workflow itself. The field takes only fine-grained tokens (`github_pat_`). The app's tokens (`ghu_`) come only from the local sign-in (phase 3), which does not go through the field. The recommended fine-grained token covers the config repository only, with Contents: Read and write and Actions: Read.
+- **Its own origin (not built).** Web Serial permission belongs to the origin. `3style` and `ex-grid` share `akiramisawa.github.io` with Keyballer, so a script on either could use the keyboard's port and set Keyballer's `localStorage`. Only an origin of its own fixes this: the owner creates an organization (for example `keyballer-app`), Keyballer moves there, and callers update `uses:`. Whether to move is the owner's call; as decided above, it is out of scope for now, so the same-origin row of the threat model stays unmitigated.
 
 ## Phase 3: local sign-in
 
@@ -201,7 +201,7 @@ GitHub's web flow with PKCE (S256), in a popup, as reviewed. The device flow was
 | A malicious `?repo=` link, or a page navigating my tab | Me flashing someone else's firmware | Asks first, with the focus on keeping mine. The flash dialog names the source. |
 | A crafted manifest path (`../`) | Authenticated GETs to other API paths | Path and SHA checks, and `getRaw` refuses unsafe paths. |
 | XSS (data from a config repository) | Steal the token | React escapes text, and there is no `innerHTML` (checked). A `script-src 'self'` CSP and Trusted Types (verified to block `innerHTML`). Tokens in memory only (phases 2 and 3). |
-| Other pages on the same origin (`3style`, `ex-grid`) | Read storage, script Keyballer's windows, use the keyboard's serial port (permission is per origin) | **Unmitigated until Keyballer has its own origin, which needs the owner to create an organization.** Tokens are never in storage (phase 2), so these pages cannot read one. Local sign-in runs on `127.0.0.1`. |
+| Other pages on the same origin (`3style`, `ex-grid`) | Read storage, script Keyballer's windows, use the keyboard's serial port (permission is per origin) | **Unmitigated: only an origin of its own fixes it, and moving is the owner's call (phase 2).** Tokens are never in storage (phase 2), but a page that holds a reference to Keyballer's window can still read the field or the page's memory. Local sign-in runs on `127.0.0.1`. |
 | A stolen classic token, or any token that can write `AkiraMisawa/keyballer` | Changing the build workflow or the app itself | An owner compromise, outside what Keyballer can check. Classic tokens are refused (phase 2), and a ruleset on Keyballer's `main` is recommended. |
 | A stolen admin token switches the default branch (a look-alike name) | A record for code that is not on the real `main` | Only `main` is accepted. |
 | A commit to `main` changing `sources[].ref` to a fork's commit | Building someone else's code behind an "upstream" name | The ref must be contained in a branch or tag of the named repository. |
@@ -219,7 +219,7 @@ GitHub's web flow with PKCE (S256), in a popup, as reviewed. The device flow was
 - **Manifest paths and SHAs**
 - **`getRaw`:** it refuses unsafe paths before any request (checked with a stubbed `fetch`).
 - **`make_manifest.py` digests:** against the FIPS vector.
-- **Pasted tokens** (`checkPastedToken`, `forgetStoredToken`): GitHub's documented token prefixes, header-breaking input, and storage that throws.
+- **Pasted tokens** (`checkPastedToken`, `forgetStoredToken`): GitHub's documented token prefixes, the 255-character limit, header-breaking input, and storage that throws or will not delete.
 - **The local auth handler:**
   - abuse cases first: `Origin`, `Host`, method, path, content type, a streamed oversize body, fields, no echo;
   - then the calls to GitHub and the response shaping.

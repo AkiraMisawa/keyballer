@@ -55,7 +55,7 @@ export const en = {
   'cmd.language.bad': 'use english or japanese',
   'cmd.linkOpen': 'Open the linked repository {repo}',
   'cmd.linkKeep': 'Keep the current repository (do not open the link)',
-  'cmd.revokeToken': 'Open the GitHub page where the deleted token can be revoked',
+  'cmd.openTokens': 'Open the GitHub page where the deleted token can be revoked',
   'cmd.shortcuts': 'Show the keyboard shortcuts',
   'cmd.start': 'Start flashing, then press the reset button',
 
@@ -88,8 +88,8 @@ export const en = {
   'token.note':
     'Paste a fine-grained token (it starts with github_pat_) limited to this repository, with Contents: Read and write (needed to save changes) and Actions: Read. Keyballer keeps it only while this tab is open: reloading or closing the tab forgets it.',
   'token.err.classic':
-    'Classic tokens (ghp_) are not accepted: one reaches every repository you can write to, including Keyballer itself. Make a fine-grained token for this repository instead.',
-  'token.err.format': 'This is not a fine-grained token. Fine-grained tokens start with github_pat_.',
+    'Classic tokens (ghp_) are not accepted: one reaches every repository you can write to. Make a fine-grained token for this repository instead.',
+  'token.err.format': 'This is not a fine-grained token, which starts with github_pat_. Make one for this repository on GitHub and paste it here.',
   'token.forgotten':
     'Keyballer no longer keeps tokens in this browser, so the token saved here was deleted. It still works on GitHub: if you no longer use it, revoke it there.',
   'token.revoke': 'Revoke it on GitHub',
@@ -551,7 +551,7 @@ export const ja: Record<MessageKey, string> = {
   'cmd.language.bad': 'english か japanese を指定してください',
   'cmd.linkOpen': 'リンクのリポジトリ {repo} を開く',
   'cmd.linkKeep': '今のリポジトリのままにする（リンクを開かない）',
-  'cmd.revokeToken': '削除したトークンを無効にできる GitHub のページを開く',
+  'cmd.openTokens': '削除したトークンを取り消せる GitHub のページを開く',
   'cmd.shortcuts': 'キーボード操作の一覧を表示',
   'cmd.start': '書き込みを始める（続けてリセットボタンを押す）',
 
@@ -584,11 +584,11 @@ export const ja: Record<MessageKey, string> = {
   'token.note':
     'このリポジトリだけを対象に、Contents を「読み取りと書き込み」（変更の保存に必要）、Actions を「読み取り」にした fine-grained トークン（github_pat_ で始まるもの）を貼り付けてください。トークンはこのタブを開いている間だけ保持し、再読み込みやタブを閉じると消えます。',
   'token.err.classic':
-    'classic トークン（ghp_）は使えません。書き込めるすべてのリポジトリに届き、Keyballer 自体も含まれるためです。代わりに、このリポジトリ用の fine-grained トークンを作ってください。',
-  'token.err.format': 'fine-grained トークンではありません。fine-grained トークンは github_pat_ で始まります。',
+    'classic トークン（ghp_）は使えません。書き込めるすべてのリポジトリにアクセスできてしまうためです。代わりに、このリポジトリ用の fine-grained トークンを作ってください。',
+  'token.err.format': 'fine-grained トークン（github_pat_ で始まるもの）ではありません。このリポジトリ用のものを GitHub で作って、ここに貼り付けてください。',
   'token.forgotten':
-    'Keyballer はブラウザにトークンを保存しなくなったため、ここに保存されていたトークンを削除しました。GitHub 上ではまだ有効です。もう使わないなら、GitHub で無効にしてください。',
-  'token.revoke': 'GitHub で無効にする',
+    'Keyballer はブラウザにトークンを保存しなくなったため、ここに保存されていたトークンを削除しました。GitHub 上ではまだ有効です。もう使わないなら、GitHub で取り消してください。',
+  'token.revoke': 'GitHub で取り消す',
 
   'status.title': 'ビルド',
   'status.refresh': '最新の状態にする',

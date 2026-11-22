@@ -186,10 +186,10 @@ p {
   background: var(--err-soft);
 }
 
-/* Something to know that is not an error, such as the deleted saved token. */
-.banner.info {
-  background: var(--sunken);
-  border: 1px solid var(--line);
+/* Something to know that is not an error or a status, such as the deleted saved token. */
+.notice {
+  padding: 2px 0 2px 12px;
+  border-left: 3px solid var(--line);
 }
 
 .err {
