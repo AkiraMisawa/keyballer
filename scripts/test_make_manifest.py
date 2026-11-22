@@ -28,6 +28,23 @@ class MakeManifestTest(unittest.TestCase):
             self.assertEqual(build["sha256"], ABC)
             self.assertEqual(build["view_sha256"], hashlib.sha256(b"{}").hexdigest())
 
+    def test_lists_the_digest_of_a_zmk_build_and_its_frozen_west_manifest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            (out / "r.uf2").write_bytes(b"abc")
+            (out / "r.west.yml").write_bytes(b"manifest: {}\n")
+            (out / "r.json").write_text(json.dumps({
+                "id": "r", "name": "roBa right", "firmware": "zmk", "board": "xiao_ble", "shield": "roBa_R",
+                "role": "central", "file": "r.uf2", "west": "r.west.yml", "size": 256}))
+            summary = out / "summary.md"
+            env = dict(os.environ, GITHUB_REPOSITORY="o/r", GITHUB_RUN_ID="7", GITHUB_SHA="a" * 40,
+                       GITHUB_STEP_SUMMARY=str(summary))
+            subprocess.run([sys.executable, str(SCRIPT), str(out), '["r"]'], check=True, env=env)
+            build = json.loads((out / "manifest.json").read_text())["builds"][0]
+            self.assertEqual(build["sha256"], ABC)
+            self.assertEqual(build["west_sha256"], hashlib.sha256(b"manifest: {}\n").hexdigest())
+            self.assertIn("roBa_R", summary.read_text())
+
     def test_fails_when_a_listed_file_is_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)

@@ -1,0 +1,154 @@
+# Reusable workflow that builds the ZMK firmware described by a config
+# repository's keyballer.json ("firmware": "zmk") and config/west.yml, and
+# publishes it on its `firmware` branch, where the Keyballer app reads it.
+# See docs/plans/zmk.md.
+#
+# In the config repository:
+#
+#   jobs:
+#     build:
+#       uses: AkiraMisawa/keyballer/.github/workflows/build-zmk.yml@main
+#       permissions:
+#         contents: write
+#
+# Unlike ZMK's own build-user-config.yml, no value from the config repository
+# is expanded in shell text, the image is pinned by digest, every west project
+# must be pinned by commit SHA and contained in a branch or tag of its own
+# repository, and each UF2 file is checked block by block before it is kept.
+#
+# Publishing runs only for the default branch. manifest.json lists the SHA-256
+# of every published file, and the run keeps an artifact named after the
+# manifest's own SHA-256. Keyballer flashes only bytes that match a manifest
+# recorded by a successful run of this workflow for the default branch
+# (src/lib/provenance.ts). A token can rewrite the firmware branch, but it
+# cannot change what a run recorded.
+
+name: Build ZMK firmware
+
+on:
+  workflow_call:
+    inputs:
+      keyballer_ref:
+        description: Ref of AkiraMisawa/keyballer that provides the build scripts. Keep it equal to the ref in `uses:`.
+        type: string
+        default: main
+
+jobs:
+  plan:
+    name: Read keyballer.json
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      ids: ${{ steps.plan.outputs.ids }}
+      image: ${{ steps.plan.outputs.image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: config
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          repository: AkiraMisawa/keyballer
+          ref: ${{ inputs.keyballer_ref }}
+          path: keyballer
+      - id: plan
+        run: |
+          echo "ids=$(python3 keyballer/scripts/build_zmk.py config --list)" >> "$GITHUB_OUTPUT"
+          echo "image=$(python3 keyballer/scripts/build_zmk.py config --image)" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.id }}
+    needs: plan
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    container:
+      image: ${{ needs.plan.outputs.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        id: ${{ fromJSON(needs.plan.outputs.ids) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: config
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          repository: AkiraMisawa/keyballer
+          ref: ${{ inputs.keyballer_ref }}
+          path: keyballer
+      - name: Build
+        env:
+          WORK_DIR: ${{ runner.temp }}/keyballer-work
+          ID: ${{ matrix.id }}
+        run: python3 keyballer/scripts/build_zmk.py config out --only "$ID"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: firmware-${{ matrix.id }}
+          path: out/
+          if-no-files-found: error
+
+  publish:
+    name: Publish to the firmware branch
+    needs: [plan, build]
+    # Only the default branch publishes: a pushed side branch never replaces the firmware.
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          repository: AkiraMisawa/keyballer
+          ref: ${{ inputs.keyballer_ref }}
+          path: keyballer
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: firmware-*
+          merge-multiple: true
+          path: out
+      # Expressions never go into shell text: values arrive as environment variables.
+      - name: Publish only from the default branch (case-sensitive)
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          if [ -z "$DEFAULT_BRANCH" ] || [ "$GITHUB_REF" != "refs/heads/$DEFAULT_BRANCH" ]; then
+            echo "Not publishing: $GITHUB_REF is not the default branch." >&2
+            exit 1
+          fi
+      - name: Write manifest.json
+        env:
+          IDS: ${{ needs.plan.outputs.ids }}
+        run: python3 keyballer/scripts/make_manifest.py out "$IDS"
+      - name: Name the build record after manifest.json
+        id: record
+        run: |
+          mkdir record
+          cp out/manifest.json record/manifest.json
+          digest="$(sha256sum record/manifest.json | cut -d' ' -f1)"
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          echo "manifest.json SHA-256: ${digest}"
+      - name: Keep the build record with this run
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: keyballer-manifest-${{ steps.record.outputs.digest }}
+          path: record/manifest.json
+          if-no-files-found: error
+          # As long as the repository allows; Keyballer refuses firmware whose record has expired.
+          retention-days: 90
+      - name: Push the firmware branch
+        working-directory: out
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git init -q -b firmware
+          git add -A
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -q -m "Firmware for ${GITHUB_SHA::7}"
+          git push -q --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:firmware
