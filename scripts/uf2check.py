@@ -4,7 +4,9 @@ The bootloader flashes any valid UF2 block it is given, wherever it points, incl
 the family that replaces the bootloader itself; UF2 has no signatures. So Keyballer accepts only
 an application image for the nRF52840: every block well formed, of the nRF52840 family, with a
 256-byte payload, numbered in order, at distinct 256-aligned addresses between the end of the
-SoftDevice and the start of the settings area. src/lib/uf2.ts applies the same rules in the page.
+SoftDevice S140 v7 and the start of the settings area. src/lib/uf2.ts applies the same rules in
+the page. Boards with the older S140 v6 (application from 0x26000, such as early nice!nano
+bootloaders) are refused until the bootloader's INFO_UF2.TXT can be read (docs/plans/zmk.md).
 
 Runs on Python 3.9.
 """
@@ -18,9 +20,10 @@ MAGIC_END = 0x0AB16F30
 FLAG_FAMILY_ID = 0x2000
 NRF52840 = 0xADA52840
 PAYLOAD = 256
-# Application flash with SoftDevice S140 v6 or v7: code from 0x26000 (v6) or 0x27000 (v7), and
-# settings, bonds and the bootloader from 0xEC000 (Zephyr's nrf52840_partition_uf2_sdv7.dtsi).
-APP_START = 0x26000
+# Application flash with SoftDevice S140 v7, as on the Seeed XIAO nRF52840 (bootloader 0.6.1 with
+# s140 7.3.0): code from 0x27000, settings, bonds and the bootloader from 0xEC000 (Zephyr's
+# nrf52840_partition_uf2_sdv7.dtsi; the SoftDevice ends at 0x27000).
+APP_START = 0x27000
 APP_END = 0xEC000
 
 _HEAD = struct.Struct("<IIIIIIII")

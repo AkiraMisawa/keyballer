@@ -141,7 +141,7 @@ Sources are primary; links are at the end. **Observed** marks what I checked mys
 2. **Add `build-zmk.yml` and `build_zmk.py`.**
    - **`keyballer.json`:** validated, with `"firmware": "zmk"`, `zmk.image` pinned by digest, and each build's `id`, `name`, `board`, `shield`, `snippet` and `group`.
    - **Manifest rules:** every config-manifest revision is a 40-hex SHA on github.com, with no `submodules` and no `import` except ZMK's.
-   - **After `west update`:** the containment check, then `west manifest --freeze` saved as `<id>.west.yml`.
+   - **After `west update`:** the containment check, then the manifest saved as `<id>.west.yml`. (As built, the check runs before `west update` in a scratch repository, and the saved manifest is `west manifest --resolve`, because `--freeze` refuses uncloned projects; see docs/plans/zmk.md.)
 3. **Manifest fields** for each build:
    - `firmware: "zmk"`, `format: "uf2"`, `board`, `shield`, `snippet`, `group`;
    - from `.config`: `role` (`central`, `peripheral`, `standalone` or `settings_reset`) and `studio`;

@@ -26,7 +26,7 @@ Keyballer (this app) ◀──── GitHub API ──────────�
 | | Status |
 | --- | --- |
 | QMK builds | Supported, including keyboards defined outside qmk_firmware (for example Yowkees/keyball) |
-| ZMK builds | Planned |
+| ZMK builds | Supported, with Keyballer's workflow (flashing from the app comes next) |
 | Flashing Pro Micro (ATmega32U4 / Caterina) | Supported |
 | Flashing RP2040 / nRF52840 (UF2) | Planned |
 | Keymap editor | Supported (keys, combos, layers) |
@@ -109,6 +109,33 @@ jobs:
 ```
 
 When a build of the default branch succeeds, the `firmware` branch is replaced by a single commit holding `manifest.json` and the firmware files. `manifest.json` lists the SHA-256 of each file, and the build run keeps an artifact named after the manifest's own SHA-256. Keyballer flashes only firmware that matches a manifest recorded by a successful run of the build for the default branch, and shows the run and the commit. A token can rewrite the `firmware` branch but cannot change what a run recorded, so a leaked token cannot slip firmware onto your keyboard without a commit on `main`. GitHub keeps the records for 90 days; older firmware is built again before flashing. For the same reason, `keyballer.json` pins what the build pulls in: `sources[].ref` must be a full commit SHA, and `qmk.image`, if set, must be pinned by `@sha256:`. A ruleset on `main` that blocks force-pushes and deletion is recommended.
+
+### ZMK config repositories
+
+A ZMK user config (for example [AkiraMisawa/zmk-config-roBa](https://github.com/AkiraMisawa/zmk-config-roBa)) builds with `build-zmk.yml` instead. Add `keyballer.json` at the top, next to `config/west.yml`, and call the workflow from `.github/workflows/build.yml` as above, with `build-zmk.yml`. ZMK's own `build.yaml` is not read. Plan: [docs/plans/zmk.md](docs/plans/zmk.md).
+
+```json
+{
+  "firmware": "zmk",
+  "zmk": { "image": "docker.io/zmkfirmware/zmk-build-arm@sha256:0979a8de…" },
+  "builds": [
+    { "id": "roba-right", "name": "roBa right", "group": "roba",
+      "board": "seeeduino_xiao_ble", "shield": "roBa_R", "snippet": "studio-rpc-usb-uart" },
+    { "id": "roba-left", "name": "roBa left", "group": "roba",
+      "board": "seeeduino_xiao_ble", "shield": "roBa_L" },
+    { "id": "roba-reset", "name": "roBa settings reset", "group": "roba",
+      "board": "seeeduino_xiao_ble", "shield": "settings_reset" }
+  ]
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `zmk.image` | The build image, pinned by digest: `zmk-build-arm:3.5` for ZMK on Zephyr 3.5, `4.1` for newer ZMK |
+| `builds[].group` | Builds of one keyboard share a group: both halves and the settings reset |
+| `builds[].board`, `shield`, `snippet` | As in ZMK's `build.yaml` (several shields or snippets separated by spaces). There are no `cmake-args` |
+
+`config/west.yml` must pin every project by full commit SHA, Zephyr included. ZMK names Zephyr by branch, so the config lists `zephyr` itself, with ZMK's import list. Each commit must be in a branch or tag of the repository it names. The build checks this before `west` runs, because GitHub serves a fork's commits through the parent's URL. The build records each file's role (central, peripheral, standalone or settings reset) and publishes the resolved `west.yml` next to the UF2 file. A UF2 file is kept only if every block targets the nRF52840's application area: the build refuses files that would overwrite the bootloader, the SoftDevice or the pairings.
 
 ## Building locally
 

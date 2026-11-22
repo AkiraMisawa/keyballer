@@ -74,16 +74,18 @@ The same model as QMK: Keyballer's own reusable workflow builds the firmware, pu
   - **remotes:** each `url-base` is `https://github.com/<owner>`;
   - **projects:**
     - each has a remote, a plain path, and a 40-hex `revision`;
-    - `import` is allowed only on the project named `zmk`, as `app/west.yml`;
+    - `import` is allowed only on `zmk`, as `app/west.yml`, and on `zephyr`, as a `name-allowlist` or `name-blocklist`. Overriding `zephyr` replaces ZMK's import of it, so the config repeats ZMK's list;
+    - `zmk` and `zephyr` stay at their own paths, and no other project may sit under `zmk`, `zephyr`, `config`, `build`, `modules`, `bootloader` or `tools`, so nothing else is built under their names;
+    - names and remotes appear once, and there are no `defaults`;
     - there are no `submodules`;
   - **`self.path`** is `config`.
 
   After `west update`, `west manifest --resolve` must show a SHA for every project, so the config also pins `zephyr` (the top-level definition wins over ZMK's branch).
-- **The containment check.** For every project that `config/west.yml` itself lists, the build:
-  - fetches the remote's branches and tags with `--filter=tree:0`;
+- **The containment check.** For every project that `config/west.yml` itself lists, before `west` runs, the build:
+  - fetches the repository's branches and tags with `--filter=tree:0` into a new, empty repository, under `refs/keyballer/`;
   - requires `git for-each-ref --contains <sha>`, as `build_qmk.py` does for QMK sources.
 
-  Projects imported by ZMK or Zephyr are pinned by the manifest inside a commit that this check covers.
+  Nothing from a pinned project runs before this check. In particular, `west zephyr-export` is Zephyr's own command, so it runs only after the check: the security review showed that a forked Zephyr could otherwise plant a tag and pass. After `west update`, each project must be checked out at its pinned commit. Projects imported by ZMK or Zephyr are pinned by the manifest inside a commit that this check covers.
 - **The published manifest.** The build writes `west manifest --resolve` to `<id>.west.yml`, which the manifest lists with its SHA-256. Every project in it is at a SHA, so it is the frozen manifest. `west manifest --freeze` itself refuses Zephyr's optional projects, which are not cloned.
 - **No build cache.** A poisoned cache would be trusted. Builds take about three minutes.
 - **What the build records** for each build, in its `<id>.json`:
@@ -96,7 +98,7 @@ The same model as QMK: Keyballer's own reusable workflow builds the firmware, pu
 - **The UF2 rules**, the same in Python (build) and TypeScript (browser):
   - the length is a positive multiple of 512;
   - every block has the three magics, flags exactly `0x2000`, family `0xADA52840`, a 256-byte payload, `blockNo` equal to its index, and the same `numBlocks` as the others;
-  - every target address is 256-aligned and in `[0x26000, 0xEC000)`;
+  - every target address is 256-aligned and in `[0x27000, 0xEC000)`, the application area for SoftDevice S140 v7, as on the XIAO nRF52840. Boards with S140 v6 (application from `0x26000`, such as early nice!nano bootloaders) are refused until phase 2 reads `INFO_UF2.TXT`;
   - the addresses do not repeat.
 
   This refuses files that would overwrite the bootloader (family `0xd663823c`), the SoftDevice, or the settings and bonds. In the browser, the file's block count and range must also equal the manifest's.

@@ -26,7 +26,7 @@ Keyballer（このアプリ） ◀──GitHub API で取得───┘
 | | 状況 |
 | --- | --- |
 | QMK のビルド | 対応（QMK 本体の外にある機種定義も取り込めます。例：Yowkees/keyball） |
-| ZMK のビルド | 予定 |
+| ZMK のビルド | 対応（Keyballer のワークフロー。アプリからの書き込みは次の予定） |
 | Pro Micro（ATmega32U4 / Caterina）への書き込み | 対応 |
 | RP2040・nRF52840（UF2）への書き込み | 予定 |
 | キーマップの編集画面 | 対応（キー、コンボ、レイヤー） |
@@ -109,6 +109,33 @@ jobs:
 ```
 
 既定ブランチのビルドが成功すると、`firmware` ブランチが `manifest.json` とファームウェアだけのコミットで置き換わります。`manifest.json` には各ファイルの SHA-256 が入り、ビルドの実行はマニフェスト自体の SHA-256 を名前にした成果物（artifact）を残します。Keyballer は、既定ブランチ向けの成功したビルドの実行が記録したマニフェストと一致するファームウェアだけを書き込み、その実行と commit を表示します。トークンで `firmware` ブランチを書き換えることはできても、実行が記録した内容は変えられません。そのため、トークンが漏れても、`main` へのコミットなしにキーボードへファームウェアを入れることはできません。記録は GitHub が 90 日間保存し、それより古いファームウェアはビルドし直してから書き込みます。同じ理由で、`keyballer.json` では、ビルドが取り込むものを固定します。`sources[].ref` は commit の SHA（40 桁）で、`qmk.image` を書くなら `@sha256:` で固定してください。`main` には、強制 push と削除を禁止するルールセットを設定するのがおすすめです。
+
+### ZMK の設定リポジトリ
+
+ZMK のユーザー設定（例：[AkiraMisawa/zmk-config-roBa](https://github.com/AkiraMisawa/zmk-config-roBa)）は、代わりに `build-zmk.yml` でビルドします。`config/west.yml` と同じリポジトリの一番上に `keyballer.json` を置き、`.github/workflows/build.yml` から上と同じ形で `build-zmk.yml` を呼びます。ZMK の `build.yaml` は読みません。計画：[docs/plans/zmk.md](docs/plans/zmk.md)（英語）
+
+```json
+{
+  "firmware": "zmk",
+  "zmk": { "image": "docker.io/zmkfirmware/zmk-build-arm@sha256:0979a8de…" },
+  "builds": [
+    { "id": "roba-right", "name": "roBa right", "group": "roba",
+      "board": "seeeduino_xiao_ble", "shield": "roBa_R", "snippet": "studio-rpc-usb-uart" },
+    { "id": "roba-left", "name": "roBa left", "group": "roba",
+      "board": "seeeduino_xiao_ble", "shield": "roBa_L" },
+    { "id": "roba-reset", "name": "roBa settings reset", "group": "roba",
+      "board": "seeeduino_xiao_ble", "shield": "settings_reset" }
+  ]
+}
+```
+
+| 項目 | 意味 |
+| --- | --- |
+| `zmk.image` | ビルドに使うイメージ。digest で固定します。Zephyr 3.5 の ZMK には `zmk-build-arm:3.5`、それより新しい ZMK には `4.1` |
+| `builds[].group` | 同じキーボードのビルドは同じ group にします（左右と設定のリセット） |
+| `builds[].board`、`shield`、`snippet` | ZMK の `build.yaml` と同じです（複数ならスペース区切り）。`cmake-args` は使えません |
+
+`config/west.yml` は、Zephyr も含めてすべてのプロジェクトをコミットの SHA で固定してください。ZMK は Zephyr をブランチ名で指しているので、設定側で `zephyr` を ZMK と同じ import の一覧つきで書きます。各コミットは、そのリポジトリのブランチかタグに含まれている必要があります。GitHub ではフォークのコミットも親リポジトリの URL で取れてしまうため、ビルドは `west` を動かす前にこれを確かめます。ビルドは、ファイルごとの役割（セントラル、ペリフェラル、単体、設定のリセット）を記録し、すべて SHA に解決した `west.yml` を UF2 ファイルの隣に公開します。UF2 ファイルは、すべてのブロックが nRF52840 のアプリケーション領域を指すときだけ残します。ブートローダー、SoftDevice、ペアリング情報を上書きするファイルは拒否します。
 
 ## 手元でビルドする
 

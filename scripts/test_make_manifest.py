@@ -28,7 +28,7 @@ class MakeManifestTest(unittest.TestCase):
             self.assertEqual(build["sha256"], ABC)
             self.assertEqual(build["view_sha256"], hashlib.sha256(b"{}").hexdigest())
 
-    def test_lists_the_digest_of_a_zmk_build_and_its_frozen_west_manifest(self):
+    def test_lists_the_digest_of_a_zmk_build_and_its_resolved_west_manifest(self):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)
             (out / "r.uf2").write_bytes(b"abc")
