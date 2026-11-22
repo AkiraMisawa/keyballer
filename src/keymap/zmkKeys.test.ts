@@ -1,5 +1,5 @@
 // Writing keys as ZMK bindings. Every name written is checked against ZMK's own keys.h: the
-// fixture zmk-keys.json lists each name keys.h defines (at both pinned ZMK commits, acfd8e5e and
+// table zmk-keys.json (which the app also reads keys with) lists each name keys.h defines (at both pinned ZMK commits, acfd8e5e and
 // abb64ba3, which have the same keys.h) with the keycode the build's reader, scripts/zmk_view.py,
 // makes of its value. It is made by scripts/zmk_keys.py.
 
@@ -10,7 +10,7 @@ import { canonical, shiftedBase } from './keycodes';
 import { parseKeycode } from './view';
 import { zmkBinding, type ZmkContext } from './zmkKeys';
 
-const KEYS = JSON.parse(readFileSync(new URL('./fixtures/zmk-keys.json', import.meta.url), 'utf8')) as Record<string, string | null>;
+const KEYS = JSON.parse(readFileSync(new URL('./zmk-keys.json', import.meta.url), 'utf8')) as Record<string, string | null>;
 
 const none: ZmkContext = { known: new Map(), mouse: false, bluetooth: false };
 const text = (keycode: string, context = none) => {
@@ -134,5 +134,28 @@ describe('tap and hold, layers and the rest', () => {
     expect(text('KC_LALT', known)).toBe('&kp LEFT_ALT');
     expect(text('LT(5, ZMK_TO_LAYER_0_70034)', known)).toBe('&lt_to_layer_0 5 APOSTROPHE');
     expect(text('ZMK_TO_LAYER_0_70034')).toBe('picker.err.notInZmk');
+  });
+
+  it('reuses the file’s text only when it means the same key', () => {
+    // What a key means comes from the build's view; a view that says Esc where the file has
+    // &bootloader must not make "Esc" write &bootloader.
+    const lying: ZmkContext = {
+      ...none,
+      known: new Map([
+        ['KC_ESC', '&bootloader'],
+        ['KC_A', '&kp LG(L)'],
+        ['MO(1)', '&mo 2'],
+        ['LALT_T(KC_Q)', '&mt LEFT_ALT Q'],
+        ['LSFT(KC_1)', '&kp EXCLAMATION'],
+        ['LT(2,KC_SPC)', '&lt 0x2 SPACE'],
+      ]),
+    };
+    expect(text('KC_ESC', lying)).toBe('&kp ESC');
+    expect(text('KC_A', lying)).toBe('&kp A');
+    expect(text('MO(1)', lying)).toBe('&mo 1');
+    // The same key, spelled the file's way, is kept.
+    expect(text('LALT_T(KC_Q)', lying)).toBe('&mt LEFT_ALT Q');
+    expect(text('KC_EXLM', lying)).toBe('&kp EXCLAMATION');
+    expect(text('LT(2, KC_SPC)', lying)).toBe('&lt 0x2 SPACE');
   });
 });

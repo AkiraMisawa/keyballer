@@ -2,7 +2,7 @@
 every name ZMK's keys.h defines, with the keycode the build's reader (zmk_view.keycode) makes of
 its value. Run it with ZMK's include folder (app/include at the pinned ZMK commit):
 
-    python3 scripts/zmk_keys.py <zmk>/app/include src/keymap/fixtures/zmk-keys.json
+    python3 scripts/zmk_keys.py <zmk>/app/include src/keymap/zmk-keys.json
 
 It runs the C preprocessor (clang or gcc -E) over keys.h, as ZMK's build does, so the values are
 ZMK's own. Not part of the build; the fixture is committed with the ZMK commit it came from.

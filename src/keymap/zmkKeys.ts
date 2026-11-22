@@ -6,10 +6,15 @@
 import type { MessageKey } from '../i18n/messages';
 import { canonical, MOD_TAPS, NO_ACTION, shiftedBase, TRANSPARENT, type Mod } from './keycodes';
 import { parseKeycode } from './view';
+// Every name ZMK's keys.h defines, with the QMK keycode its value is (made by scripts/zmk_keys.py).
+import ZMK_KEYS from './zmk-keys.json';
 
 /** What the keymap being edited already has, which decides how some keys are written. */
 export interface ZmkContext {
-  /** Each keycode in the keymap, with its binding as written there (`KC_LALT` → `&kp LEFT_ALT`). */
+  /**
+   * Each keycode in the keymap, as the build's view names it, with its binding as written there
+   * (`KC_LALT` → `&kp LEFT_ALT`), first in the file first.
+   */
   known: ReadonlyMap<string, string>;
   /** Mouse buttons (`&mkp`) build only with ZMK's mouse keys on: the keymap already uses them. */
   mouse: boolean;
@@ -122,11 +127,81 @@ function heldModifier(expr: Expr): string | null {
   return MOD_KEY[side][mods[0]];
 }
 
-/** The binding that does what a keycode does, or why Keyballer cannot write one. */
+const ZMK_MODIFIERS: Record<string, string> = { LC: 'LCTL', LS: 'LSFT', LA: 'LALT', LG: 'LGUI', RC: 'RCTL', RS: 'RSFT', RA: 'RALT', RG: 'RGUI' };
+const MOD_ORDER = ['LCTL', 'LSFT', 'LALT', 'LGUI', 'RCTL', 'RSFT', 'RALT', 'RGUI'];
+const NAMES = ZMK_KEYS as Record<string, string | null>;
+
+/** What a key parameter means, through keys.h: `LS(LEFT_ALT)` and `LS(LALT)` read the same. */
+function readKey(param: string): string | null {
+  const mods = new Set<string>();
+  let expr = parseKeycode(param);
+  while (ZMK_MODIFIERS[expr.name] && expr.args.length === 1) {
+    mods.add(ZMK_MODIFIERS[expr.name]);
+    expr = expr.args[0];
+  }
+  const named = expr.args.length === 0 ? NAMES[expr.name] : undefined;
+  if (!named) return null;
+  // A name such as EXCL carries its own modifiers: LSFT(KC_1).
+  let inner = parseKeycode(named);
+  while (inner.args.length === 1) {
+    mods.add(inner.name);
+    inner = inner.args[0];
+  }
+  return MOD_ORDER.filter((m) => mods.has(m)).reduceRight((text, m) => `${m}(${text})`, inner.name);
+}
+
+/** A binding's reference and parameters, split as ZMK reads them (spaces outside parentheses). */
+function words(binding: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let word = '';
+  for (const c of `${binding} `) {
+    if (c === '(') depth++;
+    if (c === ')') depth--;
+    if (/\s/.test(c) && depth === 0) {
+      if (word) out.push(word);
+      word = '';
+    } else word += c;
+  }
+  return out;
+}
+
+const number = (word: string) => (/^(0x[0-9a-f]+|\d+)$/i.test(word) ? Number(word) : null);
+
+/** Whether two bindings do the same: one behaviour, and parameters that are the same numbers or keys. */
+function sameBinding(a: string, b: string): boolean {
+  const [x, y] = [words(a), words(b)];
+  return (
+    x.length === y.length &&
+    x[0] === y[0] &&
+    x.slice(1).every((p, i) => {
+      const q = y[i + 1];
+      if (number(p) !== null || number(q) !== null) return number(p) === number(q);
+      const key = readKey(p);
+      return key !== null && key === readKey(q);
+    })
+  );
+}
+
+/**
+ * The binding that does what a keycode does, or why Keyballer cannot write one. When the file
+ * already has a binding that means the same (read through keys.h), it keeps the file's spelling.
+ * Which keycode a binding of the file stands for comes from the build's view, so it is used only
+ * for keys the table cannot write (a macro, a behaviour of the keymap's own): for any other key the
+ * view never decides what is written.
+ */
 export function zmkBinding(keycode: string, context: ZmkContext): ZmkBinding {
   const code = keycode.replace(/\s+/g, '');
-  const known = context.known.get(code);
-  if (known) return { text: known };
+  const written = writeBinding(code, context);
+  if ('refused' in written) {
+    const known = context.known.get(code);
+    return known ? { text: known } : written;
+  }
+  for (const text of context.known.values()) if (sameBinding(text, written.text)) return { ...written, text };
+  return written;
+}
+
+function writeBinding(code: string, context: ZmkContext): ZmkBinding {
   const expr = parseKeycode(code);
   const name = canonical(expr.name);
 

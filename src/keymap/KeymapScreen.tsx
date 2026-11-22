@@ -90,7 +90,8 @@ export function KeymapScreen(props: Props) {
   const [os, setOs] = useState<Os>(savedOs);
   const [layout, setLayout] = useState<Layout>(savedLayout);
   // A ZMK build's view says what its .keymap file means, so the session waits for it.
-  const edit = useEditSession(repo, token, build.id, isZmk(build) ? builtView : null);
+  const zmkSource = useMemo(() => (isZmk(build) ? { view: builtView } : null), [build, builtView]);
+  const edit = useEditSession(repo, token, build.id, zmkSource);
   const [editing, setEditing] = useState(false);
   /**
    * What the board draws: the built firmware's keymap, or, while editing or with unsaved
@@ -336,10 +337,16 @@ export function KeymapScreen(props: Props) {
     },
   });
 
-  useTrackballCommands(edit, () => {
-    focusAfter.current = false;
-    setSelected('ball');
-  }, (mode) => setPadRequest({ mode, id: ++padRequests.current }));
+  useTrackballCommands(
+    edit,
+    () => {
+      focusAfter.current = false;
+      setSelected('ball');
+    },
+    (mode) => setPadRequest({ mode, id: ++padRequests.current }),
+    // ZMK trackballs are set in the keyboard's own files (docs/plans/zmk.md, phase 4).
+    isZmk(build) ? msg('why.zmkBall') : undefined,
+  );
 
   // ---- editing (docs/plans/keymap-editor.md) ----
   const editProblem = edit.session && builtView ? keymapProblem(edit.session, builtView.layout) : undefined;
@@ -823,7 +830,7 @@ export function KeymapScreen(props: Props) {
 }
 
 /** Commands for the trackball settings; they select the ball so its panel shows. */
-function useTrackballCommands(edit: EditSession, showBall: () => void, startPad: (mode: PadMode) => void) {
+function useTrackballCommands(edit: EditSession, showBall: () => void, startPad: (mode: PadMode) => void, unavailable: Localized | undefined) {
   const numberArg = (name: string, hint: Localized, ok: (n: number) => boolean, bad: Localized) => ({
     name,
     required: true,
@@ -840,6 +847,7 @@ function useTrackballCommands(edit: EditSession, showBall: () => void, startPad:
     title: msg('cmd.cursorSpeed'),
     group: 'group.keymap',
     page: true,
+    unavailable,
     args: [numberArg('cpi', msg('cmd.cursorSpeed.hint'), cpiOk, msg('cmd.cursorSpeed.bad'))],
     run: ({ cpi }) => {
       if (!cpiOk(Number(cpi))) throw new CommandRefused(msg('cmd.cursorSpeed.bad'));
@@ -853,6 +861,7 @@ function useTrackballCommands(edit: EditSession, showBall: () => void, startPad:
     title: msg('cmd.scrollSpeed'),
     group: 'group.keymap',
     page: true,
+    unavailable,
     args: [numberArg('divider', msg('cmd.scrollSpeed.hint'), dividerOk, msg('cmd.scrollSpeed.bad'))],
     run: ({ divider }) => {
       if (!dividerOk(Number(divider))) throw new CommandRefused(msg('cmd.scrollSpeed.bad'));
@@ -866,6 +875,7 @@ function useTrackballCommands(edit: EditSession, showBall: () => void, startPad:
     title: msg('cmd.ballSize'),
     group: 'group.keymap',
     page: true,
+    unavailable,
     args: [numberArg('mm', msg('cmd.ballSize.hint'), mmOk, mmBad)],
     run: ({ mm }) => {
       if (!mmOk(Number(mm))) throw new CommandRefused(mmBad);
@@ -879,6 +889,7 @@ function useTrackballCommands(edit: EditSession, showBall: () => void, startPad:
     title: msg('cmd.tryBall'),
     group: 'group.keymap',
     page: true,
+    unavailable,
     run: () => {
       showBall();
       startPad('try');
@@ -890,6 +901,7 @@ function useTrackballCommands(edit: EditSession, showBall: () => void, startPad:
     title: msg('cmd.measure'),
     group: 'group.keymap',
     page: true,
+    unavailable,
     run: () => {
       showBall();
       startPad('measure');
