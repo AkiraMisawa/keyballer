@@ -3,6 +3,7 @@ import { BuildStatus } from './components/BuildStatus';
 import { FirmwareCard } from './components/FirmwareCard';
 import { FlashPanel } from './components/FlashPanel';
 import { LanguageSwitch } from './components/LanguageSwitch';
+import { LinkPrompt } from './components/LinkPrompt';
 import { LocalFirmware } from './components/LocalFirmware';
 import { KeymapScreen } from './keymap/KeymapScreen';
 import { Kbd, lineChord } from './commands/keys';
@@ -107,11 +108,11 @@ export function App() {
   const { openLine, openHelp } = useCommandLine();
   const serialOk = isWebSerialSupported();
   const [askRepo, setAskRepo] = useState(linkedRepo);
-  // The safe answer has focus, so Enter does not open a stranger's repository.
-  const keepRepoButton = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (askRepo) keepRepoButton.current?.focus();
-  }, [askRepo]);
+  /** The link has been answered: forget it, and take it out of the address. */
+  const answerLink = () => {
+    setAskRepo(null);
+    dropRepoParam();
+  };
   const [repoInput, setRepoInput] = useState(() => load('keyballer.repo'));
   const [token, setToken] = useState(() => load('keyballer.token'));
   const [repo, setRepo] = useState<RepoState | null>(null);
@@ -170,7 +171,7 @@ export function App() {
     }
   }, [repo, fetchState]);
 
-  // Connect on load when a repository is remembered or given in ?repo=.
+  // Connect on load when a repository is remembered. A ?repo= link waits for an answer instead.
   const autoConnected = useRef(false);
   useEffect(() => {
     if (autoConnected.current || !repoInput) return;
@@ -433,39 +434,19 @@ export function App() {
         <section className="panel" aria-labelledby="repo-title">
           <h2 id="repo-title">{t('repo.title')}</h2>
           {askRepo && (
-            <div className="banner stack" role="alertdialog" aria-labelledby="link-repo-title" aria-describedby="link-repo-body">
-              <p id="link-repo-title">
-                {t('repo.linkAsk', { repo: askRepo })}
-              </p>
-              <p id="link-repo-body" className="note">
-                {t('repo.linkWhy')}
-              </p>
-              <div className="row">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const next = askRepo;
-                    setAskRepo(null);
-                    dropRepoParam();
-                    setRepoInput(next);
-                    void connect(next);
-                  }}
-                >
-                  {t('repo.linkOpen', { repo: askRepo })}
-                </button>
-                <button
-                  type="button"
-                  className="primary"
-                  ref={keepRepoButton}
-                  onClick={() => {
-                    setAskRepo(null);
-                    dropRepoParam();
-                  }}
-                >
-                  {repoInput ? t('repo.linkKeep', { repo: repoInput }) : t('repo.linkIgnore')}
-                </button>
-              </div>
-            </div>
+            <LinkPrompt
+              linked={askRepo}
+              saved={repoInput}
+              onOpen={() => {
+                const next = askRepo;
+                // This connect is the only one: the on-load connect must not follow the new value.
+                autoConnected.current = true;
+                answerLink();
+                setRepoInput(next);
+                void connect(next);
+              }}
+              onKeep={answerLink}
+            />
           )}
           <form
             className="repo-form"

@@ -32,7 +32,7 @@ const judge = (over: Partial<Parameters<typeof judgeProvenance>[0]> = {}) =>
     manifest: { sourceSha: SOURCE, runId: 44975575890, digest: EMPTY },
     file: { expected: ABC, actual: ABC },
     // The compare API's status for <default branch head>...<source commit>.
-    onBranch: 'identical',
+    branchStatus: 'identical',
     ...over,
   });
 
@@ -82,12 +82,12 @@ describe('judgeProvenance', () => {
   });
 
   it('accepts an older build whose commit is still on the default branch', () => {
-    expect(judge({ onBranch: 'behind' })).toEqual({ ok: true });
+    expect(judge({ branchStatus: 'behind' })).toEqual({ ok: true });
   });
 
   it('refuses a commit that is no longer on the default branch (force-pushed away)', () => {
-    expect(judge({ onBranch: 'diverged' })).toEqual({ ok: false, reason: 'provenance.err.notDefault' });
-    expect(judge({ onBranch: 'ahead' })).toEqual({ ok: false, reason: 'provenance.err.notDefault' });
+    expect(judge({ branchStatus: 'diverged' })).toEqual({ ok: false, reason: 'provenance.err.notDefault' });
+    expect(judge({ branchStatus: 'ahead' })).toEqual({ ok: false, reason: 'provenance.err.notDefault' });
   });
 
   it('refuses a build run for another branch or started some other way', () => {

@@ -216,11 +216,26 @@ export function FlashPanel({ title, image, split, source, onFlashed, onClose }: 
             <span className="commit-line">{source.message.split('\n')[0]}</span>{' '}
             <span className="muted">{formatDateTime(source.date, lang)}</span>
           </p>
-          {source.behindBy > 0 && <p className="note">{t('flash.behind', { n: source.behindBy, branch: source.branch })}</p>}
-          {source.sinceLast && (
+          {source.behindBy > 0 && (
+            <p className="note">
+              {t(source.behindBy === 1 ? 'flash.behindOne' : 'flash.behindMany', { n: source.behindBy, branch: source.branch })}
+            </p>
+          )}
+          {source.sinceLast && source.sinceLast.older > 0 && (
+            <p className="note">
+              {t(source.sinceLast.older === 1 ? 'flash.olderOne' : 'flash.olderMany', {
+                n: source.sinceLast.older,
+                sha: shortSha(source.sinceLast.sha),
+              })}
+            </p>
+          )}
+          {source.sinceLast && source.sinceLast.newer > 0 && (
             <p>
               <a href={source.sinceLast.url} target="_blank" rel="noreferrer">
-                {t('flash.sinceLast', { n: source.sinceLast.commits, sha: shortSha(source.sinceLast.sha) })}
+                {t(source.sinceLast.newer === 1 ? 'flash.sinceLastOne' : 'flash.sinceLastMany', {
+                  n: source.sinceLast.newer,
+                  sha: shortSha(source.sinceLast.sha),
+                })}
               </a>
             </p>
           )}

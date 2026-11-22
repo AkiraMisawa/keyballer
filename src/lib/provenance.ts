@@ -13,7 +13,7 @@
 import type { MessageKey } from '../i18n/messages';
 
 /** The reusable workflow that config repositories call to build firmware; any ref of it. */
-export const KEYBALLER_WORKFLOW = 'AkiraMisawa/keyballer/.github/workflows/build-qmk.yml@';
+const KEYBALLER_WORKFLOW = 'AkiraMisawa/keyballer/.github/workflows/build-qmk.yml@';
 
 /** The fields of a GitHub Actions workflow run that provenance reads. */
 export interface ProvenanceRun {
@@ -33,6 +33,9 @@ export interface RunArtifact {
 
 export type Verdict = { ok: true } | { ok: false; reason: MessageKey };
 
+/** How the source commit relates to the default branch head, as the compare API reports it. */
+export type CompareStatus = 'identical' | 'behind' | 'ahead' | 'diverged';
+
 export const manifestArtifactName = (manifestDigest: string) => `keyballer-manifest-${manifestDigest}`;
 
 export async function sha256Hex(bytes: Uint8Array): Promise<string> {
@@ -41,7 +44,7 @@ export async function sha256Hex(bytes: Uint8Array): Promise<string> {
 }
 
 const STARTED_ON_PURPOSE = new Set(['push', 'workflow_dispatch']);
-const ON_BRANCH = new Set(['identical', 'behind']);
+const STILL_ON_BRANCH = new Set<CompareStatus>(['identical', 'behind']);
 
 export function judgeProvenance({
   run,
@@ -49,7 +52,7 @@ export function judgeProvenance({
   defaultBranch,
   manifest,
   file,
-  onBranch,
+  branchStatus,
 }: {
   run: ProvenanceRun;
   artifacts: readonly RunArtifact[];
@@ -62,7 +65,7 @@ export function judgeProvenance({
    * The compare API's status for <default branch head>...<source commit>: `identical` or `behind`
    * when the commit is still on the default branch. Anything else means it was force-pushed away.
    */
-  onBranch: string;
+  branchStatus: CompareStatus;
 }): Verdict {
   const usesKeyballer = (run.referenced_workflows ?? []).some((w) => w.path.startsWith(KEYBALLER_WORKFLOW));
   const isTheBuild =
@@ -72,7 +75,7 @@ export function judgeProvenance({
     run.status === 'completed' &&
     run.conclusion === 'success';
   if (!isTheBuild || file.expected === undefined) return { ok: false, reason: 'provenance.err.noRecord' };
-  if (run.head_branch !== defaultBranch || !STARTED_ON_PURPOSE.has(run.event) || !ON_BRANCH.has(onBranch)) {
+  if (run.head_branch !== defaultBranch || !STARTED_ON_PURPOSE.has(run.event) || !STILL_ON_BRANCH.has(branchStatus)) {
     return { ok: false, reason: 'provenance.err.notDefault' };
   }
   const record = artifacts.find((a) => a.name === manifestArtifactName(manifest.digest));

@@ -48,6 +48,8 @@ REPO_PATTERN = re.compile(r"[A-Za-z0-9-]+/(?!\.\.?$)[A-Za-z0-9_.-]+")
 COMMIT_PATTERN = re.compile(r"[0-9a-f]{40}")
 NAME_PATTERN = re.compile(r"[A-Za-z0-9_-]+")
 PATH_SEGMENT = re.compile(r"[A-Za-z0-9_][A-Za-z0-9._-]*")
+# A display name: any text on one line.
+NAME_TEXT = re.compile(r"[^\x00-\x1f\x7f]{1,80}")
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 SIZE_LINE = re.compile(r"firmware size .*?(\d+)/(\d+)")
 
@@ -56,8 +58,13 @@ class ConfigError(Exception):
     pass
 
 
-def _full(pattern, value):
+def _matches_fully(pattern, value):
     return isinstance(value, str) and pattern.fullmatch(value) is not None
+
+
+def _plain_path(value):
+    """A relative path that stays where it is: no empty, "." or ".." segments, no leading "/"."""
+    return isinstance(value, str) and all(_matches_fully(PATH_SEGMENT, seg) for seg in value.split("/"))
 
 
 def load_config(config_dir):
@@ -73,25 +80,25 @@ def load_config(config_dir):
         raise ConfigError('"firmware" must be "qmk"')
     if not isinstance(cfg.get("qmk"), dict) or not cfg["qmk"].get("version"):
         raise ConfigError('"qmk.version" is required')
-    if not _full(VERSION_PATTERN, cfg["qmk"]["version"]):
+    if not _matches_fully(VERSION_PATTERN, cfg["qmk"]["version"]):
         raise ConfigError('"qmk.version" must look like 0.22.14')
     image = cfg["qmk"].get("image")
-    if image is not None and not _full(IMAGE_PATTERN, image):
+    if image is not None and not _matches_fully(IMAGE_PATTERN, image):
         raise ConfigError('"qmk.image" must be pinned by digest (name@sha256:...)')
 
     for i, src in enumerate(cfg.get("sources", [])):
         for key in ("repo", "ref", "path", "as"):
             if not src.get(key):
                 raise ConfigError('sources[{}] needs "{}"'.format(i, key))
-        if not _full(REPO_PATTERN, src["repo"]):
+        if not _matches_fully(REPO_PATTERN, src["repo"]):
             raise ConfigError('sources[{}].repo must be owner/name'.format(i))
-        if not _full(COMMIT_PATTERN, src["ref"]):
+        if not _matches_fully(COMMIT_PATTERN, src["ref"]):
             raise ConfigError(
                 'sources[{}].ref must be a full commit SHA: a branch or tag can change without a commit here'.format(i)
             )
-        if not (isinstance(src["path"], str) and all(_full(PATH_SEGMENT, seg) for seg in src["path"].split("/"))):
+        if not _plain_path(src["path"]):
             raise ConfigError('sources[{}].path must be a plain relative path'.format(i))
-        if not _full(NAME_PATTERN, src["as"]):
+        if not _matches_fully(NAME_PATTERN, src["as"]):
             raise ConfigError('sources[{}].as may only use letters, digits, "-" and "_"'.format(i))
 
     builds = cfg.get("builds")
@@ -102,10 +109,19 @@ def load_config(config_dir):
         for key in ("id", "name", "keyboard", "keymap", "keymap_dir"):
             if not b.get(key):
                 raise ConfigError('builds[{}] needs "{}"'.format(i, key))
-        if not _full(ID_PATTERN, b["id"]):
+        if not _matches_fully(ID_PATTERN, b["id"]):
             raise ConfigError(
                 'builds[{}].id "{}" may only use a-z, 0-9, "-" and "_"'.format(i, b["id"])
             )
+        if not _matches_fully(NAME_TEXT, b["name"]):
+            raise ConfigError('builds[{}].name must be one line of text'.format(i))
+        # keyboard, keymap and keymap_dir become paths in the QMK tree and the config checkout.
+        if not _plain_path(b["keyboard"]):
+            raise ConfigError('builds[{}].keyboard must be a QMK keyboard path such as keyball/keyball39'.format(i))
+        if not _matches_fully(NAME_PATTERN, b["keymap"]):
+            raise ConfigError('builds[{}].keymap may only use letters, digits, "-" and "_"'.format(i))
+        if not _plain_path(b["keymap_dir"]):
+            raise ConfigError('builds[{}].keymap_dir must be a plain relative path'.format(i))
         if b["id"] in seen:
             raise ConfigError('build id "{}" is used twice'.format(b["id"]))
         seen.add(b["id"])
@@ -120,6 +136,8 @@ def load_config(config_dir):
     views = cfg.get("views", {})
     if not isinstance(views, dict) or not all(isinstance(v, dict) for v in views.values()):
         raise ConfigError('"views" must map keymap directories to settings')
+    if not all(_plain_path(k) for k in views):
+        raise ConfigError('"views" keys must be plain relative keymap directories')
     return cfg
 
 
