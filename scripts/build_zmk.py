@@ -8,7 +8,7 @@ usage:
 
 CONFIG_DIR is a ZMK user config repository with keyballer.json at its top and
 config/west.yml. For the build, OUT_DIR receives <id>.uf2 (checked block by
-block), <id>.west.yml (the frozen west manifest) and <id>.json with details
+block), <id>.west.yml (the resolved west manifest, every project at a SHA) and <id>.json with details
 the app needs (role, board, shield, UF2 range, ZMK and Zephyr commits).
 
 Every value from keyballer.json and config/west.yml is untrusted: values are
@@ -211,15 +211,17 @@ def prepare_workspace(config_dir, work_dir):
     # Registers this Zephyr with CMake, as ZMK's own workflow does, so `west build` can find it.
     run(["west", "zephyr-export"], cwd=ws)
 
-    resolved = read_yaml(run(["west", "manifest", "--resolve"], cwd=ws, capture=True))
-    projects = resolved["manifest"]["projects"]
+    # Every project is pinned by SHA (checked below), so the resolved manifest is the frozen one.
+    # `west manifest --freeze` itself refuses projects that are not cloned (Zephyr's optional ones).
+    resolved_text = run(["west", "manifest", "--resolve"], cwd=ws, capture=True)
+    projects = read_yaml(resolved_text)["manifest"]["projects"]
     check_resolved(projects)
     # The config's own pins come from untrusted input. Imported projects (ZMK's and Zephyr's
     # modules) are pinned by the manifest inside a commit that is itself checked here.
     for p in projects:
         if p["name"] in own:
             ensure_contained(ws, p)
-    return ws, projects
+    return ws, projects, resolved_text
 
 
 def ensure_contained(ws, project):
@@ -239,7 +241,7 @@ def ensure_contained(ws, project):
             project["url"], project["revision"]))
 
 
-def build_one(build, cfg, config_dir, ws, projects, out_dir):
+def build_one(build, cfg, config_dir, ws, projects, resolved_text, out_dir):
     build_dir = ws / "build" / build["id"]
     cmd = ["west", "build", "-p", "-s", "zmk/app", "-d", str(build_dir), "-b", build["board"]]
     for snippet in build.get("snippet", "").split():
@@ -267,8 +269,7 @@ def build_one(build, cfg, config_dir, ws, projects, out_dir):
     out_file = "{}.uf2".format(build["id"])
     (out_dir / out_file).write_bytes(data)
     west_file = "{}.west.yml".format(build["id"])
-    frozen = run(["west", "manifest", "--freeze"], cwd=ws, capture=True)
-    (out_dir / west_file).write_text(frozen, encoding="utf-8")
+    (out_dir / west_file).write_text(resolved_text, encoding="utf-8")
     shas = {p["name"]: p["revision"] for p in projects}
 
     meta = {
@@ -330,8 +331,8 @@ def main():
     out_dir = args.out_dir.resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     try:
-        ws, projects = prepare_workspace(config_dir, work_dir)
-        meta = build_one(builds[0], cfg, config_dir, ws, projects, out_dir)
+        ws, projects, resolved_text = prepare_workspace(config_dir, work_dir)
+        meta = build_one(builds[0], cfg, config_dir, ws, projects, resolved_text, out_dir)
         print("Built {}: {} ({}, {} blocks)".format(meta["id"], meta["file"], meta["role"], meta["uf2"]["blocks"]),
               flush=True)
     except (ConfigError, RuntimeError) as e:
