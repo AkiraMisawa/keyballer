@@ -23,9 +23,15 @@ describe('checkPastedToken', () => {
   });
 
   it('refuses tokens that are not fine-grained personal access tokens', () => {
-    for (const prefix of ['gho_', 'ghu_', 'ghs_', 'Bearer github_pat_', 'github_pat']) {
+    for (const prefix of ['gho_', 'ghu_', 'ghs_', 'ghr_', 'Bearer github_pat_', 'github_pat']) {
       expect(checkPastedToken(`${prefix}${'x'.repeat(40)}`), prefix).toEqual({ ok: false, reason: 'token.err.format' });
     }
+  });
+
+  it('takes tokens up to the 255 characters GitHub allows for, and no longer', () => {
+    const ofLength = (n: number) => `github_pat_${'a'.repeat(n - 'github_pat_'.length)}`;
+    expect(checkPastedToken(ofLength(255)).ok).toBe(true);
+    expect(checkPastedToken(ofLength(256)).ok).toBe(false);
   });
 
   it('refuses text that would change the Authorization header', () => {
@@ -72,5 +78,15 @@ describe('forgetStoredToken', () => {
     };
     expect(forgetStoredToken(blocked)).toBeNull();
     expect(forgetStoredToken(undefined)).toBeNull();
+  });
+
+  it('does not claim a deletion that failed', () => {
+    const readOnly = {
+      getItem: () => fineGrained,
+      removeItem: () => {
+        throw new DOMException('blocked', 'SecurityError');
+      },
+    };
+    expect(forgetStoredToken(readOnly)).toBeNull();
   });
 });

@@ -14,7 +14,7 @@ import { useEditSession, type EditSession } from '../edit/useEditSession';
 import { getFirmwareText, repoName, type RepoRef, type WorkflowRun } from '../lib/github';
 import type { FirmwareBuild, FirmwareManifest } from '../lib/manifest';
 import { load, save } from '../lib/storage';
-import type { TokenField } from '../lib/token';
+import type { TokenField } from '../components/TokenInput';
 import { pointerLockBusy, TrackballPanel, type PadMode, type PadRequest } from '../trackball/TrackballPanel';
 import { BALL_MM_MAX, BALL_MM_MIN, CPI_MAX, CPI_MIN, CPI_STEP, DIVIDER_MAX, DIVIDER_MIN } from '../trackball/speed';
 import { Board, type Selection } from './Board';
@@ -41,7 +41,7 @@ interface Props {
   repo: RepoRef;
   firmwareSha: string;
   manifest: FirmwareManifest;
-  token: TokenField;
+  tokenField: TokenField;
   /** The config repository's build runs on GitHub, for "build again". */
   buildsUrl: string;
   onClose: () => void;
@@ -77,7 +77,7 @@ function toDisplay(value: string): { os: Os } | { layout: Layout } | undefined {
 }
 
 export function KeymapScreen(props: Props) {
-  const { build, repo, firmwareSha, manifest, token: tokenField, buildsUrl, onClose, onSaved, runFor, setLeaveGuard } = props;
+  const { build, repo, firmwareSha, manifest, tokenField, buildsUrl, onClose, onSaved, runFor, setLeaveGuard } = props;
   const token = tokenField.value;
   const { t, err, lang } = useI18n();
   const [builtView, setView] = useState<ViewFile | null>(null);
@@ -661,7 +661,7 @@ export function KeymapScreen(props: Props) {
           <EditBar
             edit={edit}
             repoName={repoName(repo)}
-            token={tokenField}
+            tokenField={tokenField}
             runFor={runFor}
             onSaved={onSaved}
             describe={{

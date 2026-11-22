@@ -151,7 +151,7 @@ npm run build   # 型チェックとビルド
 
 ### トラックボールの設定と保存
 
-キーマップでトラックボールを選ぶ（`B`）と、カーソルとスクロールの速さを設定できます。どちらも設定値と、ボール 1 cm あたりのカウント数・段数で表示します。パッドで書き込む前に自分のボールで速さを試せるほか、ボールを 1 回転させてセンサーを測れます。変更はバーにたまり、元に戻す・やり直す（⌘Z / Ctrl+Z）ができます。「確認して保存」（⌘S / Ctrl+S）で変更とファイルの差分を確かめてから、設定リポジトリの `main` に commit し、ファームウェアのビルドが始まります。保存には、そのリポジトリの Contents を「読み取りと書き込み」にした fine-grained トークン（`github_pat_`）が必要です。Keyballer はトークンをタブを開いている間だけ保持し、ブラウザのストレージには保存しません。書き込めるすべてのリポジトリに届く classic トークン（`ghp_`）は受け付けません。計画：[docs/plans/trackball-settings.md](docs/plans/trackball-settings.md)、[docs/plans/keymap-editor.md](docs/plans/keymap-editor.md)（英語）
+キーマップでトラックボールを選ぶ（`B`）と、カーソルとスクロールの速さを設定できます。どちらも設定値と、ボール 1 cm あたりのカウント数・段数で表示します。パッドで書き込む前に自分のボールで速さを試せるほか、ボールを 1 回転させてセンサーを測れます。変更はバーにたまり、元に戻す・やり直す（⌘Z / Ctrl+Z）ができます。「確認して保存」（⌘S / Ctrl+S）で変更とファイルの差分を確かめてから、設定リポジトリの `main` に commit し、ファームウェアのビルドが始まります。保存には、そのリポジトリの Contents を「読み取りと書き込み」にした fine-grained トークン（`github_pat_`）が必要です。Keyballer は、タブを開いている間だけトークンを保持し、ブラウザのストレージには保存しません。書き込めるすべてのリポジトリにアクセスできる classic トークン（`ghp_`）は受け付けません。計画：[docs/plans/trackball-settings.md](docs/plans/trackball-settings.md)、[docs/plans/keymap-editor.md](docs/plans/keymap-editor.md)（英語）
 
 デザインのルール（色、文字、キーキャップ、言葉づかい、アクセシビリティ、使わないもの）は [DESIGN.md](DESIGN.md) にあります（英語）。`npm test` で、そこで決めた色のコントラストを確かめます。
 

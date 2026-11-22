@@ -8,6 +8,15 @@ export function load(key: string): string {
   }
 }
 
+/** localStorage itself, or nothing where the browser blocks it (reading the property can throw). */
+export function browserStorage(): Storage | undefined {
+  try {
+    return localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
 export function save(key: string, value: string): void {
   try {
     if (value) localStorage.setItem(key, value);

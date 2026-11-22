@@ -4,6 +4,7 @@ import { App } from './App';
 import { FramedNotice } from './components/FramedNotice';
 import { I18nProvider } from './i18n/react';
 import { CommandProvider } from './commands/react';
+import { browserStorage } from './lib/storage';
 import { forgetStoredToken } from './lib/token';
 import './styles.css';
 
@@ -11,15 +12,6 @@ import './styles.css';
 // clickjacked, and GitHub Pages cannot send frame-ancestors. So a framed Keyballer renders only a
 // way out. window.top cannot be faked by the framing page.
 const framed = window.top !== window.self;
-
-/** localStorage, or nothing where the browser blocks it (reading the property itself can throw). */
-function browserStorage(): Storage | undefined {
-  try {
-    return localStorage;
-  } catch {
-    return undefined;
-  }
-}
 
 // Older versions saved the token in localStorage. Delete it once, before anything renders, and
 // say so on the page: only the owner can revoke it. Not when framed, where no one would see it.

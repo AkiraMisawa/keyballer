@@ -3,7 +3,7 @@ import { BuildStatus } from './components/BuildStatus';
 import { FirmwareCard } from './components/FirmwareCard';
 import { FlashPanel } from './components/FlashPanel';
 import { ForgottenToken } from './components/ForgottenToken';
-import { TokenInput } from './components/TokenInput';
+import { TokenInput, useTokenField } from './components/TokenInput';
 import { LanguageSwitch } from './components/LanguageSwitch';
 import { LinkPrompt } from './components/LinkPrompt';
 import { LocalFirmware } from './components/LocalFirmware';
@@ -27,7 +27,7 @@ import { loadVerifiedFirmware, type FirmwareSource } from './lib/firmware';
 import type { FirmwareBuild, FirmwareManifest } from './lib/manifest';
 import { isWebSerialSupported } from './lib/serial';
 import { load, save } from './lib/storage';
-import { tokenField, type ForgottenTokenKind } from './lib/token';
+import type { ForgottenTokenKind } from './lib/token';
 
 interface FlashTarget {
   title: string;
@@ -106,7 +106,7 @@ function dropRepoParam() {
   history.replaceState(history.state, '', url);
 }
 
-export function App({ forgottenToken = null }: { forgottenToken?: ForgottenTokenKind }) {
+export function App({ forgottenToken = null }: { forgottenToken?: ForgottenTokenKind | null }) {
   const { t, rich, err, setLang } = useI18n();
   const { openLine, openHelp } = useCommandLine();
   const serialOk = isWebSerialSupported();
@@ -118,8 +118,7 @@ export function App({ forgottenToken = null }: { forgottenToken?: ForgottenToken
   };
   const [repoInput, setRepoInput] = useState(() => load('keyballer.repo'));
   // The token lives in this tab's memory only (src/lib/token.ts).
-  const [tokenInput, setTokenInput] = useState('');
-  const token = tokenField(tokenInput, setTokenInput);
+  const tokenField = useTokenField();
   const [repo, setRepo] = useState<RepoState | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -127,8 +126,8 @@ export function App({ forgottenToken = null }: { forgottenToken?: ForgottenToken
   const [loadingBuild, setLoadingBuild] = useState('');
   const [target, setTarget] = useState<FlashTarget | null>(null);
   const [keymapId, setKeymapId] = useState<string | null>(keymapInHash);
-  const tokenRef = useRef(token.value);
-  tokenRef.current = token.value;
+  const tokenRef = useRef(tokenField.value);
+  tokenRef.current = tokenField.value;
   const repoField = useRef<HTMLInputElement>(null);
   // Where focus goes back to when the flash panel closes.
   const returnFocus = useRef<HTMLElement | null>(null);
@@ -485,7 +484,7 @@ export function App({ forgottenToken = null }: { forgottenToken?: ForgottenToken
                 {t('token.summary')}
               </label>
               <p className="note">{t('token.note')}</p>
-              <TokenInput id="token" field={token} />
+              <TokenInput id="token" tokenField={tokenField} />
             </div>
           </details>
           {error !== null && (
@@ -513,7 +512,7 @@ export function App({ forgottenToken = null }: { forgottenToken?: ForgottenToken
           repo={repo.ref}
           firmwareSha={repo.firmwareSha}
           manifest={repo.manifest}
-          token={token}
+          tokenField={tokenField}
           buildsUrl={`${repoUrl}/actions/workflows/build.yml`}
           onClose={closeKeymap}
           onSaved={(sha) => setAwaitingRun(sha)}
