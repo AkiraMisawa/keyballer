@@ -319,6 +319,9 @@ class Converter:
         text = label
         if node is not None:
             text = ((node.prop("label") or node.prop("display-name") or [label])[0]) or label
+        # An identifier such as TO_LAYER_0 reads as words on a keycap: "to layer 0".
+        if re.fullmatch(r"[A-Za-z0-9_]+", text):
+            text = text.replace("_", " ").lower()
         suffix = "".join("_{:X}".format(x) for x in params)
         name = re.sub(r"[^A-Za-z0-9_]", "_", "ZMK_{}{}".format(label.upper(), suffix))
         word = text if not params else "{} {}".format(text, " ".join(_param_word(x) for x in params))

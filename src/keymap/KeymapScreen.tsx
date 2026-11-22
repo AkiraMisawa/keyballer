@@ -12,7 +12,7 @@ import { ConfirmDialog, EditBar, LeaveDialog, SessionState } from '../edit/EditB
 import { ballModeEditable, editedView, keymapFileOf, keymapProblem, keyProblem } from '../edit/session';
 import { useEditSession, type EditSession } from '../edit/useEditSession';
 import { getFirmwareText, repoName, type RepoRef, type WorkflowRun } from '../lib/github';
-import type { FirmwareManifest, QmkBuild } from '../lib/manifest';
+import { isZmk, type FirmwareBuild, type FirmwareManifest } from '../lib/manifest';
 import { load, save } from '../lib/storage';
 import type { TokenField } from '../components/TokenInput';
 import type { SignIn } from '../auth/useSignIn';
@@ -38,7 +38,7 @@ import {
 } from './view';
 
 interface Props {
-  build: QmkBuild;
+  build: FirmwareBuild;
   repo: RepoRef;
   firmwareSha: string;
   manifest: FirmwareManifest;
@@ -419,7 +419,8 @@ export function KeymapScreen(props: Props) {
     group: 'group.keymap',
     page: true,
     shortcut: 'e',
-    unavailable: noView,
+    // ZMK keymaps are shown, not yet edited (docs/plans/zmk.md, phase 3).
+    unavailable: isZmk(build) ? msg('why.zmkReadOnly') : noView,
     run: () => (editing ? setEditing(false) : startEditing()),
   });
   const holdOf = (text: string): Hold | null | undefined => {
@@ -578,9 +579,7 @@ export function KeymapScreen(props: Props) {
       <div className="panel-head">
         <div className="stack">
           <h2 id="keymap-title">{t('keymap.title', { name: build.name })}</h2>
-          <code className="muted">
-            {build.keyboard}:{build.keymap}
-          </code>
+          <code className="muted">{isZmk(build) ? `${build.board} ${build.shield}` : `${build.keyboard}:${build.keymap}`}</code>
         </div>
         <button type="button" ref={backButton} onClick={close} aria-keyshortcuts="Escape">
           {t('keymap.back')}
@@ -655,10 +654,14 @@ export function KeymapScreen(props: Props) {
               </div>
               <p className="note">{t('keymap.displayOnly')}</p>
             </div>
-            <button type="button" className={editing ? 'primary' : ''} onClick={() => (editing ? setEditing(false) : startEditing())} aria-keyshortcuts="E">
-              {editing ? t('edit.leave') : t('edit.enter')}
-              <Kbd>E</Kbd>
-            </button>
+            {isZmk(build) ? (
+              <p className="note">{t('why.zmkReadOnly')}</p>
+            ) : (
+              <button type="button" className={editing ? 'primary' : ''} onClick={() => (editing ? setEditing(false) : startEditing())} aria-keyshortcuts="E">
+                {editing ? t('edit.leave') : t('edit.enter')}
+                <Kbd>E</Kbd>
+              </button>
+            )}
           </div>
 
           <EditBar
