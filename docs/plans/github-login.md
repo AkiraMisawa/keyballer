@@ -158,11 +158,14 @@ GitHub's web flow with PKCE (S256), in a popup, as reviewed. The device flow was
 4. **Taking the code.** The page waiting for that exact `state` takes one message within 10 minutes and forgets the `state`. Messages for other states are ignored, and a repeat of the same one finds nothing listening. It POSTs `{code, code_verifier}` to `/auth/token` on its own origin.
 5. **The exchange.** The local server adds the client ID, the client secret and the fixed `redirect_uri`, then calls `github.com/login/oauth/access_token`. It returns `{access_token, expires_in}` and nothing else; a response without an `access_token` is an error. The refresh token is dropped.
 6. **After sign-in.**
-   - The page keeps the token in memory, uses it in place of a pasted one, and shows the login from `GET /user`.
+   - The page keeps the token in memory and shows the login from `GET /user`. If that lookup fails, the token is revoked, not kept.
+   - Signing in clears a pasted token. Afterwards, a valid token pasted in the review (which asks for one when a save fails) takes precedence; otherwise the sign-in's token is used.
    - It checks that the app's installations reach the connected repository: `GET /user/installations`, then the repositories of an installation on that owner. If they do not reach it, it says so and links to the install page (with `KEYBALLER_GITHUB_APP_SLUG`).
    - It forgets the token when it expires, and says so.
+   - Closing or reloading the tab revokes the token: on `pagehide`, a `keepalive` POST goes to `/auth/revoke`. This is best effort, so the 8-hour expiry still bounds a token the browser could not revoke.
+   - While a sign-in waits, it can be started again, for a window that was closed or blocked. `noopener` hides the window from the page. The old wait is aborted, and a token it still obtains is revoked.
    - The review offers the same sign-in when saving needs a token, so unsaved changes stay.
-   - The commands are `sign in` and `sign out`.
+   - The commands are `sign in`, `sign out` and `install app`. After signing in, focus moves to the result, or to Save in the review. After signing out, it moves to the sign-in button.
 
 **Signing out.** The page POSTs the token to `/auth/revoke`, which calls `DELETE /applications/{client_id}/token` with Basic auth, then forgets it.
 
@@ -175,7 +178,10 @@ GitHub's web flow with PKCE (S256), in a popup, as reviewed. The device flow was
   - `POST /auth/token` and `POST /auth/revoke`;
   - `GET /auth/status`, which returns the public client ID and app slug, or nulls;
   - `GET /auth/callback` and `GET /auth/callback.js`.
-- `Host` must be `127.0.0.1:<port>`, which blocks DNS rebinding. The dev and preview servers listen on `127.0.0.1` only, on fixed ports (`strictPort`), because the callback URLs name them.
+- `Host` must be the server's own address, `127.0.0.1:5173` for dev or `127.0.0.1:4173` for preview, which blocks DNS rebinding.
+  - Vite's own host check runs before the handler, too.
+  - The servers listen on `127.0.0.1` only, on those fixed ports (`strictPort`), because the callback URLs name them.
+  - Vite's CORS is off (`cors: false`).
 - On the POSTs, `Origin` must equal `http://` and that host exactly.
 - Anything else gets 403.
 - The body must be `application/json`, read from the stream up to 1 KB, and an object with exactly the expected fields:
@@ -188,7 +194,7 @@ GitHub's web flow with PKCE (S256), in a popup, as reviewed. The device flow was
 - The lifetime returned is at most 8 hours, also when expiry is off in the app.
 
 **What it sends.**
-- It calls only GitHub's two endpoints, with `redirect: 'error'`, `Accept: application/json` and an explicit `User-Agent`. The `redirect_uri` is `http://<host>/auth/callback`, from the checked host.
+- It calls only GitHub's two endpoints, with `redirect: 'error'`, `Accept: application/json` and an explicit `User-Agent`. The `redirect_uri` is `http://127.0.0.1:<the server's port>/auth/callback`.
 - It returns `Cache-Control: no-store`.
 - `/revoke` answers `204` whatever happens.
 - It logs nothing.
@@ -241,7 +247,13 @@ GitHub's web flow with PKCE (S256), in a popup, as reviewed. The device flow was
 - **The local auth handler:**
   - abuse cases first: `Origin`, `Host`, method, path, content type, a streamed oversize body, fields, no echo;
   - then the calls to GitHub and the response shaping.
-- **The auth module** (`src/auth/client.ts`): PKCE (RFC 7636 Appendix B), the authorize address, `state` and message handling over a real `BroadcastChannel`, and the exchange. `appReaches` covers the installations. Expiry and the sign-in UI were checked in the browser, with `window.open` captured and only the made-up token's requests answered, so nothing reached GitHub.
+- **The auth module** (`src/auth/client.ts`):
+  - PKCE (RFC 7636 Appendix B) and the authorize address;
+  - `state` and message handling over a real `BroadcastChannel`, including aborting a wait;
+  - the exchange, expiry, and no storage (the state, verifier and token are never written to `localStorage` or `sessionStorage`);
+  - the installations, through `appReaches`.
+
+  The sign-in UI was checked in the browser, with `window.open` captured and only the made-up token's requests answered, so nothing reached GitHub.
 
 **Reviews per phase:**
 - the security-review method

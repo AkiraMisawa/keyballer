@@ -3,7 +3,8 @@
 // the authorize parameters are GitHub's, from its docs for GitHub App user tokens.
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { authorizeUrl, challengeOf, exchangeCode, makeRandom, SIGN_IN_CHANNEL, waitForCode } from './client';
+import { authorizeUrl, challengeOf, exchangeCode, makeRandom, prepareSignIn, waitForCode, watchExpiry } from './client';
+import { SIGN_IN_CHANNEL } from './protocol';
 
 describe('PKCE', () => {
   it('derives the S256 challenge of RFC 7636, Appendix B', async () => {
@@ -63,6 +64,14 @@ describe('waitForCode', () => {
     await expect(waitForCode('mine', 30)).rejects.toMatchObject({ key: 'auth.err.timeout' });
   });
 
+  it('stops waiting when a new sign-in starts, and ignores the old answer', async () => {
+    const abort = new AbortController();
+    const waiting = waitForCode('old', 1000, abort.signal);
+    abort.abort();
+    send({ type: 'keyballer-sign-in', code: 'late-code', state: 'old', error: null });
+    await expect(waiting).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
   it('refuses a code that could not be a GitHub code', async () => {
     const waiting = waitForCode('mine', 1000);
     send({ type: 'keyballer-sign-in', code: 'a b', state: 'mine', error: null });
@@ -91,5 +100,50 @@ describe('exchangeCode', () => {
       vi.stubGlobal('fetch', vi.fn(async () => res));
       await expect(exchangeCode('code1', 'verifier', 0)).rejects.toMatchObject({ key: 'auth.err.failed' });
     }
+  });
+});
+
+describe('watchExpiry', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('ends the session when its token expires, not before', () => {
+    vi.useFakeTimers();
+    const onEnd = vi.fn();
+    watchExpiry({ token: 't', expiresAt: 1_000 + 28800 * 1000 }, onEnd, 1_000);
+    vi.advanceTimersByTime(28800 * 1000 - 1);
+    expect(onEnd).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(onEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops watching when the session ends first', () => {
+    vi.useFakeTimers();
+    const onEnd = vi.fn();
+    const stop = watchExpiry({ token: 't', expiresAt: 5_000 }, onEnd, 0);
+    stop();
+    vi.advanceTimersByTime(10_000);
+    expect(onEnd).not.toHaveBeenCalled();
+  });
+});
+
+describe('storage', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('keeps the state, verifier and token out of every browser storage', async () => {
+    const store = () => ({ setItem: vi.fn(), getItem: vi.fn(() => null), removeItem: vi.fn(), clear: vi.fn(), key: vi.fn(), length: 0 });
+    const local = store();
+    const session = store();
+    vi.stubGlobal('localStorage', local);
+    vi.stubGlobal('sessionStorage', session);
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ access_token: `ghu_${'T0k'.repeat(12)}`, expires_in: 28800 })));
+
+    const prepared = await prepareSignIn('Iv23liTestClient01', 'http://127.0.0.1:5173');
+    const waiting = waitForCode(prepared.state, 1000);
+    const channel = new BroadcastChannel(SIGN_IN_CHANNEL);
+    channel.postMessage({ type: 'keyballer-sign-in', code: 'code1', state: prepared.state, error: null });
+    channel.close();
+    await exchangeCode(await waiting, prepared.verifier);
+
+    for (const s of [local, session]) expect(s.setItem).not.toHaveBeenCalled();
   });
 });

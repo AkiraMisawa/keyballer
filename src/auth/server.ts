@@ -2,9 +2,23 @@
 // mount this handler (see vite.config.ts); it never ships to the browser. It holds the GitHub App's
 // client secret, exchanges a sign-in code for a user token, and revokes tokens.
 //
-// It answers only the page it serves: requests must name the loopback address as their host (a
-// DNS-rebound name is refused) and, for POSTs, come from that same origin. Input is checked field
-// by field and never repeated, nothing is logged, and GitHub's own wording is never passed on.
+// It answers only the page it serves: requests must name this server's own loopback host and port
+// (a DNS-rebound name is refused; Vite's own host check runs first, too) and, for POSTs, come from
+// that same origin. Input is checked field by field and never repeated, nothing is logged, and
+// GitHub's own wording is never passed on.
+
+import {
+  CALLBACK_PATH,
+  CODE,
+  MAX_LIFETIME_S,
+  REVOKE_PATH,
+  SIGN_IN_CHANNEL,
+  SIGN_IN_MESSAGE,
+  STATUS_PATH,
+  TOKEN_PATH,
+  USER_TOKEN,
+  VERIFIER,
+} from './protocol.ts';
 
 export interface AuthConfig {
   clientId: string;
@@ -26,37 +40,29 @@ type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 
 const USER_AGENT = 'Keyballer-local-sign-in';
 const MAX_BODY = 1024;
-/** Eight hours, the most a sign-in lasts (GitHub's own lifetime for user tokens). */
-const MAX_LIFETIME = 28800;
-
-const LOOPBACK_HOST = /^127\.0\.0\.1:[1-9][0-9]{0,4}$/;
-const CODE = /^[A-Za-z0-9_-]{1,64}$/;
-const VERIFIER = /^[A-Za-z0-9._~-]{43,128}$/;
-const USER_TOKEN = /^ghu_[A-Za-z0-9_]{16,255}$/;
-
-export const CALLBACK_PATH = '/auth/callback';
 
 /**
  * Answers `/auth/…` requests, or returns null for anything else, which the app's server handles.
+ * `host` is this server's own address, `127.0.0.1:<port>`; the callback URL is built from it.
  */
-export async function handleAuth(request: Request, config: AuthConfig | null, fetch: Fetch): Promise<Response | null> {
+export async function handleAuth(request: Request, config: AuthConfig | null, fetch: Fetch, host: string): Promise<Response | null> {
   const url = new URL(request.url);
   if (!url.pathname.startsWith('/auth/')) return null;
   // The host the browser asked for. A page on another site that rebinds its own name to 127.0.0.1
   // still sends its own name here.
-  if (!LOOPBACK_HOST.test(url.host)) return error(403, 'forbidden');
-  const origin = `http://${url.host}`;
+  if (url.host !== host) return error(403, 'forbidden');
+  const origin = `http://${host}`;
   const route = `${request.method} ${url.pathname}`;
 
   switch (route) {
-    case 'GET /auth/status':
+    case `GET ${STATUS_PATH}`:
       return json(200, { clientId: config?.clientId ?? null, appSlug: config?.appSlug ?? null });
     case `GET ${CALLBACK_PATH}`:
       return callbackPage();
     case `GET ${CALLBACK_PATH}.js`:
       return new Response(CALLBACK_SCRIPT, { headers: { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-store' } });
-    case 'POST /auth/token':
-    case 'POST /auth/revoke':
+    case `POST ${TOKEN_PATH}`:
+    case `POST ${REVOKE_PATH}`:
       break;
     default:
       return error(404, 'not_found');
@@ -68,7 +74,7 @@ export async function handleAuth(request: Request, config: AuthConfig | null, fe
   const body = await readJson(request);
   if (body === undefined) return error(400, 'bad_request');
 
-  if (route === 'POST /auth/token') {
+  if (route === `POST ${TOKEN_PATH}`) {
     if (!hasExactly(body, ['code', 'code_verifier']) || !matches(body.code, CODE) || !matches(body.code_verifier, VERIFIER)) {
       return error(400, 'bad_request');
     }
@@ -97,7 +103,7 @@ async function exchange(config: AuthConfig, code: string, verifier: string, redi
     const answer: unknown = await res.json();
     if (!isObject(answer) || !matches(answer.access_token, USER_TOKEN)) return error(502, 'github');
     // The refresh token is dropped: a sign-in ends with the tab, or after 8 hours.
-    const lifetime = typeof answer.expires_in === 'number' && answer.expires_in > 0 ? Math.min(answer.expires_in, MAX_LIFETIME) : MAX_LIFETIME;
+    const lifetime = typeof answer.expires_in === 'number' && answer.expires_in > 0 ? Math.min(answer.expires_in, MAX_LIFETIME_S) : MAX_LIFETIME_S;
     return json(200, { access_token: answer.access_token, expires_in: lifetime });
   } catch {
     return error(502, 'github');
@@ -181,7 +187,11 @@ const CALLBACK_CSP = [
   "require-trusted-types-for 'script'",
 ].join('; ');
 
-/** The page GitHub sends the sign-in window back to. It shows no part of the address. */
+/**
+ * The page GitHub sends the sign-in window back to. It shows no part of the address. Its two lines
+ * are written here in both languages, not in messages.ts: the local server serves it, outside the
+ * app's bundle and before the page's language is known.
+ */
 function callbackPage(): Response {
   const html = `<!doctype html>
 <html lang="en">
@@ -210,8 +220,8 @@ function callbackPage(): Response {
  */
 const CALLBACK_SCRIPT = `const params = new URLSearchParams(location.search);
 history.replaceState(null, '', location.pathname);
-const channel = new BroadcastChannel('keyballer-sign-in');
-channel.postMessage({ type: 'keyballer-sign-in', code: params.get('code'), state: params.get('state'), error: params.get('error') });
+const channel = new BroadcastChannel(${JSON.stringify(SIGN_IN_CHANNEL)});
+channel.postMessage({ type: ${JSON.stringify(SIGN_IN_MESSAGE)}, code: params.get('code'), state: params.get('state'), error: params.get('error') });
 channel.close();
 setTimeout(() => window.close(), 300);
 `;

@@ -4,11 +4,7 @@
 // in memory.
 
 import { LocalizedError } from '../i18n/core';
-
-export const SIGN_IN_CHANNEL = 'keyballer-sign-in';
-const CALLBACK_PATH = '/auth/callback';
-const CODE = /^[A-Za-z0-9_-]{1,64}$/;
-const USER_TOKEN = /^ghu_[A-Za-z0-9_]{16,255}$/;
+import { CALLBACK_PATH, CODE, REVOKE_PATH, SIGN_IN_CHANNEL, SIGN_IN_MESSAGE, STATUS_PATH, TOKEN_PATH, USER_TOKEN } from './protocol';
 /** GitHub's codes last 10 minutes; so does waiting for one. */
 export const SIGN_IN_TIMEOUT_MS = 10 * 60 * 1000;
 
@@ -49,24 +45,32 @@ export async function prepareSignIn(clientId: string, origin: string): Promise<P
 
 /**
  * Waits for the sign-in window to send back the code for this state. Messages for any other state
- * (another tab's sign-in) are ignored; the first one for this state ends the wait either way.
+ * (another tab's sign-in) are ignored; the first one for this state ends the wait either way. An
+ * abort (a new sign-in started) ends it too, with an AbortError.
  */
-export function waitForCode(state: string, timeoutMs: number): Promise<string> {
+export function waitForCode(state: string, timeoutMs: number, signal?: AbortSignal): Promise<string> {
   return new Promise((resolve, reject) => {
     const channel = new BroadcastChannel(SIGN_IN_CHANNEL);
     const finish = () => {
       clearTimeout(timer);
       channel.close();
+      signal?.removeEventListener('abort', aborted);
+    };
+    const aborted = () => {
+      finish();
+      reject(new DOMException('A new sign-in started', 'AbortError'));
     };
     const timer = setTimeout(() => {
       finish();
       reject(new LocalizedError('auth.err.timeout'));
     }, timeoutMs);
+    if (signal?.aborted) return aborted();
+    signal?.addEventListener('abort', aborted);
     channel.onmessage = (event: MessageEvent) => {
       const m: unknown = event.data;
       if (typeof m !== 'object' || m === null) return;
       const { type, state: sent, code, error } = m as Record<string, unknown>;
-      if (type !== 'keyballer-sign-in' || sent !== state) return;
+      if (type !== SIGN_IN_MESSAGE || sent !== state) return;
       finish();
       if (error === 'access_denied') reject(new LocalizedError('auth.err.cancelled'));
       else if (typeof code === 'string' && CODE.test(code)) resolve(code);
@@ -83,7 +87,7 @@ export interface Session {
 
 export async function exchangeCode(code: string, verifier: string, now = Date.now()): Promise<Session> {
   try {
-    const res = await fetch('/auth/token', {
+    const res = await fetch(TOKEN_PATH, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ code, code_verifier: verifier }),
@@ -99,13 +103,23 @@ export async function exchangeCode(code: string, verifier: string, now = Date.no
   throw new LocalizedError('auth.err.failed');
 }
 
-/** Asks the local server to revoke the token on GitHub. Signing out does not wait for the answer. */
+/**
+ * Asks the local server to revoke the token on GitHub. Signing out does not wait for the answer,
+ * and `keepalive` lets the request finish while the tab closes.
+ */
 export function revokeToken(token: string): void {
-  void fetch('/auth/revoke', {
+  void fetch(REVOKE_PATH, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ access_token: token }),
+    keepalive: true,
   }).catch(() => undefined);
+}
+
+/** Calls `onEnd` when the session's token expires; returns a way to stop watching. */
+export function watchExpiry(session: Session, onEnd: () => void, now = Date.now()): () => void {
+  const timer = setTimeout(onEnd, Math.max(0, session.expiresAt - now));
+  return () => clearTimeout(timer);
 }
 
 /** The app's public settings when sign-in is set up on this machine, or null. */
@@ -118,7 +132,7 @@ export interface SignInSetup {
 export async function getSignInSetup(): Promise<SignInSetup | null> {
   if (location.hostname !== '127.0.0.1') return null;
   try {
-    const res = await fetch('/auth/status', { cache: 'no-store' });
+    const res = await fetch(STATUS_PATH, { cache: 'no-store' });
     if (!res.ok) return null;
     const { clientId, appSlug } = (await res.json()) as Record<string, unknown>;
     if (typeof clientId !== 'string' || !clientId) return null;

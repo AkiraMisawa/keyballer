@@ -12,7 +12,8 @@ import { useI18n } from '../i18n/react';
 import type { WorkflowRun } from '../lib/github';
 import type { Change, Setting } from './session';
 import { BRANCH, type EditSession } from './useEditSession';
-import { SignInButton } from '../components/SignInPanel';
+import { InstallApp, SignInButton } from '../components/SignInPanel';
+import type { SignIn } from '../auth/useSignIn';
 import { TokenInput, type TokenField } from '../components/TokenInput';
 
 const TOKEN_PAGE = 'https://github.com/settings/personal-access-tokens/new';
@@ -20,7 +21,10 @@ const TOKEN_PAGE = 'https://github.com/settings/personal-access-tokens/new';
 interface BarProps {
   edit: EditSession;
   repoName: string;
+  /** The token to send: pasted, or from the local sign-in. */
+  token: string;
   tokenField: TokenField;
+  signIn: SignIn | null;
   /** The build run for a commit, once GitHub lists it. */
   runFor: (sha: string) => WorkflowRun | undefined;
   /** After a save: watch for the build it started. */
@@ -32,7 +36,7 @@ interface BarProps {
 const ariaChord = (chord: string) =>
   (isMac() ? 'Meta+' : 'Control+') + (chord.startsWith('shift+') ? `Shift+${chord.slice(6).toUpperCase()}` : chord.toUpperCase());
 
-export function EditBar({ edit, repoName, tokenField, runFor, onSaved, describe }: BarProps) {
+export function EditBar({ edit, repoName, token, tokenField, signIn, runFor, onSaved, describe }: BarProps) {
   const { t } = useI18n();
   const [reviewing, setReviewing] = useState(false);
   /** A commit message typed with `save <message>`, for the review to start from. */
@@ -134,7 +138,9 @@ export function EditBar({ edit, repoName, tokenField, runFor, onSaved, describe 
         <ReviewDialog
           edit={edit}
           repoName={repoName}
+          token={token}
           tokenField={tokenField}
+          signIn={signIn}
           describe={describe ?? { legend: (k) => k, layer: (n) => String(n) }}
           draft={draft}
           onClose={() => setReviewing(false)}
@@ -252,17 +258,26 @@ interface ReviewProps {
   edit: EditSession;
   repoName: string;
   describe: NonNullable<BarProps['describe']>;
+  token: string;
   tokenField: TokenField;
+  signIn: SignIn | null;
   /** The commit message to start from, instead of the drafted one. */
   draft?: string;
   onClose: () => void;
   onSaved: (sha: string) => void;
 }
 
-function ReviewDialog({ edit, repoName, describe, tokenField, draft, onClose, onSaved }: ReviewProps) {
+function ReviewDialog({ edit, repoName, describe, token, tokenField, signIn, draft, onClose, onSaved }: ReviewProps) {
   const { t, err } = useI18n();
   const [message, setMessage] = useState(draft ?? edit.pending?.message ?? '');
   const [error, setError] = useState<unknown>(null);
+  // Signing in from here (the window is GitHub's) leaves focus nowhere; it moves on to Save.
+  const saveButton = useRef<HTMLButtonElement>(null);
+  const signedIn = !!signIn?.login;
+  useEffect(() => {
+    const lost = !document.activeElement || document.activeElement === document.body;
+    if (signedIn && lost) saveButton.current?.focus();
+  }, [signedIn]);
   const pending = edit.pending;
   // While saving, the dialog stays: closing it could hide the result.
   const close = () => !edit.saving && onClose();
@@ -271,7 +286,7 @@ function ReviewDialog({ edit, repoName, describe, tokenField, draft, onClose, on
   const value = (c: Change, v: number) =>
     c.setting === 'cpi' ? t('unit.cpi', { n: v }) : c.setting === 'ballMm' ? t('unit.mm', { n: v }) : String(v);
   const key = error instanceof LocalizedError ? error.key : null;
-  const needsToken = !tokenField.value || (key !== null && TOKEN_ERRORS.has(key));
+  const needsToken = !token || (key !== null && TOKEN_ERRORS.has(key));
 
   const save = async () => {
     setError(null);
@@ -369,7 +384,8 @@ function ReviewDialog({ edit, repoName, describe, tokenField, draft, onClose, on
         )}
         {needsToken && (
           <div className="stack">
-            {tokenField.signIn && !tokenField.signIn.login && <SignInButton signIn={tokenField.signIn} />}
+            {signIn && !signIn.login && <SignInButton signIn={signIn} />}
+            {signIn?.login && signIn.reaches === false && <InstallApp signIn={signIn} repo={repoName} />}
             <label htmlFor="review-token">{t('edit.tokenLabel')}</label>
             <TokenInput id="review-token" tokenField={tokenField} />
             <a href={TOKEN_PAGE} target="_blank" rel="noreferrer">
@@ -391,7 +407,7 @@ function ReviewDialog({ edit, repoName, describe, tokenField, draft, onClose, on
               {t('edit.reloadKeep')}
             </button>
           ) : (
-            <button type="button" className="primary" onClick={() => void save()} disabled={edit.saving} data-autofocus>
+            <button ref={saveButton} type="button" className="primary" onClick={() => void save()} disabled={edit.saving} data-autofocus>
               {edit.saving ? t('review.saving') : t('review.save')}
             </button>
           )}

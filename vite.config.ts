@@ -1,8 +1,8 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
 import react from '@vitejs/plugin-react';
-import { defineConfig, loadEnv, type Plugin } from 'vite';
-import { handleAuth, parseAuthConfig, type AuthConfig } from './src/auth/server';
+import { defineConfig, loadEnv, type Plugin, type PreviewServer, type ViteDevServer } from 'vite';
+import { handleAuth, parseAuthConfig, type AuthConfig } from './src/auth/server.ts';
 
 /**
  * The production page's security policy. GitHub Pages cannot send headers, so it goes in <meta>
@@ -50,16 +50,22 @@ function securityMeta(): Plugin {
  * Vite exposes only VITE_ variables to the page, and `npm run build` checks dist/ for them.
  */
 function localSignIn(config: AuthConfig | null): Plugin {
-  const mount = (server: { middlewares: { use: (fn: (req: IncomingMessage, res: ServerResponse, next: () => void) => void) => void } }) => {
-    server.middlewares.use((req, res, next) => {
+  // Each server answers only for its own address, which the callback URL is built from.
+  const mount = (server: ViteDevServer | PreviewServer, port: number | undefined) => {
+    const host = `127.0.0.1:${port}`;
+    server.middlewares.use((req: IncomingMessage, res: ServerResponse, next: () => void) => {
       if (!req.url?.startsWith('/auth/')) return next();
-      void serveAuth(req, res, config);
+      void serveAuth(req, res, config, host);
     });
   };
-  return { name: 'keyballer-local-sign-in', configureServer: mount, configurePreviewServer: mount };
+  return {
+    name: 'keyballer-local-sign-in',
+    configureServer: (server) => mount(server, server.config.server.port),
+    configurePreviewServer: (server) => mount(server, server.config.preview.port),
+  };
 }
 
-async function serveAuth(req: IncomingMessage, res: ServerResponse, config: AuthConfig | null) {
+async function serveAuth(req: IncomingMessage, res: ServerResponse, config: AuthConfig | null, host: string) {
   try {
     // The URL is built from the Host header, which the handler checks against the loopback address.
     const url = new URL(req.url ?? '/', `http://${req.headers.host ?? ''}`);
@@ -74,7 +80,7 @@ async function serveAuth(req: IncomingMessage, res: ServerResponse, config: Auth
       body: hasBody ? (Readable.toWeb(req) as ReadableStream<Uint8Array>) : undefined,
       duplex: 'half',
     } as RequestInit);
-    const response = (await handleAuth(request, config, fetch)) ?? new Response(null, { status: 404 });
+    const response = (await handleAuth(request, config, fetch, host)) ?? new Response(null, { status: 404 });
     res.statusCode = response.status;
     response.headers.forEach((value, name) => res.setHeader(name, value));
     res.end(Buffer.from(await response.arrayBuffer()));
@@ -89,7 +95,8 @@ async function serveAuth(req: IncomingMessage, res: ServerResponse, config: Auth
 export default defineConfig(({ mode }) => ({
   base: './',
   plugins: [react(), securityMeta(), localSignIn(parseAuthConfig(loadEnv(mode, process.cwd(), 'KEYBALLER_GITHUB_')))],
-  // Loopback only, on fixed ports: the GitHub App's callback URLs name exactly these.
-  server: { host: '127.0.0.1', port: 5173, strictPort: true },
-  preview: { host: '127.0.0.1', port: 4173, strictPort: true },
+  // Loopback only, on fixed ports: the GitHub App's callback URLs name exactly these. No CORS:
+  // nothing on another origin needs to read these servers.
+  server: { host: '127.0.0.1', port: 5173, strictPort: true, cors: false },
+  preview: { host: '127.0.0.1', port: 4173, strictPort: true, cors: false },
 }));
