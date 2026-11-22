@@ -26,9 +26,7 @@ export const BRANCH = 'main';
 
 export interface Loaded {
   session: Session;
-  /** keymap.c, read only for now: tells whether the firmware applies new defaults after flashing. */
-  keymapC: string | null;
-  /** Names of the builds that share this keymap folder (and so its config.h). */
+  /** Names of the builds that share this keymap folder (and so its files). */
   sharedBy: string[];
 }
 
@@ -47,7 +45,7 @@ interface ConfigJson {
   builds: { id: string; name: string; keymap_dir: string }[];
 }
 
-async function load(repo: RepoRef, token: string, buildId: string): Promise<{ base: SessionBase } & Omit<Loaded, 'session'>> {
+async function load(repo: RepoRef, token: string, buildId: string): Promise<{ base: SessionBase; sharedBy: string[] }> {
   const commit = await getBranchHead(repo, BRANCH, token);
   const json = await getTextAt(repo, 'keyballer.json', commit, token);
   if (json === null) throw new LocalizedError('edit.err.noConfig');
@@ -55,15 +53,15 @@ async function load(repo: RepoRef, token: string, buildId: string): Promise<{ ba
   const build = config.builds.find((b) => b.id === buildId);
   if (!build) throw new LocalizedError('edit.err.noBuild', { id: buildId });
   const dir = build.keymap_dir.replace(/\/+$/, '');
-  const [configH, keymapC] = await Promise.all([
-    getTextAt(repo, `${dir}/config.h`, commit, token),
-    getTextAt(repo, `${dir}/keymap.c`, commit, token),
-  ]);
+  const names = ['config.h', 'keymap.c', 'rules.mk'];
+  const texts = await Promise.all(names.map((n) => getTextAt(repo, `${dir}/${n}`, commit, token)));
   const files: Record<string, string> = { 'keyballer.json': json };
-  if (configH !== null) files[`${dir}/config.h`] = configH;
+  names.forEach((n, i) => {
+    const text = texts[i];
+    if (text !== null) files[`${dir}/${n}`] = text;
+  });
   return {
     base: { commit, buildId, keymapDir: dir, files },
-    keymapC,
     sharedBy: config.builds.filter((b) => b.keymap_dir.replace(/\/+$/, '') === dir).map((b) => b.name),
   };
 }
@@ -142,7 +140,7 @@ export function useEditSession(repo: RepoRef, token: string, buildId: string) {
     pending,
     saved,
     saving,
-    dirty: !!pending && pending.changes.length > 0,
+    dirty: !!pending && pending.files.length > 0,
     canUndo: !!session && canUndo(session),
     canRedo: !!session && canRedo(session),
     ensure,

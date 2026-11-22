@@ -245,6 +245,7 @@ button.link {
 
 button:focus-visible,
 input:focus-visible,
+select:focus-visible,
 textarea:focus-visible,
 summary:focus-visible,
 a:focus-visible,
@@ -835,6 +836,16 @@ dialog.help > * + * {
   border-left: calc(var(--u) * 0.18) solid transparent;
   border-top-right-radius: calc(var(--u) * 0.14);
 }
+.cap.changed::before {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--busy);
+}
 .cap[aria-pressed="true"] {
   border-color: var(--ball);
   box-shadow:
@@ -1061,6 +1072,79 @@ textarea {
   font-weight: 600;
 }
 
+/* Keymap editor: the key picker and the edit panel (docs/plans/keymap-editor.md) */
+
+.review-list {
+  margin: 0;
+  padding-left: 1.2em;
+}
+.picker label,
+.edit-panel label {
+  font-weight: 600;
+}
+.chips-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.chips-row button {
+  min-height: 24px;
+  padding: 0 8px;
+  font-size: 0.8rem;
+}
+.chips-row button[aria-pressed="true"] {
+  border-color: var(--text);
+  font-weight: 600;
+}
+.picker-results {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--sunken);
+}
+.picker-results li[role="option"] {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.picker-results li[aria-selected="true"] {
+  background: var(--ink);
+  color: var(--ink-text);
+}
+.picker-results li[aria-selected="true"] .muted {
+  color: var(--ink-text);
+}
+.picker-results li.note {
+  padding: 4px 10px;
+}
+.picker-legend {
+  font-weight: 600;
+}
+.picker fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.picker legend {
+  padding: 0;
+  font-weight: 600;
+}
+.picker select {
+  font: inherit;
+  min-height: 32px;
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  background: var(--sunken);
+  color: var(--text);
+}
+
 footer {
   font-size: 0.8rem;
 }
@@ -1075,4 +1159,24 @@ footer {
   * {
     transition: none !important;
   }
+}
+
+/* Why a shortcut did not run: a quiet line at the foot of the window, gone on the next click. */
+.shortcut-refusal {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  max-width: min(640px, calc(100vw - 32px));
+  font-size: 0.88rem;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  z-index: 30;
+}
+.shortcut-refusal[hidden] {
+  display: none;
 }

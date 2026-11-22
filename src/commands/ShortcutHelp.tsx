@@ -3,7 +3,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useI18n } from '../i18n/react';
-import { chordLabel, Kbd, keyLabel, lineChord } from './keys';
+import { chordLabel, Kbd, keyLabel, lineChord, shortcutKeys } from './keys';
 import type { Command } from './model';
 
 interface Props {
@@ -28,7 +28,7 @@ export function ShortcutHelp({ open, commands, onClose }: Props) {
     ...commands
       .filter((c) => c.shortcut || c.chords?.length)
       .map((c) => ({
-        keys: [...(c.shortcut ? [keyLabel(c.shortcut)] : []), ...(c.chords ?? []).map((ch) => chordLabel(ch))],
+        keys: [...shortcutKeys(c.shortcut).map(keyLabel), ...(c.chords ?? []).map((ch) => chordLabel(ch))],
         label: show(c.title),
         muted: !!c.unavailable,
       })),

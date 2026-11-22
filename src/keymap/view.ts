@@ -42,6 +42,8 @@ export interface ViewLayer {
 }
 
 export interface ViewCombo {
+  /** The key array's name in keymap.c, when known (edited views). */
+  name?: string;
   keys: string[];
   positions: (number | null)[];
   output: string;
@@ -295,6 +297,11 @@ function describe(expr: Expr, ctx: Context, depth = 0): Described {
   }
 
   return { kind: 'unknown', legend: { tap: name } };
+}
+
+/** The legend one keycode gets on this view's keycaps (for the key picker). */
+export function legendOf(view: ViewFile, keycode: string, display: Display): Legend {
+  return describe(parseKeycode(keycode), { view, display }).legend;
 }
 
 // ---- drawing ---------------------------------------------------------------

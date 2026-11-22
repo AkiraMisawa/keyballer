@@ -1,6 +1,6 @@
 # Keymap editor
 
-Status: proposed (2026-11-22). Builds on the keymap view ([keymap-view.md](keymap-view.md)); design research in [../research/keymap-editor-design.md](../research/keymap-editor-design.md).
+Status: built (2026-11-22). As built: combos are made by picking their keys on the board (`combo add`), then choosing the output; the review lists the changes in words rather than on a second board; layer actions are in the side panel when no key is selected. `save [message]` opens the review with that message, since saving always goes through the review. `ball mode cursor|scroll` (not `ball cursor|scroll`), because `ball` already selects the ball. Esc leaving edit mode keeps the unsaved changes; they stay on the board and in the bar until saved or discarded. A base-layer key that a combo uses cannot become transparent, empty or a key already on the base layer, because QMK finds combo keys by their keycode there. Builds on the keymap view ([keymap-view.md](keymap-view.md)); design research in [../research/keymap-editor-design.md](../research/keymap-editor-design.md).
 
 ## Problem
 
@@ -92,7 +92,7 @@ A pure model holding the base documents (`keymap.c`, `rules.mk`, `config.h` if t
 - Edit mode is entered with `E` (`edit`) on the keymap screen and left with `Esc`, which asks when there are unsaved changes.
 - The side panel becomes the key picker for the selected key; combos and layers have their own panels.
 - Keys (DESIGN.md §8, "Keymap editor"): arrows move, `Enter` opens the picker, `K` press-to-assign, `Delete` / `Backspace` make the key transparent, `[` `]` `0`–`9` `A` `B` as in the view, ⌘Z / Ctrl+Z undo, ⇧⌘Z / Ctrl+Y redo, ⌘S / Ctrl+S review.
-- Commands: `edit`, `assign <keycode> [hold=]`, `transparent`, `none`, `combo add`, `combo remove`, `layer add`, `layer remove`, `layer rename <name>`, `ball cursor|scroll`, `undo`, `redo`, `review`, `save [message]`, `discard`.
+- Commands: `edit`, `assign <keycode> [hold=]`, `transparent`, `none`, `combo add`, `combo remove`, `layer add`, `layer remove`, `layer rename <name>`, `ball mode cursor|scroll`, `undo`, `redo`, `review`, `save [message]`, `discard`.
 
 ### Screen states and tokens
 

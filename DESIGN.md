@@ -89,7 +89,7 @@ The keycap is the core component and is drawn the same way everywhere.
 | Held (the key you hold to reach this layer) | `--ink` fill with `--ink-text` legend |
 | Transparent | A small ▽ plus the legend it falls through to, in `--muted` |
 | No action (`KC_NO`) | "—" in `--muted`, so it is never confused with transparent |
-| Changed, not saved | A `--busy` dot in the top-right corner, and the key appears in the diff |
+| Changed, not saved | A `--busy` dot in the top-left corner, and the key appears in the review |
 | Behaviour set in code | A `--muted` corner notch. The legend explains it and links to the source lines |
 | Combo | A line joins the trigger keys, with the output as a small chip between them |
 
@@ -154,25 +154,23 @@ Commands: `keymap <id>`, `layer <n>` (or `layer <name>`, found by its title), `l
 
 Changes (trackball settings now, keys next): ⌘Z / Ctrl+Z undo, ⇧⌘Z / Ctrl+Y redo, ⌘S / Ctrl+S review and save. Commands: `cursor speed <cpi>`, `scroll speed <divider>`, `ball size <mm>`, `try speed`, `measure sensor`, `undo`, `redo`, `review`, `discard`. Closing the keymap with unsaved changes asks first.
 
-### Keymap editor (planned)
+### Keymap editor (now)
 
 | Key | Action |
 | --- | --- |
+| `E` | Start or finish editing |
 | `←` `↑` `→` `↓` | Move to the nearest key in that direction on the drawing, following the stagger and the thumb rotation |
-| `Enter` | Edit the selected key: the key picker opens with its search field focused |
-| `/`, ⌘K / Ctrl+K | Open the command line, where every editor action is a command: `assign <keycode> [hold=]`, `layer <name>`, `combo add <keys> <output>`, `diff`, `commit [message]`, `undo`, `redo` |
-| `K` | Press a key to assign: the next physical key you press is assigned (by `KeyboardEvent.code`; ignored during IME composition) |
+| `Enter` | On the selected key: go to the key picker's search field |
+| `K` | Press a key to assign: the next physical key you press is assigned (by `KeyboardEvent.code`; ignored during IME composition; Esc cancels) |
 | `Delete` / `Backspace` | Make the selected key transparent (▽) |
-| `[` / `]` | Previous / next layer |
-| `0`–`9` | Go to layer n |
-| `A` | Show all layers side by side |
-| `B` | Select the trackball |
+| `[` / `]`, `0`–`9`, `A`, `B` | As in the keymap view |
 | ⌘Z / Ctrl+Z, ⇧⌘Z / Ctrl+Y | Undo / redo |
-| ⌘C ⌘V / Ctrl+C Ctrl+V | Copy / paste the selected key |
-| ⌘S / Ctrl+S | Review the changes and commit |
-| `Esc` | Close the picker, then clear the selection |
+| ⌘S / Ctrl+S | Review the changes and save (commit) |
+| `Esc` | Stop picking combo keys, then clear the selection, then finish editing, then close the keymap (asking first if changes are unsaved) |
 
-Inside the key picker, typing searches, `↑` `↓` move through the results, `Tab` switches between the tap and hold actions, and `Enter` assigns the result and moves on to the next key, so a whole row can be filled without leaving the keyboard.
+Commands: `edit`, `assign <keycode>`, `transparent`, `none`, `press key`, `combo add`, `combo remove <n>`, `layer add`, `layer remove`, `layer rename <name>`, `ball mode cursor|scroll`, `undo`, `redo`, `review`, `discard`, `reload settings`. Copy and paste of keys (⌘C ⌘V) come later.
+
+Inside the key picker, typing searches, `↑` `↓` move through the results, `Tab` moves on to the hold action, and `Enter` assigns the result and moves on to the next key, so a whole row can be filled without leaving the keyboard.
 
 ## 9. Motion
 

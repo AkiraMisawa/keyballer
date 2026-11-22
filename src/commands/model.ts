@@ -24,6 +24,8 @@ export interface CommandArgument {
   readonly complete?: (given: Readonly<Record<string, string>>) => readonly Completion[];
   /** Why a value is refused; undefined when the slot takes it. */
   readonly check?: (value: string, given: Readonly<Record<string, string>>) => Localized | undefined;
+  /** The last slot only: it takes the rest of the line, spaces included (`layer rename Mouse keys`). */
+  readonly rest?: boolean;
 }
 
 export interface Command {
@@ -37,8 +39,8 @@ export interface Command {
   /** It belongs to the panel in front (the flash panel): the empty line lists these first. */
   readonly page?: boolean;
   readonly args?: readonly CommandArgument[];
-  /** A single key that runs it when nothing is being typed (`r`, `1`, `Escape`). */
-  readonly shortcut?: string;
+  /** A single key that runs it when nothing is being typed (`r`, `1`, `Escape`), or several for one action. */
+  readonly shortcut?: string | readonly string[];
   /** Editing chords that run it, ⌘ on Mac and Ctrl elsewhere (`z`, `shift+z`): undo, redo, save only (DESIGN.md §8). */
   readonly chords?: readonly string[];
   /** Why it cannot run now; absent when it can. */
@@ -211,12 +213,26 @@ export function readLine(text: string, commands: readonly Command[]): LineReadin
 
   const { command } = chosen;
   const args = command.args ?? [];
-  const rest = tokens.slice(chosen.length);
-  const done = closed ? rest : rest.slice(0, -1);
-  const typedNow = closed ? '' : (rest.at(-1) ?? '');
+  const required = args.filter((a) => a.required);
+  // A slot that takes the rest of the line gets every token from its first one on, still being typed.
+  // Plain words after the required values go to an optional one (`save Fix the combo`).
+  let after = tokens.slice(chosen.length);
+  let open = !closed;
+  for (let i = 0, n = 0; i < after.length; i++) {
+    const eq = after[i].indexOf('=');
+    const named = eq > 0 ? args.find((a) => !a.required && a.name === after[i].slice(0, eq).toLowerCase()) : undefined;
+    const arg = named ?? (eq > 0 ? undefined : (required[n++] ?? args.find((a) => !a.required && a.rest)));
+    if (arg?.rest) {
+      const prefix = arg.required || named ? '' : `${arg.name}=`;
+      after = [...after.slice(0, i), prefix + after.slice(i).join(' ')];
+      open = true;
+      break;
+    }
+  }
+  const done = open ? after.slice(0, -1) : after;
+  const typedNow = open ? (after.at(-1) ?? '') : '';
   const given: Record<string, string> = {};
   const problems: Localized[] = [];
-  const required = args.filter((a) => a.required);
   let next = 0;
 
   for (const token of done) {
@@ -298,5 +314,6 @@ export function take(text: string, reading: LineReading, item: Command | Complet
 
 /** A command's arguments as the line shows them: `<repo> [eeprom=]`. */
 export function signature(command: Command): string {
-  return (command.args ?? []).map((a) => (a.required ? `<${a.name}>` : `[${a.name}=]`)).join(' ');
+  // An optional slot that takes the rest of the line is typed as plain words: `save [message]`.
+  return (command.args ?? []).map((a) => (a.required ? `<${a.name}>` : a.rest ? `[${a.name}]` : `[${a.name}=]`)).join(' ');
 }

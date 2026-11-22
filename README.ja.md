@@ -29,7 +29,7 @@ Keyballer（このアプリ） ◀──GitHub API で取得───┘
 | ZMK のビルド | 予定 |
 | Pro Micro（ATmega32U4 / Caterina）への書き込み | 対応 |
 | RP2040・nRF52840（UF2）への書き込み | 予定 |
-| キーマップの編集画面 | 予定 |
+| キーマップの編集画面 | 対応（キー、コンボ、レイヤー） |
 
 ## 設定リポジトリ
 
@@ -145,6 +145,10 @@ npm run build   # 型チェックとビルド
 
 ビルドのたびに、ファームウェアの隣に `<id>.view.json` も書き出します。キーボードの VIA 定義から取った実際の形の上のキーマップ、レイヤー、コンボ、`#define` の別名、キーマップのコードが扱うキーコードとその行番号が入っています。アプリでは「キーマップを見る」（`V`）で開きます。作れなかったときは manifest に理由が残り、ファームウェアには影響しません。計画：[docs/plans/keymap-view.md](docs/plans/keymap-view.md)（英語）
 
+### キーマップの編集
+
+キーマップで `E` を押すと編集を始めます。キーを選び、キー選択から新しい動作を割り当てます。QMK の名前、印字される文字、英語や日本語の言葉で探せるほか、パソコンのキーを押して割り当てることもできます（`K`）。長押しの動作も付けられます。コンボはボード上で追加・削除でき、レイヤーの追加・削除・名前の変更もできます。変わるのは `keymap.c` のデータ部分（レイヤーの配列、コンボ、`KEYBALLER_SCROLL_LAYERS`）だけで、自分で書いたコードはそのまま残ります。レイヤーの名前とスクロールするレイヤーは `keyballer.json` にも書きます。最初のコンボを足すと、コンボを有効にするため `rules.mk` に `COMBO_ENABLE = yes`、`config.h` に `#define COMBO_ONLY_FROM_LAYER 0` も書きます。どの操作もコマンドラインから使えます（`assign KC_ESC`、`assign KC_A hold=ctrl`、`combo add`、`layer rename Mouse keys`、`save Fix the comma combo`）。保存は下と同じです。計画：[docs/plans/keymap-editor.md](docs/plans/keymap-editor.md)（英語）
+
 ### トラックボールの設定と保存
 
 キーマップでトラックボールを選ぶ（`B`）と、カーソルとスクロールの速さを設定できます。どちらも設定値と、ボール 1 cm あたりのカウント数・段数で表示します。パッドで書き込む前に自分のボールで速さを試せるほか、ボールを 1 回転させてセンサーを測れます。変更はバーにたまり、元に戻す・やり直す（⌘Z / Ctrl+Z）ができます。「確認して保存」（⌘S / Ctrl+S）で変更とファイルの差分を確かめてから、設定リポジトリの `main` に commit し、ファームウェアのビルドが始まります。保存には、そのリポジトリの Contents を「読み取りと書き込み」にした fine-grained トークンが必要です。計画：[docs/plans/trackball-settings.md](docs/plans/trackball-settings.md)、[docs/plans/keymap-editor.md](docs/plans/keymap-editor.md)（英語）
@@ -156,5 +160,5 @@ npm run build   # 型チェックとビルド
 ## これから
 
 1. ZMK のビルドと UF2 の書き込み
-2. キーマップの編集画面：キー、コンボ、レイヤー（保存と確認画面は、トラックボール設定と一緒にできています）
-3. GitHub ログイン、LED の設定、テンプレート
+2. GitHub ログイン、LED の設定、テンプレート
+3. AI によるキーマップの変更（同じ確認画面で確かめてから保存）

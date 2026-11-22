@@ -34,7 +34,7 @@ describe('trackball settings in a session', () => {
   });
 
   it('has nothing to save until something changes', () => {
-    expect(review(am338())).toEqual({ changes: [], files: [], message: '' });
+    expect(review(am338())).toEqual({ changes: [], keys: [], combos: [], layers: [], files: [], message: '' });
   });
 
   it('shows a change as before and after, the file diff, and a commit message', () => {
