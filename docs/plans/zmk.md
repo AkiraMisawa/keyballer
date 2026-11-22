@@ -37,7 +37,14 @@ The same model as QMK: Keyballer's own reusable workflow builds the firmware, pu
 
 **Phase 2: direct write (Chromium).** The owner picks the bootloader drive. Keyballer reads `INFO_UF2.TXT` and checks the board, then writes the file. An error when the file is closed, after every byte was written, means the board has reset; the page asks whether the keyboard restarted. The download stays as the fallback.
 
-**Phase 3: keymap view.** The build writes `<id>.view.json` from `zephyr.dts`. Later, reading the live keymap over ZMK Studio would also show Studio edits.
+**Phase 3: keymap view (build side built; the app next).** The build writes `<id>.view.json` from the final `zephyr.dts` (`scripts/zmk_view.py`), in the same format as the QMK build's view, so the existing keymap screen draws it, read-only at first. Asked by the owner: the view comes from the build, so it always matches the firmware it sits next to; each push to `main` builds it in about three minutes. Reading the live keymap over ZMK Studio (Web Serial) would show it without a build, and Studio edits too; that can come later.
+
+- **Layout:** the chosen `zmk,physical-layout`, from centi-keyunits and centi-degrees (negative values are 32-bit two's complement in `zephyr.dts`) to key units and degrees.
+- **Bindings, as the QMK keycode that means the same:** `&kp` usages (HID keyboard and consumer pages; implicit modifiers in the top byte become `LSFT(…)` and so on), hold-taps holding a modifier as `LALT_T(…)` and holding a layer as `LT(n, …)`, `&mo`, `&to`, `&tog`, `&sl`, `&sk`, `&trans`, `&none`, `&mkp`, `&bootloader`, `&sys_reset`, `&caps_word`, `&key_repeat`. Behaviours are recognised by their node's `compatible`, so a renamed or custom hold-tap reads the same.
+- **No QMK keycode** (Bluetooth, output selection, macros, mouse movement, underglow…): a name of Keyballer's own (`ZMK_BT_SEL_0`) with a label (`BT 1`).
+- **Combos:** key positions and output; their trigger keys are the base layer's keys there.
+- **Not yet:** the trackball (its position is not in the devicetree), layer names beyond the node names, and links to `.keymap` lines.
+- **Errors:** a view that cannot be made is recorded as `view_error` and never fails the build; the settings reset gets none.
 
 ## Decisions
 
