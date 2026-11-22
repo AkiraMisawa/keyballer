@@ -122,6 +122,8 @@ def load_config(config_dir):
             raise ConfigError(
                 'builds[{}].ball must be one of {}'.format(i, ", ".join(BALL_SIDES))
             )
+        if "leds" in b and not isinstance(b["leds"], bool):
+            raise ConfigError('builds[{}].leds must be true or false'.format(i))
     views = cfg.get("views", {})
     if not isinstance(views, dict) or not all(isinstance(v, dict) for v in views.values()):
         raise ConfigError('"views" must map keymap directories to settings')
@@ -270,6 +272,17 @@ def write_view(build, cfg, qmk, keymap_in_qmk, info, out_dir):
     return {"view": name}
 
 
+def compile_command(build):
+    """The qmk compile command for a build. `leds` (docs/plans/led-settings.md) turns RGB Lighting
+    on or off for this build only: qmk passes -e to make as a command-line variable, which wins
+    over RGBLIGHT_ENABLE in the keymap's rules.mk, so one keymap folder serves boards with and
+    without LEDs. Without `leds`, rules.mk decides."""
+    command = ["qmk", "compile", "-kb", build["keyboard"], "-km", build["keymap"]]
+    if "leds" in build:
+        command += ["-e", "RGBLIGHT_ENABLE={}".format("yes" if build["leds"] else "no")]
+    return command
+
+
 def build_one(build, cfg, config_dir, qmk, out_dir):
     keyboard, keymap = build["keyboard"], build["keymap"]
     print("::group::Build {} ({}:{})".format(build["id"], keyboard, keymap), flush=True)
@@ -286,10 +299,7 @@ def build_one(build, cfg, config_dir, qmk, out_dir):
             if stale.exists():
                 stale.unlink()
 
-        log = ANSI.sub("", run(
-            ["qmk", "compile", "-kb", keyboard, "-km", keymap],
-            cwd=qmk, capture=True, env=qmk_env(qmk),
-        ))
+        log = ANSI.sub("", run(compile_command(build), cwd=qmk, capture=True, env=qmk_env(qmk)))
     finally:
         print("::endgroup::", flush=True)
 
@@ -316,6 +326,8 @@ def build_one(build, cfg, config_dir, qmk, out_dir):
         "size": int(size.group(1)) if size else None,
         "max_size": int(size.group(2)) if size else None,
     }
+    if "leds" in build:
+        meta["leds"] = build["leds"]
     info = qmk_json(qmk, ["info", "-kb", keyboard, "-f", "json"])
     meta.update(keyboard_summary(info))
     meta.update(write_view(build, cfg, qmk, dst, info, out_dir))
