@@ -25,7 +25,8 @@ Keyball+ has 58 LEDs, 29 a side; Keyball39 and Keyball44 can have them too. Whet
    Saving writes `config.h` and `keyballer.json`, through the same review and commit as other edits.
 3. **LED keys in the key picker**, in a "Lighting" group: on/off, next and previous effect, hue, saturation and brightness up and down, and a key for each effect. A key for an effect the firmware does not include does nothing. The picker says so.
 4. **New defaults win after flashing.** A one-off block in the keymap's `keymap.c` does this (am338 gets it in keyballer-config):
-   - It keeps a stamp of the LED defaults next to the trackball's, in the user EEPROM data block (`EECONFIG_USER_DATA_SIZE 8`: two 32-bit stamps). Separate stamps mean that changing an LED setting does not reset trackball speeds saved on the keyboard.
+   - It keeps a stamp of the LED defaults next to the trackball's, in the user EEPROM data block (`EECONFIG_USER_DATA_SIZE 12`: three 32-bit words). Separate stamps mean that changing an LED setting does not reset trackball speeds saved on the keyboard.
+   - The third word records which effects are compiled in. RGB Lighting numbers its modes by them, so with other effects the same `RGBLIGHT_DEFAULT_MODE` can stand for another effect, and a mode saved on the keyboard for another variant (found by the firmware review).
    - The trackball's stamp moves into the block too. In QMK 0.22.14 the block's version lives in the user EEPROM word (`eeconfig_update_user_datablock` writes `EECONFIG_USER`), which is where the trackball's stamp was. Keeping both would make each overwrite the other on every start-up. The move resets trackball speeds saved on the keyboard once, on the first start-up after flashing.
    - When a flashed build's stamp differs, it writes the new defaults to EEPROM (`eeconfig_update_rgblight_default`, then `rgblight_reload_from_eeprom`), turns the LEDs off when they should start off, and stores the stamp.
    - Changes made with the LED keys are then kept until the next build with different defaults.
@@ -85,7 +86,7 @@ This model gives the all-effects build within 3 bytes. It is an estimate: the bu
 
 1. **Build side** (this repository): `builds[].leds`, `-e RGBLIGHT_ENABLE`, `leds` in the manifest, and this plan.
 2. **keyballer-config:**
-   - the stamps block and `EECONFIG_USER_DATA_SIZE 8` in am338;
+   - the stamps block and `EECONFIG_USER_DATA_SIZE 12` in am338;
    - `"leds": true` for Keyball+, which has LEDs fitted. Keyball39 is left to the owner to choose in the app.
 3. **App:**
    - the LED panel, with its command-line commands and a keyboard shortcut;

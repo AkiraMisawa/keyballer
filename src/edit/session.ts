@@ -16,7 +16,8 @@ import {
   setKey,
   setScrollLayers,
 } from '../config/keymap';
-import { readDefine, setBallMm, setDefine, setRule } from '../config/source';
+import { readDefine, readFlag, setBallMm, setBuildValue, setDefine, setFlag, setRule } from '../config/source';
+import { EFFECTS, modeText, readMode, type EffectId, type LedMode } from '../leds/leds';
 import type { MessageKey } from '../i18n/messages';
 import { readCustomKeycodes } from '../config/keymap';
 import { basicLegend, TRANSPARENT } from '../keymap/keycodes';
@@ -38,8 +39,10 @@ export interface SessionBase {
   zmk?: { base: ZmkBase } | { problem: MessageKey };
 }
 
-/** The settings a session can change. */
-export type Setting = 'cpi' | 'divider' | 'ballMm';
+/** The settings a session can change: the trackball's, and the LEDs' (docs/plans/led-settings.md). */
+export type TrackballSetting = 'cpi' | 'divider' | 'ballMm';
+export type LedSetting = 'leds' | 'ledMode' | 'ledHue' | 'ledSat' | 'ledVal' | 'ledStartOn' | 'ledEffects';
+export type Setting = TrackballSetting | LedSetting;
 
 export type BallMode = 'cursor' | 'scroll';
 
@@ -61,8 +64,7 @@ export type Edit =
   | { type: 'layerName'; layer: number; name: string }
   | { type: 'ballMode'; layer: number; mode: BallMode };
 
-const isSetting = (e: Edit): e is { type: Setting; value: number } =>
-  e.type === 'cpi' || e.type === 'divider' || e.type === 'ballMm';
+const isSetting = (e: Edit): e is { type: Setting; value: number } => Object.hasOwn(SETTINGS, e.type);
 
 export interface Session {
   base: SessionBase;
@@ -72,7 +74,8 @@ export interface Session {
   undone: Edit[];
 }
 
-export type Trackball = Record<Setting, number>;
+export type Settings = Record<Setting, number>;
+export type Trackball = Record<TrackballSetting, number>;
 
 export interface Change {
   setting: Setting;
@@ -177,10 +180,55 @@ function readNumber(text: string | undefined, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function buildOf(base: SessionBase, files: Record<string, string>): { ball_mm?: number } | undefined {
-  const json = JSON.parse(files[CONFIG_JSON]) as { builds: { id: string; ball_mm?: number }[] };
+interface BuildJson {
+  id: string;
+  keyboard?: string;
+  ball_mm?: number;
+  leds?: boolean;
+}
+
+function buildOf(base: SessionBase, files: Record<string, string>): BuildJson | undefined {
+  const json = JSON.parse(files[CONFIG_JSON]) as { builds: BuildJson[] };
   return json.builds.find((b) => b.id === base.buildId);
 }
+
+// ---- LED settings (docs/plans/led-settings.md) ---------------------------------------
+
+const LED_MODE = 'RGBLIGHT_DEFAULT_MODE';
+const LEDS_OFF = 'KEYBALLER_LEDS_OFF';
+const ledDefine = (name: 'HUE' | 'SAT' | 'VAL') => `RGBLIGHT_DEFAULT_${name}`;
+
+/** A mode as a setting's number: the effect's place in EFFECTS, times 16, plus the variant; -1 when config.h writes it another way. */
+export const ledModeValue = (m: LedMode | null) => (m ? EFFECTS.findIndex((e) => e.id === m.effect) * 16 + m.variant : -1);
+export const ledModeOf = (value: number): LedMode | null =>
+  value < 0 ? null : { effect: EFFECTS[Math.floor(value / 16)]?.id ?? 'static', variant: value % 16 };
+
+/** Effects compiled in, as a setting's number: a bit for each effect's place in EFFECTS. */
+export const ledEffectsValue = (ids: EffectId[]) => EFFECTS.reduce((n, e, i) => (ids.includes(e.id) && e.define ? n | (1 << i) : n), 0);
+export const ledEffectsOf = (value: number): EffectId[] => EFFECTS.filter((e, i) => e.define && value & (1 << i)).map((e) => e.id);
+
+/** Keyball limits brightness for power (RGBLIGHT_LIMIT_VAL 150 in its config.h); QMK's limit is 255. */
+function ledLimit(base: SessionBase, files: Record<string, string>): number {
+  const own = Number.parseInt(readDefine(files[configPath(base)] ?? '', 'RGBLIGHT_LIMIT_VAL') ?? '', 10);
+  if (Number.isFinite(own)) return own;
+  return buildOf(base, files)?.keyboard?.startsWith('keyball/') ? 150 : 255;
+}
+
+const EFFECT_WORDS: Record<EffectId, string> = {
+  static: 'a static colour',
+  breathing: 'breathing',
+  rainbowMood: 'rainbow mood',
+  rainbowSwirl: 'rainbow swirl',
+  snake: 'snake',
+  knight: 'knight rider',
+  christmas: 'christmas',
+  gradient: 'gradient',
+  twinkle: 'twinkle',
+  alternating: 'alternating',
+};
+
+const config = (b: SessionBase, f: Record<string, string>) => f[configPath(b)] ?? '';
+const writeConfig = (b: SessionBase, f: Record<string, string>, change: (text: string) => string) => void (f[configPath(b)] = change(config(b, f)));
 
 /** Where each setting lives, how it is read and written, and how a commit message says it changed. */
 const SETTINGS: Record<
@@ -206,25 +254,121 @@ const SETTINGS: Record<
     write: (b, f, v) => void (f[CONFIG_JSON] = setBallMm(f[CONFIG_JSON], b.buildId, v)),
     clause: (to, buildId) => `the ball size of ${buildId} to ${to} mm`,
   },
+  // Whether this build's board has LEDs: builds[].leds, else the keymap's rules.mk.
+  leds: {
+    read: (b, f) => {
+      const own = buildOf(b, f)?.leds;
+      if (typeof own === 'boolean') return own ? 1 : 0;
+      return /^[ \t]*RGBLIGHT_ENABLE[ \t]*=[ \t]*yes\b/m.test(f[rulesPath(b)] ?? '') ? 1 : 0;
+    },
+    write: (b, f, v) => void (f[CONFIG_JSON] = setBuildValue(f[CONFIG_JSON], b.buildId, 'leds', v === 1)),
+    clause: (to, buildId) => `${buildId} to build ${to ? 'with' : 'without'} LEDs`,
+  },
+  ledMode: {
+    read: (b, f) => ledModeValue(readMode(readDefine(config(b, f), LED_MODE))),
+    write: (b, f, v) => {
+      const mode = ledModeOf(v);
+      if (mode) writeConfig(b, f, (text) => setDefine(text, LED_MODE, modeText(mode)));
+    },
+    clause: (to) => `the LED effect to ${EFFECT_WORDS[ledModeOf(to)?.effect ?? 'static']}`,
+  },
+  ledHue: {
+    read: (b, f) => readNumber(readDefine(config(b, f), ledDefine('HUE')), 0),
+    write: (b, f, v) => writeConfig(b, f, (text) => setDefine(text, ledDefine('HUE'), String(v))),
+    clause: (to) => `the LED hue to ${to}`,
+  },
+  ledSat: {
+    read: (b, f) => readNumber(readDefine(config(b, f), ledDefine('SAT')), 255),
+    write: (b, f, v) => writeConfig(b, f, (text) => setDefine(text, ledDefine('SAT'), String(v))),
+    clause: (to) => `the LED saturation to ${to}`,
+  },
+  ledVal: {
+    read: (b, f) => readNumber(readDefine(config(b, f), ledDefine('VAL')), ledLimit(b, f)),
+    write: (b, f, v) => writeConfig(b, f, (text) => setDefine(text, ledDefine('VAL'), String(v))),
+    clause: (to) => `the LED brightness to ${to}`,
+  },
+  ledStartOn: {
+    read: (b, f) => (readFlag(config(b, f), LEDS_OFF) ? 0 : 1),
+    write: (b, f, v) => writeConfig(b, f, (text) => setFlag(text, LEDS_OFF, v === 0)),
+    clause: (to) => `the LEDs to start ${to ? 'on' : 'off'}`,
+  },
+  ledEffects: {
+    read: (b, f) => ledEffectsValue(EFFECTS.filter((e) => e.define && readFlag(config(b, f), e.define)).map((e) => e.id)),
+    write: (b, f, v) =>
+      writeConfig(b, f, (text) => EFFECTS.reduce((t, e, i) => (e.define ? setFlag(t, e.define, (v & (1 << i)) !== 0) : t), text)),
+    clause: (to) => {
+      const ids = ledEffectsOf(to);
+      return ids.length ? `the LED effects to ${englishList(ids.map((id) => EFFECT_WORDS[id]))}` : 'no LED effects';
+    },
+  },
 };
 
 export const SETTING_ORDER = Object.keys(SETTINGS) as Setting[];
 
-function settingsOf(base: SessionBase, files: Record<string, string>): Trackball {
-  return Object.fromEntries(SETTING_ORDER.map((k) => [k, SETTINGS[k].read(base, files)])) as Trackball;
+/** The start-up effect is always compiled in. */
+function withModeEffect(values: Settings): Settings {
+  const mode = ledModeOf(values.ledMode);
+  return mode ? { ...values, ledEffects: values.ledEffects | ledEffectsValue([mode.effect]) } : values;
 }
 
-/** The settings as they are in the files read from the repository. */
-export function savedTrackball(session: Session): Trackball {
+function settingsOf(base: SessionBase, files: Record<string, string>): Settings {
+  return withModeEffect(Object.fromEntries(SETTING_ORDER.map((k) => [k, SETTINGS[k].read(base, files)])) as Settings);
+}
+
+/** Every setting as it is in the files read from the repository. */
+export function savedSettings(session: Session): Settings {
   return settingsOf(session.base, session.base.files);
 }
 
-/** The settings as the session stands now. */
-export function trackball(session: Session): Trackball {
-  const now = savedTrackball(session);
+/** Every setting as the session stands now. */
+export function settings(session: Session): Settings {
+  const now = savedSettings(session);
   for (const e of session.edits) if (isSetting(e)) now[e.type] = e.value;
-  return now;
+  return withModeEffect(now);
 }
+
+const trackballOf = ({ cpi, divider, ballMm }: Settings): Trackball => ({ cpi, divider, ballMm });
+
+/** The trackball settings as they are in the files read from the repository. */
+export const savedTrackball = (session: Session): Trackball => trackballOf(savedSettings(session));
+
+/** The trackball settings as the session stands now. */
+export const trackball = (session: Session): Trackball => trackballOf(settings(session));
+
+/** The LED settings, as the LED panel shows them. */
+export interface Leds {
+  /** Whether this build's board has LEDs. */
+  fitted: boolean;
+  /** The effect at start-up; null when config.h writes it in a way Keyballer does not read. */
+  mode: LedMode | null;
+  hue: number;
+  sat: number;
+  val: number;
+  startOn: boolean;
+  /** The effects compiled in, besides the static colour. */
+  effects: EffectId[];
+  /** The highest brightness the firmware allows. */
+  limit: number;
+}
+
+const ledsOf = (s: Settings, limit: number): Leds => ({
+  fitted: s.leds === 1,
+  mode: ledModeOf(s.ledMode),
+  hue: s.ledHue,
+  sat: s.ledSat,
+  val: s.ledVal,
+  startOn: s.ledStartOn === 1,
+  effects: ledEffectsOf(s.ledEffects),
+  limit,
+});
+
+/** The LED settings as the session stands now. */
+export const leds = (session: Session): Leds => ledsOf(settings(session), ledLimit(session.base, currentFiles(session)));
+
+/** The LED settings as they are in the files read from the repository. */
+export const savedLeds = (session: Session): Leds => ledsOf(savedSettings(session), ledLimit(session.base, session.base.files));
+
+
 
 const TRANSPARENT_OR_NONE = new Set(['_______', 'KC_TRNS', 'KC_TRANSPARENT', 'KC_NO', 'XXXXXXX']);
 
@@ -414,8 +558,8 @@ export function currentFiles(session: Session): Record<string, string> {
     filesCache.set(session, files);
     return files;
   }
-  const saved = savedTrackball(session);
-  const now = trackball(session);
+  const saved = savedSettings(session);
+  const now = settings(session);
   const files = { ...session.base.files };
   for (const k of SETTING_ORDER) if (now[k] !== saved[k]) SETTINGS[k].write(session.base, files, now[k]);
   for (const e of session.edits) {
@@ -567,8 +711,8 @@ export function review(session: Session): Review {
   const zmk = zmkBaseOf(session.base);
   if (zmk) return zmkReview(session, zmk);
   const { base } = session;
-  const saved = savedTrackball(session);
-  const now = trackball(session);
+  const saved = savedSettings(session);
+  const now = settings(session);
   const changes = SETTING_ORDER.filter((k) => now[k] !== saved[k]).map((k) => ({ setting: k, from: saved[k], to: now[k] }));
   const after = currentFiles(session);
   const { keys, combos, layers } = keymapChanges(base, base.files, after);

@@ -3,7 +3,7 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { readDefine, setBallMm, setDefine, setRule } from './source';
+import { readDefine, readFlag, setBallMm, setDefine, setFlag, setRule } from './source';
 
 const fixture = (name: string) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
 const configH = fixture('am338.config.h');
@@ -88,3 +88,16 @@ describe('rules.mk', () => {
     expect(setRule(rules, 'OLED_ENABLE', 'yes')).toBe(rules);
   });
 });
+
+describe('switches in config.h', () => {
+  it('finds a define as #ifdef would, adds it once and removes its line', () => {
+    expect(readFlag('#define KEYBALLER_LEDS_OFF\n', 'KEYBALLER_LEDS_OFF')).toBe(true);
+    expect(readFlag('#  define KEYBALLER_LEDS_OFF 1 // off\n', 'KEYBALLER_LEDS_OFF')).toBe(true);
+    expect(readFlag('#define KEYBALLER_LEDS_OFF_X\n// #define KEYBALLER_LEDS_OFF\n', 'KEYBALLER_LEDS_OFF')).toBe(false);
+    const on = setFlag('#pragma once', 'RGBLIGHT_EFFECT_TWINKLE', true);
+    expect(on).toBe('#pragma once\n#define RGBLIGHT_EFFECT_TWINKLE\n');
+    expect(setFlag(on, 'RGBLIGHT_EFFECT_TWINKLE', true)).toBe(on);
+    expect(setFlag(on, 'RGBLIGHT_EFFECT_TWINKLE', false)).toBe('#pragma once\n');
+  });
+});
+

@@ -4,7 +4,7 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { apply, openSession, rebase, redo, review, trackball, undo, type Session } from './session';
+import { apply, currentFiles, ledEffectsValue, ledModeValue, leds, openSession, rebase, redo, review, trackball, undo, type Edit, type Session } from './session';
 
 const fixture = (name: string) =>
   readFileSync(new URL(`../config/fixtures/${name}`, import.meta.url), 'utf8');
@@ -117,5 +117,69 @@ describe('trackball settings in a session', () => {
     const moved = rebase(s, newer);
     expect(moved.base.commit).toBe('newer00');
     expect(review(moved).changes).toEqual([{ setting: 'cpi', from: 800, to: 900 }]);
+  });
+});
+
+describe('LED settings in a session (docs/plans/led-settings.md)', () => {
+  const withRules = (rules = fixture('am338.rules.mk'), config = fixture('am338.config.h')): Session =>
+    openSession({
+      commit: 'base000',
+      buildId: 'keyballplus',
+      keymapDir: 'keymaps/am338',
+      files: { 'keymaps/am338/config.h': config, 'keymaps/am338/rules.mk': rules, 'keyballer.json': fixture('keyballer.json') },
+    });
+  const configOf = (s: Session) => currentFiles(s)['keymaps/am338/config.h'];
+
+  it('starts from what the files say, with QMK’s defaults and Keyball’s brightness limit for the rest', () => {
+    // am338's rules.mk has RGBLIGHT_ENABLE = no and keyballer.json no "leds".
+    expect(leds(withRules())).toEqual({
+      fitted: false, mode: { effect: 'static', variant: 0 }, hue: 0, sat: 255, val: 150, startOn: true, effects: [], limit: 150,
+    });
+    expect(leds(withRules('RGBLIGHT_ENABLE = yes\n')).fitted).toBe(true);
+    const set = withRules(undefined, `${fixture('am338.config.h')}#define RGBLIGHT_DEFAULT_MODE RGBLIGHT_MODE_TWINKLE + 4\n#define RGBLIGHT_EFFECT_TWINKLE\n#define RGBLIGHT_DEFAULT_VAL 90\n#define KEYBALLER_LEDS_OFF\n`);
+    expect(leds(set)).toMatchObject({ mode: { effect: 'twinkle', variant: 4 }, val: 90, startOn: false, effects: ['twinkle'] });
+    // A mode written another way is shown as unknown, not guessed.
+    expect(leds(withRules(undefined, '#define RGBLIGHT_DEFAULT_MODE 3\n')).mode).toBeNull();
+  });
+
+  it('says per build whether the board has LEDs, in keyballer.json', () => {
+    const s = apply(withRules(), { type: 'leds', value: 1 });
+    expect(leds(s).fitted).toBe(true);
+    const json = JSON.parse(currentFiles(s)['keyballer.json']) as { builds: { id: string; leds?: boolean }[] };
+    expect(json.builds.map((b) => [b.id, b.leds])).toEqual([['keyballplus', true], ['keyball39', undefined]]);
+    expect(review(s).changes).toEqual([{ setting: 'leds', from: 0, to: 1 }]);
+    expect(review(s).message).toBe('Set keyballplus to build with LEDs');
+  });
+
+  it('writes the effect, colour and start-up to config.h, with the effect compiled in', () => {
+    const s = [
+      { type: 'ledMode', value: ledModeValue({ effect: 'breathing', variant: 2 }) },
+      { type: 'ledHue', value: 170 },
+      { type: 'ledStartOn', value: 0 },
+    ].reduce((x, e) => apply(x, e as Edit), withRules());
+    const after = configOf(s);
+    expect(after.endsWith(
+      '#define RGBLIGHT_DEFAULT_MODE RGBLIGHT_MODE_BREATHING + 2\n#define RGBLIGHT_DEFAULT_HUE 170\n#define KEYBALLER_LEDS_OFF\n#define RGBLIGHT_EFFECT_BREATHING\n',
+    )).toBe(true);
+    expect(leds(s)).toMatchObject({ mode: { effect: 'breathing', variant: 2 }, hue: 170, startOn: false, effects: ['breathing'] });
+    expect(review(s).message).toBe('Set the LED effect to breathing, the LED hue to 170, the LEDs to start off and the LED effects to breathing');
+  });
+
+  it('takes settings out again, leaving config.h as it was', () => {
+    const s = [
+      { type: 'ledEffects', value: ledEffectsValue(['twinkle', 'gradient']) },
+      { type: 'ledStartOn', value: 0 },
+      { type: 'ledStartOn', value: 1 },
+    ].reduce((x, e) => apply(x, e as Edit), withRules());
+    expect(configOf(s)).toContain('#define RGBLIGHT_EFFECT_STATIC_GRADIENT\n#define RGBLIGHT_EFFECT_TWINKLE\n');
+    expect(configOf(apply(s, { type: 'ledEffects', value: 0 }))).toBe(fixture('am338.config.h'));
+  });
+
+  it('keeps the start-up effect compiled in', () => {
+    const s = [
+      { type: 'ledMode', value: ledModeValue({ effect: 'snake', variant: 1 }) },
+      { type: 'ledEffects', value: ledEffectsValue(['twinkle']) },
+    ].reduce((x, e) => apply(x, e as Edit), withRules());
+    expect(leds(s).effects).toEqual(['snake', 'twinkle']);
   });
 });
