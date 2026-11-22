@@ -12,14 +12,15 @@ import { useI18n } from '../i18n/react';
 import type { WorkflowRun } from '../lib/github';
 import type { Change, Setting } from './session';
 import { BRANCH, type EditSession } from './useEditSession';
+import { TokenInput } from '../components/TokenInput';
+import type { TokenField } from '../lib/token';
 
 const TOKEN_PAGE = 'https://github.com/settings/personal-access-tokens/new';
 
 interface BarProps {
   edit: EditSession;
   repoName: string;
-  token: string;
-  onToken: (token: string) => void;
+  token: TokenField;
   /** The build run for a commit, once GitHub lists it. */
   runFor: (sha: string) => WorkflowRun | undefined;
   /** After a save: watch for the build it started. */
@@ -31,7 +32,7 @@ interface BarProps {
 const ariaChord = (chord: string) =>
   (isMac() ? 'Meta+' : 'Control+') + (chord.startsWith('shift+') ? `Shift+${chord.slice(6).toUpperCase()}` : chord.toUpperCase());
 
-export function EditBar({ edit, repoName, token, onToken, runFor, onSaved, describe }: BarProps) {
+export function EditBar({ edit, repoName, token, runFor, onSaved, describe }: BarProps) {
   const { t } = useI18n();
   const [reviewing, setReviewing] = useState(false);
   /** A commit message typed with `save <message>`, for the review to start from. */
@@ -134,7 +135,6 @@ export function EditBar({ edit, repoName, token, onToken, runFor, onSaved, descr
           edit={edit}
           repoName={repoName}
           token={token}
-          onToken={onToken}
           describe={describe ?? { legend: (k) => k, layer: (n) => String(n) }}
           draft={draft}
           onClose={() => setReviewing(false)}
@@ -252,15 +252,14 @@ interface ReviewProps {
   edit: EditSession;
   repoName: string;
   describe: NonNullable<BarProps['describe']>;
-  token: string;
-  onToken: (token: string) => void;
+  token: TokenField;
   /** The commit message to start from, instead of the drafted one. */
   draft?: string;
   onClose: () => void;
   onSaved: (sha: string) => void;
 }
 
-function ReviewDialog({ edit, repoName, describe, token, onToken, draft, onClose, onSaved }: ReviewProps) {
+function ReviewDialog({ edit, repoName, describe, token, draft, onClose, onSaved }: ReviewProps) {
   const { t, err } = useI18n();
   const [message, setMessage] = useState(draft ?? edit.pending?.message ?? '');
   const [error, setError] = useState<unknown>(null);
@@ -272,7 +271,7 @@ function ReviewDialog({ edit, repoName, describe, token, onToken, draft, onClose
   const value = (c: Change, v: number) =>
     c.setting === 'cpi' ? t('unit.cpi', { n: v }) : c.setting === 'ballMm' ? t('unit.mm', { n: v }) : String(v);
   const key = error instanceof LocalizedError ? error.key : null;
-  const needsToken = !token || (key !== null && TOKEN_ERRORS.has(key));
+  const needsToken = !token.value || (key !== null && TOKEN_ERRORS.has(key));
 
   const save = async () => {
     setError(null);
@@ -371,14 +370,7 @@ function ReviewDialog({ edit, repoName, describe, token, onToken, draft, onClose
         {needsToken && (
           <div className="stack">
             <label htmlFor="review-token">{t('edit.tokenLabel')}</label>
-            <input
-              id="review-token"
-              type="password"
-              value={token}
-              autoComplete="off"
-              placeholder="github_pat_…"
-              onChange={(e) => onToken(e.target.value.trim())}
-            />
+            <TokenInput id="review-token" field={token} />
             <a href={TOKEN_PAGE} target="_blank" rel="noreferrer">
               {t('edit.tokenLink')}
             </a>

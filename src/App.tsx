@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { BuildStatus } from './components/BuildStatus';
 import { FirmwareCard } from './components/FirmwareCard';
 import { FlashPanel } from './components/FlashPanel';
+import { ForgottenToken } from './components/ForgottenToken';
+import { TokenInput } from './components/TokenInput';
 import { LanguageSwitch } from './components/LanguageSwitch';
 import { LinkPrompt } from './components/LinkPrompt';
 import { LocalFirmware } from './components/LocalFirmware';
@@ -25,6 +27,7 @@ import { loadVerifiedFirmware, type FirmwareSource } from './lib/firmware';
 import type { FirmwareBuild, FirmwareManifest } from './lib/manifest';
 import { isWebSerialSupported } from './lib/serial';
 import { load, save } from './lib/storage';
+import { tokenField, type ForgottenTokenKind } from './lib/token';
 
 interface FlashTarget {
   title: string;
@@ -103,7 +106,7 @@ function dropRepoParam() {
   history.replaceState(history.state, '', url);
 }
 
-export function App() {
+export function App({ forgottenToken = null }: { forgottenToken?: ForgottenTokenKind }) {
   const { t, rich, err, setLang } = useI18n();
   const { openLine, openHelp } = useCommandLine();
   const serialOk = isWebSerialSupported();
@@ -114,7 +117,9 @@ export function App() {
     dropRepoParam();
   };
   const [repoInput, setRepoInput] = useState(() => load('keyballer.repo'));
-  const [token, setToken] = useState(() => load('keyballer.token'));
+  // The token lives in this tab's memory only (src/lib/token.ts).
+  const [tokenInput, setTokenInput] = useState('');
+  const token = tokenField(tokenInput, setTokenInput);
   const [repo, setRepo] = useState<RepoState | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -122,8 +127,8 @@ export function App() {
   const [loadingBuild, setLoadingBuild] = useState('');
   const [target, setTarget] = useState<FlashTarget | null>(null);
   const [keymapId, setKeymapId] = useState<string | null>(keymapInHash);
-  const tokenRef = useRef(token);
-  tokenRef.current = token;
+  const tokenRef = useRef(token.value);
+  tokenRef.current = token.value;
   const repoField = useRef<HTMLInputElement>(null);
   // Where focus goes back to when the flash panel closes.
   const returnFocus = useRef<HTMLElement | null>(null);
@@ -433,6 +438,7 @@ export function App() {
       {!keymapBuild && (
         <section className="panel" aria-labelledby="repo-title">
           <h2 id="repo-title">{t('repo.title')}</h2>
+          {forgottenToken && <ForgottenToken kind={forgottenToken} />}
           {askRepo && (
             <LinkPrompt
               linked={askRepo}
@@ -475,18 +481,11 @@ export function App() {
           <details className="token">
             <summary>{t('token.summary')}</summary>
             <div className="stack">
+              <label htmlFor="token" className="sr-only">
+                {t('token.summary')}
+              </label>
               <p className="note">{t('token.note')}</p>
-              <input
-                id="token"
-                type="password"
-                value={token}
-                onChange={(e) => {
-                  setToken(e.target.value.trim());
-                  save('keyballer.token', e.target.value.trim());
-                }}
-                placeholder="github_pat_…"
-                autoComplete="off"
-              />
+              <TokenInput id="token" field={token} />
             </div>
           </details>
           {error !== null && (
@@ -518,10 +517,6 @@ export function App() {
           buildsUrl={`${repoUrl}/actions/workflows/build.yml`}
           onClose={closeKeymap}
           onSaved={(sha) => setAwaitingRun(sha)}
-          onToken={(next) => {
-            setToken(next);
-            save('keyballer.token', next);
-          }}
           runFor={(sha) => repo.runs.find((r) => r.head_sha === sha)}
           setLeaveGuard={(guard) => {
             leaveGuard.current = guard;
