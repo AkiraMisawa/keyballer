@@ -229,6 +229,51 @@ describe('combos on some layers', () => {
     expect(review(s).combos).toEqual([{ change: 'added', keys: ['KC_LEFT', 'KC_RGHT'], output: 'KC_PGUP', layers: [2] }]);
   });
 
+  it('removes a combo that names only the removed layer, even more than once', () => {
+    const src = M40.replace('key-positions = <0 1>; /* Q + W */\n            layers = <0>;', 'key-positions = <0 1>; /* Q + W */\n            layers = <4 4>;');
+    expect(src).not.toBe(M40);
+    const view = {
+      ...M40_VIEW,
+      combos: M40_VIEW.combos.map((c) => (c.name === 'tab' ? { ...c, layers: [4, 4] } : c)),
+      zmk: { ...M40_VIEW.zmk, keymap: { path: M40_PATH, sha256: sha(src) } },
+    };
+    const s = edits(session(view, M40_PATH, src), { type: 'layerRemove' });
+    expect(currentFiles(s)[M40_PATH]).not.toContain('        tab {');
+    // Its keys are those of the layer it fired on: Boot and an empty key on SETTING.
+    expect(review(s).combos).toEqual([{ change: 'removed', keys: ['QK_BOOT', 'KC_NO'], output: 'KC_TAB' }]);
+  });
+
+  it('keeps combos on the layers they named when a layer goes in or out before them', () => {
+    // An unused layer node after the last layer in use; a combo for it keeps its meaning when a
+    // layer is added before it (5 becomes 6) or the last layer in use is removed (5 becomes 4).
+    const src = M40.replace('key-positions = <0 1>; /* Q + W */\n            layers = <0>;', 'key-positions = <0 1>; /* Q + W */\n            layers = <0 5>;').replace(
+      /(\n {8}layer_4 \{[\s\S]*?\n {8}\};\n)/,
+      '$1\n        extra {\n            status = "reserved";\n            bindings = <&trans &trans>;\n        };\n',
+    );
+    expect(src).toContain('extra {');
+    const view = {
+      ...M40_VIEW,
+      combos: M40_VIEW.combos.map((c) => (c.name === 'tab' ? { ...c, layers: [0, 5] } : c)),
+      zmk: {
+        ...M40_VIEW.zmk,
+        keymap: { path: M40_PATH, sha256: sha(src) },
+        layers: [...M40_VIEW.zmk!.layers!, { node: 'extra', status: 'reserved', refs: ['trans', 'trans'] }],
+      },
+    };
+    const opened = session(view, M40_PATH, src);
+    const layersOfTab = (s: Session) => /tab \{[^}]*layers = <([^>]*)>/.exec(currentFiles(s)[M40_PATH])?.[1];
+    expect(layersOfTab(opened)).toBe('0 5');
+    expect(layersOfTab(edits(opened, { type: 'layerAdd' }))).toBe('0 6');
+    expect(layersOfTab(edits(opened, { type: 'layerRemove' }))).toBe('0 4');
+    expect(currentFiles(edits(opened, { type: 'layerAdd' }, { type: 'layerRemove' }))[M40_PATH]).toBe(src);
+  });
+
+  it('names a combo’s keys by what a transparent key there does', () => {
+    // roBa's layer 6 is transparent at S and D, so a combo made there is S + D.
+    const s = edits(roba(), { type: 'comboAdd', positions: [11, 12], output: 'KC_ESC', layers: [6] });
+    expect(review(s).combos).toEqual([{ change: 'added', keys: ['KC_S', 'KC_D'], output: 'KC_ESC', layers: [6] }]);
+  });
+
   it('takes a removed layer out of combos, and removes the combos that fired only on it', () => {
     const s = edits(
       roba(),

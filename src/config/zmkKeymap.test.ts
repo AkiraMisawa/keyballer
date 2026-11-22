@@ -279,6 +279,26 @@ describe('changes stay in their node', () => {
     expect(setZmkComboLayers(after, 'tab', null)).toBe(src);
   });
 
+  it('keeps a new property out of a comment that goes on past the line', () => {
+    const combo = (rest: string) =>
+      '/ {\n    combos {\n        compatible = "zmk,combos";\n        tab {\n            bindings = <&kp TAB>;\n            key-positions = <0 1>;' + rest +
+      '\n        };\n    };\n    keymap {\n        compatible = "zmk,keymap";\n        base {\n            bindings = <&kp A &kp B>;\n        };\n    };\n};\n';
+    // A block comment that closes on a later line.
+    const block = setZmkComboLayers(combo(' /* Q + W\n            */'), 'tab', [1]);
+    expect(readZmkKeymap(block).combos[0].layers).toEqual([1]);
+    // A line comment continued with a backslash: the next line stays a comment.
+    const src = combo(' // Q + W \\\n        }; evil { bindings = <&bootloader>; key-positions = <2 3>;');
+    const after = setZmkComboLayers(src, 'tab', [1]);
+    expect(readZmkKeymap(after).combos.map((c) => [c.node, c.layers])).toEqual([['tab', [1]]]);
+  });
+
+  it('reads numbers as the compiler does, and refuses octal', () => {
+    const src = m40.replace('layers = <2>;\n        };\n\n        end {', 'layers = <010>;\n        };\n\n        end {');
+    expect(src).not.toBe(m40);
+    expect(() => readZmkKeymap(src)).toThrow(ZmkSourceError);
+    expect(readZmkKeymap(m40.replace('layers = <2>;\n        };\n\n        end {', 'layers = <0x2>;\n        };\n\n        end {')).combos[4].layers).toEqual([2]);
+  });
+
   it('removes only the combo when combos share a line', () => {
     const src = small({ combos: '    combos {\n        compatible = "zmk,combos";\n        a { bindings = <&kp A>; key-positions = <0 1>; }; b { bindings = <&kp B>; key-positions = <0 1>; };\n    };\n' });
     expect(readZmkKeymap(removeZmkCombo(src, 'a')).combos.map((c) => c.node)).toEqual(['b']);

@@ -174,12 +174,23 @@ function write(doc: ZmkDoc, keycode: string): { src: string; text: string } {
 }
 
 /**
- * The change, checked: the file must still read, with every layer of the model where it was, or
- * the change is not made (the session skips it), so a change can never leave a broken file.
+ * The change, checked: the file must still read, with every layer of the model where it was and
+ * exactly the model's combos, at their positions and on their layers, or the change is not made
+ * (the session skips it). So a change can never leave a broken file, or one whose combos are not
+ * the ones the review lists.
  */
 function checked(doc: ZmkDoc): ZmkDoc {
-  const nodes = readZmkKeymap(doc.src).layers.map((l) => l.node);
+  const source = readZmkKeymap(doc.src);
+  const nodes = source.layers.map((l) => l.node);
   if (!doc.model.layers.every((l, n) => nodes[n] === l.node)) throw new ZmkSourceError('the layers moved');
+  const combos = source.combos;
+  const sameCombos =
+    combos.length === doc.model.combos.length &&
+    doc.model.combos.every((c, i) => {
+      const s = combos[i];
+      return s.node === c.name && s.bindings.length === 1 && same(s.positions, c.positions) && same(s.layers ?? [], c.layers ?? []);
+    });
+  if (!sameCombos) throw new ZmkSourceError('the combos are not the model’s');
   return doc;
 }
 
@@ -230,22 +241,32 @@ function change(doc: ZmkDoc, e: ZmkEdit): ZmkDoc {
     case 'layerAdd': {
       const last = layers[layers.length - 1];
       const node = freeName(`layer_${layers.length}`, readZmkKeymap(doc.src).layers.map((l) => l.node));
+      const at = layers.length;
       layers.push({ node, name: node, keys: last.keys.map(() => 'KC_TRNS') });
-      return { model: { layers, combos }, src: addZmkLayer(doc.src, last.node, node, last.keys.length) };
+      let src = addZmkLayer(doc.src, last.node, node, last.keys.length);
+      // The new layer goes before any unused layer nodes, whose numbers go up by one; combos that
+      // name them follow.
+      for (const c of combos) {
+        if (!c.layers?.some((l) => l >= at)) continue;
+        c.layers = c.layers.map((l) => (l >= at ? l + 1 : l));
+        src = setZmkComboLayers(src, c.name, c.layers);
+      }
+      return { model: { layers, combos }, src };
     }
     case 'layerRemove': {
       if (layers.length < 2) throw new ZmkSourceError('the last layer');
       const last = layers.pop()!;
       let src = removeZmkLayer(doc.src, last.node);
       // Combos fire on the layers they name: the removed one goes from them, and a combo that
-      // fired only on it goes too, as without layers it would fire on every layer.
+      // fired only on it goes too, as without layers it would fire on every layer. Unused layer
+      // nodes after it move down by one, and so do combos that name them.
       const removed = layers.length;
       const kept: ZmkCombo[] = [];
       for (const c of combos) {
-        if (!c.layers?.includes(removed)) kept.push(c);
-        else if (c.layers.length === 1) src = removeZmkCombo(src, c.name);
+        if (!c.layers?.some((l) => l >= removed)) kept.push(c);
+        else if (c.layers.every((l) => l === removed)) src = removeZmkCombo(src, c.name);
         else {
-          c.layers = c.layers.filter((l) => l !== removed);
+          c.layers = c.layers.filter((l) => l !== removed).map((l) => (l > removed ? l - 1 : l));
           src = setZmkComboLayers(src, c.name, c.layers);
           kept.push(c);
         }

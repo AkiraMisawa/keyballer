@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import fixture from './fixtures/am338.view.json';
 import meteorite40 from '../edit/fixtures/meteorite40.view.json';
 import roba from '../edit/fixtures/roba-right.view.json';
-import { drawLayer, nextKey, parseView, type Display, type ViewFile } from './view';
+import { drawLayer, nextKey, parseLayerList, parseView, type Display, type ViewFile } from './view';
 
 const view = fixture as unknown as ViewFile;
 const mac: Display = { lang: 'en', os: 'mac', layout: 'us' };
@@ -219,6 +219,21 @@ describe('trackball and combos', () => {
     const read = (layers: unknown) => parseView({ ...meteorite40, combos: [combo(layers)] }).combos[0].layers;
     expect(read([0, 2])).toEqual([0, 2]);
     for (const bad of ['2', [1.5], [-1], [32], { 0: 1 }, [null]]) expect(read(bad), JSON.stringify(bad)).toBeUndefined();
+  });
+
+  it('reads the layers typed for a combo: all, or numbers from the tabs', () => {
+    expect(parseLayerList('all', 5)).toBeNull();
+    expect(parseLayerList(' ALL ', 5)).toBeNull();
+    expect(parseLayerList('2', 5)).toEqual([2]);
+    expect(parseLayerList('0,2', 5)).toEqual([0, 2]);
+    expect(parseLayerList('3 0, 3', 5)).toEqual([0, 3]);
+    for (const bad of ['', '5', '-1', '1.5', 'base', '0x1', '1 all', '007']) expect(parseLayerList(bad, 5), bad).toBeUndefined();
+  });
+
+  it('leaves out combos that are not shaped as combos', () => {
+    const good = { name: 'c', keys: ['KC_A', 'KC_B'], positions: [0, 1], output: 'KC_C', line: 1 };
+    const bad = [null, 'c', { ...good, keys: 'KC_A' }, { ...good, positions: { 0: 1 } }, { ...good, positions: ['0'] }, { ...good, output: 3 }];
+    expect(parseView({ ...meteorite40, combos: [good, ...bad] }).combos).toEqual([good]);
   });
 });
 

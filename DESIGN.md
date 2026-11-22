@@ -169,7 +169,7 @@ Changes (trackball settings now, keys next): ⌘Z / Ctrl+Z undo, ⇧⌘Z / Ctrl+
 | ⌘S / Ctrl+S | Review the changes and save (commit) |
 | `Esc` | Stop picking combo keys, then clear the selection, then finish editing, then close the keymap (asking first if changes are unsaved) |
 
-Commands: `edit`, `assign <keycode>`, `transparent`, `none`, `press key`, `combo add`, `combo remove <n>`, `layer add`, `layer remove`, `layer rename <name>`, `ball mode cursor|scroll`, `undo`, `redo`, `review`, `discard`, `reload settings`. Copy and paste of keys (⌘C ⌘V) come later.
+Commands: `edit`, `assign <keycode>`, `transparent`, `none`, `press key`, `combo add`, `combo remove <n>`, `combo layers <n> <all | layer numbers>` (ZMK), `layer add`, `layer remove`, `layer rename <name>`, `ball mode cursor|scroll`, `undo`, `redo`, `review`, `discard`, `reload settings`. Copy and paste of keys (⌘C ⌘V) come later.
 
 Inside the key picker, typing searches, `↑` `↓` move through the results, `Tab` moves on to the hold action, and `Enter` assigns the result and moves on to the next key, so a whole row can be filled without leaving the keyboard.
 

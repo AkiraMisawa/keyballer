@@ -104,6 +104,17 @@ The same model as QMK: Keyballer's own reusable workflow builds the firmware, pu
   - **New combos.** A combo made on the base layer fires on every layer, as ZMK's do without `layers`. One made on another layer fires there only. Its keys are picked on the shown layer.
   - **Removing a layer.** The layer also goes from the combos that name it. A combo that fired only on that layer is removed too, because without `layers` it would fire everywhere. The confirmation lists those combos.
 - **Review.** The review says which layers a combo now fires on, and the commit message does too.
+- **Rules from the security review.**
+  - **New property lines.** A new property goes on a line of its own only when nothing follows the last property on its line. A comment there could go on past the line, so the new property then goes on the same line, right after the last one.
+  - **Checking every change.** After each change the file is read again. Its combos must be the model's: the same nodes in order, each with one binding, at the same positions, on the same layers. Otherwise the change is not made.
+  - **Removing a layer.** A combo that names only the removed layer goes, even when it names it twice.
+  - **Numbers.** These are read as the compiler reads them: decimal without a leading zero, or hex. `010` is octal to dtc, so it is refused.
+  - **The combo panel.** Taking away the last chosen layer does nothing; every layer has its own button.
+  - **Untrusted views.** A view's combos that are not shaped as combos are left out.
+- **Rules from the correctness review.**
+  - **Unused layer nodes.** A new layer goes before any unused layer nodes, so their numbers go up by one; removing the last layer in use moves them down by one. Combos that name them follow, so they keep firing on the same nodes. Keys that lead to those nodes are not renumbered, as before.
+  - **Transparent keys.** In the panels, a transparent key in a combo is named by what it does there, as the board shows it. The review names it by the base layer's key, which is the same unless the layer is reached through another layer.
+  - **New combos.** A new combo's layers start again from the shown layer each time the combo panel opens.
 
 ## Decisions
 
