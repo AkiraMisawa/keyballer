@@ -13,9 +13,12 @@ interface Props {
   blocked: Localized | undefined;
   loading: boolean;
   onFlash: () => void;
+  onKeymap: () => void;
+  /** The key that opens this firmware's keymap, when it has one. */
+  keymapShortcut?: string;
 }
 
-export function FirmwareCard({ build, index, blocked, loading, onFlash }: Props) {
+export function FirmwareCard({ build, index, blocked, loading, onFlash, onKeymap, keymapShortcut }: Props) {
   const { t, lang } = useI18n();
   const shortcut = index < 9 ? String(index + 1) : '';
   const flashable = canFlash(build);
@@ -63,20 +66,31 @@ export function FirmwareCard({ build, index, blocked, loading, onFlash }: Props)
         </div>
       )}
 
-      {flashable ? (
+      <div className="row">
+        {flashable ? (
+          <button
+            type="button"
+            className="primary"
+            onClick={onFlash}
+            disabled={!!blocked || loading}
+            aria-keyshortcuts={shortcut || undefined}
+          >
+            {loading ? t('card.loading') : t('card.flash')}
+            {shortcut && <Kbd>{shortcut}</Kbd>}
+          </button>
+        ) : (
+          <p className="note">{t(unsupported.key, unsupported.params)}</p>
+        )}
         <button
           type="button"
-          className="primary"
-          onClick={onFlash}
-          disabled={!!blocked || loading}
-          aria-keyshortcuts={shortcut || undefined}
+          onClick={onKeymap}
+          aria-keyshortcuts={keymapShortcut?.toUpperCase()}
+          data-keymap={build.id}
         >
-          {loading ? t('card.loading') : t('card.flash')}
-          {shortcut && <Kbd>{shortcut}</Kbd>}
+          {t('card.keymap')}
+          {keymapShortcut && <Kbd>{keymapShortcut.toUpperCase()}</Kbd>}
         </button>
-      ) : (
-        <p className="note">{t(unsupported.key, unsupported.params)}</p>
-      )}
+      </div>
     </article>
   );
 }

@@ -41,8 +41,10 @@ export function isMac(): boolean {
 export const lineChord = () => (isMac() ? '⌘K' : 'Ctrl+K');
 
 /** A key as printed on keycaps: Esc, not Escape; P, not p. */
+const ARROWS: Record<string, string> = { ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓' };
+
 export const keyLabel = (key: string) =>
-  key === 'Escape' ? 'Esc' : key.length === 1 ? key.toUpperCase() : key;
+  key === 'Escape' ? 'Esc' : (ARROWS[key] ?? (key.length === 1 ? key.toUpperCase() : key));
 
 /** A key name drawn like a small keycap (DESIGN.md §5, §8). */
 export function Kbd({ children }: { children: ReactNode }) {

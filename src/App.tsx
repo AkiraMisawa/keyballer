@@ -4,6 +4,7 @@ import { FirmwareCard } from './components/FirmwareCard';
 import { FlashPanel } from './components/FlashPanel';
 import { LanguageSwitch } from './components/LanguageSwitch';
 import { LocalFirmware } from './components/LocalFirmware';
+import { KeymapScreen } from './keymap/KeymapScreen';
 import { Kbd, lineChord } from './commands/keys';
 import { CommandRefused } from './commands/model';
 import { useCommand, useCommandLine } from './commands/react';
@@ -48,6 +49,27 @@ function toLang(value: string): Lang | undefined {
   return undefined;
 }
 
+const KEYMAP_HASH = /^#keymap-([A-Za-z0-9_-]+)$/;
+
+/** The build whose keymap the address shows (#keymap-<id>), if any. */
+const keymapInHash = () => KEYMAP_HASH.exec(location.hash)?.[1] ?? null;
+
+/** V opens the first firmware's keymap; the others are `keymap <id>` on the command line. */
+const KEYMAP_SHORTCUT = 'v';
+
+/** Offers `keymap <id>` for one build. */
+function KeymapCommand({ build, shortcut, onOpen }: { build: FirmwareBuild; shortcut?: string; onOpen: () => void }) {
+  useCommand({
+    id: `keymap:${build.id}`,
+    words: `keymap ${build.id}`,
+    title: msg('cmd.keymap', { name: build.name }),
+    group: 'group.keymap',
+    shortcut,
+    run: onOpen,
+  });
+  return null;
+}
+
 function initialRepo(): string {
   const fromUrl = new URLSearchParams(location.search).get('repo');
   return fromUrl ?? load('keyballer.repo');
@@ -65,6 +87,7 @@ export function App() {
   const [error, setError] = useState<unknown>(null);
   const [loadingBuild, setLoadingBuild] = useState('');
   const [target, setTarget] = useState<FlashTarget | null>(null);
+  const [keymapId, setKeymapId] = useState<string | null>(keymapInHash);
   const tokenRef = useRef(token);
   tokenRef.current = token;
   const repoField = useRef<HTMLInputElement>(null);
@@ -130,6 +153,43 @@ export function App() {
     return () => clearInterval(timer);
   }, [building, refresh]);
 
+  // The keymap screen follows the address, so Back closes it and a link opens it.
+  useEffect(() => {
+    const sync = () => {
+      returnFocus.current = null;
+      setKeymapId(keymapInHash());
+    };
+    window.addEventListener('popstate', sync);
+    window.addEventListener('hashchange', sync);
+    return () => {
+      window.removeEventListener('popstate', sync);
+      window.removeEventListener('hashchange', sync);
+    };
+  }, []);
+
+  const openKeymap = (id: string) => {
+    returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    // One history entry for the keymap screen: switching to another keymap replaces it, so Back
+    // and Esc both return to the firmware list.
+    if (keymapInHash() === null) history.pushState({ keymap: id }, '', `#keymap-${id}`);
+    else history.replaceState(history.state, '', `#keymap-${id}`);
+    setKeymapId(id);
+    window.scrollTo({ top: 0 });
+  };
+
+  const closeKeymap = () => {
+    const id = keymapId;
+    if ((history.state as { keymap?: string } | null)?.keymap) history.back();
+    else history.replaceState(null, '', location.pathname + location.search);
+    setKeymapId(null);
+    const el = returnFocus.current;
+    requestAnimationFrame(() => {
+      // Back to what opened it, or, when it was opened from a link, that firmware's keymap button.
+      if (el?.isConnected) el.focus();
+      else document.querySelector<HTMLElement>(`[data-keymap="${id}"]`)?.focus();
+    });
+  };
+
   const openTarget = (next: FlashTarget) => {
     returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setTarget(next);
@@ -142,6 +202,7 @@ export function App() {
   };
 
   const repoUrl = repo ? `https://github.com/${repoName(repo.ref)}` : '';
+  const keymapBuild = (keymapId && repo?.manifest?.builds.find((b) => b.id === keymapId)) || null;
   const noRepo: Localized | undefined = repo ? undefined : msg('why.noRepo');
   const latestRun = repo?.runs[0];
   // Why a firmware cannot be flashed right now, if it cannot.
@@ -176,6 +237,7 @@ export function App() {
     words: 'repo',
     title: msg('shortcut.focusRepo'),
     group: 'group.repo',
+    unavailable: keymapBuild ? msg('why.onKeymap') : undefined,
     run: () => repoField.current?.focus(),
   });
   useCommand({
@@ -250,7 +312,7 @@ export function App() {
   };
 
   return (
-    <div className="app">
+    <div className={keymapBuild ? 'app wide' : 'app'}>
       <header className="top">
         <div className="stack">
           <div className="brand">
@@ -280,57 +342,82 @@ export function App() {
         </p>
       )}
 
-      <section className="panel" aria-labelledby="repo-title">
-        <h2 id="repo-title">{t('repo.title')}</h2>
-        <form
-          className="repo-form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void connect(repoInput);
-          }}
-        >
-          <label htmlFor="repo" className="sr-only">
-            {t('repo.title')}
-          </label>
-          <input
-            ref={repoField}
-            id="repo"
-            type="text"
-            value={repoInput}
-            onChange={(e) => setRepoInput(e.target.value)}
-            placeholder={t('repo.placeholder')}
-            autoComplete="off"
-            spellCheck={false}
-          />
-          <button type="submit" className="primary" disabled={connecting}>
-            {connecting ? t('repo.connecting') : t('repo.connect')}
-          </button>
-        </form>
-        <details className="token">
-          <summary>{t('token.summary')}</summary>
-          <div className="stack">
-            <p className="note">{t('token.note')}</p>
+      {!keymapBuild && (
+        <section className="panel" aria-labelledby="repo-title">
+          <h2 id="repo-title">{t('repo.title')}</h2>
+          <form
+            className="repo-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void connect(repoInput);
+            }}
+          >
+            <label htmlFor="repo" className="sr-only">
+              {t('repo.title')}
+            </label>
             <input
-              id="token"
-              type="password"
-              value={token}
-              onChange={(e) => {
-                setToken(e.target.value.trim());
-                save('keyballer.token', e.target.value.trim());
-              }}
-              placeholder="github_pat_…"
+              ref={repoField}
+              id="repo"
+              type="text"
+              value={repoInput}
+              onChange={(e) => setRepoInput(e.target.value)}
+              placeholder={t('repo.placeholder')}
               autoComplete="off"
+              spellCheck={false}
             />
-          </div>
-        </details>
-        {error !== null && (
-          <p className="err" role="alert">
-            {err(error)}
-          </p>
-        )}
-      </section>
+            <button type="submit" className="primary" disabled={connecting}>
+              {connecting ? t('repo.connecting') : t('repo.connect')}
+            </button>
+          </form>
+          <details className="token">
+            <summary>{t('token.summary')}</summary>
+            <div className="stack">
+              <p className="note">{t('token.note')}</p>
+              <input
+                id="token"
+                type="password"
+                value={token}
+                onChange={(e) => {
+                  setToken(e.target.value.trim());
+                  save('keyballer.token', e.target.value.trim());
+                }}
+                placeholder="github_pat_…"
+                autoComplete="off"
+              />
+            </div>
+          </details>
+          {error !== null && (
+            <p className="err" role="alert">
+              {err(error)}
+            </p>
+          )}
+        </section>
+      )}
 
-      {repo && (
+      {repo?.manifest &&
+        repo.manifest.builds.map((b, i) => (
+          <KeymapCommand
+            key={b.id}
+            build={b}
+            shortcut={i === 0 && !keymapBuild ? KEYMAP_SHORTCUT : undefined}
+            onOpen={() => openKeymap(b.id)}
+          />
+        ))}
+
+      {repo && keymapBuild && repo.manifest && repo.firmwareSha && (
+        <KeymapScreen
+          key={keymapBuild.id}
+          build={keymapBuild}
+          repo={repo.ref}
+          firmwareSha={repo.firmwareSha}
+          manifest={repo.manifest}
+          token={token}
+          buildsUrl={`${repoUrl}/actions/workflows/build.yml`}
+          onClose={closeKeymap}
+        />
+      )}
+
+      {repo && !keymapBuild && (
         <>
           <BuildStatus
             repoUrl={repoUrl}
@@ -352,6 +439,8 @@ export function App() {
                     blocked={flashBlocked}
                     loading={loadingBuild === b.id}
                     onFlash={() => void openBuild(b)}
+                    onKeymap={() => openKeymap(b.id)}
+                    keymapShortcut={i === 0 ? KEYMAP_SHORTCUT : undefined}
                   />
                 ))}
               </div>
@@ -370,7 +459,7 @@ export function App() {
         />
       )}
 
-      {serialOk && (
+      {serialOk && !keymapBuild && (
         <LocalFirmware
           disabled={!!target}
           onReady={(name, image, split) => openTarget({ title: name, image, split })}
