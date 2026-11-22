@@ -182,7 +182,10 @@ export function KeymapScreen(props: Props) {
   };
 
   const noView: Localized | undefined = view ? undefined : msg('why.noView');
-  /** Combos are made from the base layer's keys, so the base layer stays shown meanwhile. */
+  /**
+   * QMK's combos are made from the base layer's keys, a ZMK combo from the shown layer's, so that
+   * layer stays shown meanwhile.
+   */
   const noLayerSwitch: Localized | undefined = noView ?? (comboPick !== null ? msg('why.pickingCombo') : undefined);
   const tabs: Tab[] = view ? [...view.layers.map((_, n) => n), 'all'] : [];
   const step = (by: number) => {
@@ -418,10 +421,17 @@ export function KeymapScreen(props: Props) {
   const startCombo = () => {
     setSelected(null);
     setComboChange(null);
-    setTab(0);
+    setTab(view?.zmk ? shown : 0);
     setComboPick([]);
   };
   const leading = pickerContext && view ? leadingTo(pickerContext, view.layers.length - 1) : [];
+  /** ZMK combos that fire only on the last layer, which go with it. */
+  const onlyOnLast =
+    view?.zmk && pickerContext
+      ? view.combos
+          .filter((c) => c.layers?.length === 1 && c.layers[0] === view.layers.length - 1)
+          .map((c) => `${c.keys.map((k) => legendOf(view, k, pickerContext.display).tap).join(' + ')} = ${legendOf(view, c.output, pickerContext.display).tap}`)
+      : [];
 
   useCommand({
     id: 'keymap.edit',
@@ -504,7 +514,16 @@ export function KeymapScreen(props: Props) {
     unavailable: notEditing,
     run: startCombo,
   });
-  const comboAt = (v: string) => view?.combos[Number(v) - 1];
+  const comboAt = (v: string) => (/^[1-9][0-9]*$/.test(v) ? view?.combos[Number(v) - 1] : undefined);
+  /** `all`, or layer numbers from the tabs (`0 2`, `0,2`); undefined when it is neither. */
+  const layersArg = (v: string): number[] | null | undefined => {
+    const text = v.trim().toLowerCase();
+    if (text === 'all') return null;
+    const words = text.split(/[\s,]+/).filter(Boolean);
+    const count = view?.layers.length ?? 0;
+    if (words.length === 0 || !words.every((w) => /^[0-9]{1,2}$/.test(w) && Number(w) < count)) return undefined;
+    return [...new Set(words.map(Number))].sort((a, b) => a - b);
+  };
   useCommand({
     id: 'keymap.comboRemove',
     words: 'combo remove',
@@ -524,6 +543,36 @@ export function KeymapScreen(props: Props) {
       const name = comboAt(number)?.name;
       if (!name) throw new CommandRefused(msg('cmd.comboRemove.bad'));
       edit.edit({ type: 'comboRemove', name });
+    },
+  });
+  useCommand({
+    id: 'keymap.comboLayers',
+    words: 'combo layers',
+    title: msg('cmd.comboLayers'),
+    group: 'group.edit',
+    page: true,
+    unavailable: notEditing ?? (view && !view.zmk ? msg('why.qmkComboLayers') : undefined),
+    args: [
+      {
+        name: 'number',
+        required: true,
+        hint: msg('cmd.comboRemove.hint'),
+        check: (v) => (comboAt(v)?.name ? undefined : msg('cmd.comboRemove.bad')),
+      },
+      {
+        name: 'layers',
+        required: true,
+        rest: true,
+        hint: msg('cmd.comboLayers.hint'),
+        check: (v) => (layersArg(v) === undefined ? msg('cmd.comboLayers.bad') : undefined),
+      },
+    ],
+    run: ({ number, layers }) => {
+      const name = comboAt(number)?.name;
+      const chosen = layersArg(layers);
+      if (!name) throw new CommandRefused(msg('cmd.comboRemove.bad'));
+      if (chosen === undefined) throw new CommandRefused(msg('cmd.comboLayers.bad'));
+      edit.edit({ type: 'comboLayers', name, layers: chosen });
     },
   });
   useCommand({
@@ -748,6 +797,7 @@ export function KeymapScreen(props: Props) {
                 <ComboPanel
                   edit={edit}
                   context={pickerContext}
+                  layer={shown}
                   picked={comboPick ?? undefined}
                   change={comboChange ?? undefined}
                   onDone={() => {
@@ -800,11 +850,14 @@ export function KeymapScreen(props: Props) {
       {removingLayer && view && (
         <ConfirmDialog
           title={t('edit.removeLayer', { n: view.layers.length - 1 })}
-          body={
+          body={[
             leading.length > 0
               ? t('edit.removeLayerRefs', { n: view.layers.length - 1, keys: leading.join(', ') })
-              : t('edit.removeLayerPlain', { n: view.layers.length - 1 })
-          }
+              : t('edit.removeLayerPlain', { n: view.layers.length - 1 }),
+            onlyOnLast.length > 0 ? t('edit.removeLayerCombos', { n: view.layers.length - 1, combos: onlyOnLast.join(', ') }) : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
           confirm={t('edit.removeLayer', { n: view.layers.length - 1 })}
           cancel={t('edit.cancel')}
           onConfirm={() => {
@@ -971,7 +1024,9 @@ interface DetailsProps {
 
 function Details({ view, drawn, all, layer, selected, display, sourceLink, trackball }: DetailsProps) {
   const { t } = useI18n();
-  const base = drawLayer(view, 0, display);
+  // QMK's combos use the base layer's keys; a ZMK combo, the keys of a layer it fires on.
+  const comboLayer = view.zmk ? layer : 0;
+  const base = drawLayer(view, comboLayer, display);
   const nameAt = (index: number) => base.keys.find((k) => k.index === index)?.legend.tap ?? '?';
   const lang: Lang = display.lang;
 
@@ -1002,7 +1057,7 @@ function Details({ view, drawn, all, layer, selected, display, sourceLink, track
             </li>
           ))}
         </ul>
-        <p className="note">{t('keymap.comboNote', { layer: layerName(view, 0, lang) })}</p>
+        <p className="note">{t('keymap.comboNote', { layer: layerName(view, comboLayer, lang) })}</p>
       </div>
     );
   };

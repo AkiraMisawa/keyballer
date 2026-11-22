@@ -272,7 +272,7 @@ interface ReviewProps {
 }
 
 function ReviewDialog({ edit, repoName, describe, token, tokenField, signIn, draft, note, onClose, onSaved }: ReviewProps) {
-  const { t, err } = useI18n();
+  const { t, err, lang } = useI18n();
   const [message, setMessage] = useState(draft ?? edit.pending?.message ?? '');
   const [error, setError] = useState<unknown>(null);
   // Signing in from here (the window is GitHub's) leaves focus nowhere; it moves on to Save.
@@ -290,6 +290,7 @@ function ReviewDialog({ edit, repoName, describe, token, tokenField, signIn, dra
   const close = () => !edit.saving && onClose();
   if (!pending) return null;
 
+  const layerList = (layers: number[]) => new Intl.ListFormat(lang, { type: 'conjunction' }).format(layers.map(describe.layer));
   const value = (c: Change, v: number) =>
     c.setting === 'cpi' ? t('unit.cpi', { n: v }) : c.setting === 'ballMm' ? t('unit.mm', { n: v }) : String(v);
   const key = error instanceof LocalizedError ? error.key : null;
@@ -351,7 +352,13 @@ function ReviewDialog({ edit, repoName, describe, token, tokenField, signIn, dra
                 <li key={`combo:${i}`}>
                   {c.change === 'changed'
                     ? t('review.comboChanged', { keys, output, was: describe.legend(c.was) })
-                    : t(c.change === 'added' ? 'review.comboAdded' : 'review.comboRemoved', { keys, output })}
+                    : c.change === 'layers'
+                      ? c.layers
+                        ? t('review.comboLayers', { keys, output, layers: layerList(c.layers) })
+                        : t('review.comboEveryLayer', { keys, output })
+                      : c.change === 'added' && c.layers
+                        ? t('review.comboAddedOn', { keys, output, layers: layerList(c.layers) })
+                        : t(c.change === 'added' ? 'review.comboAdded' : 'review.comboRemoved', { keys, output })}
                 </li>
               );
             })}

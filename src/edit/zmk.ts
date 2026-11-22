@@ -14,6 +14,7 @@ import {
   removeZmkLayer,
   setZmkBinding,
   setZmkCombo,
+  setZmkComboLayers,
   setZmkLayerName,
   ZmkSourceError,
   type ZmkSource,
@@ -33,6 +34,8 @@ export interface ZmkCombo {
   name: string;
   positions: number[];
   output: string;
+  /** The layers it fires on, or null for every layer. */
+  layers: number[] | null;
 }
 
 /** The keys as Keyballer shows them: QMK's names, as the build's view has them. */
@@ -51,8 +54,9 @@ export interface ZmkBase {
 /** The edits session.ts passes on: the keymap ones (trackball settings have no ZMK file). */
 export type ZmkEdit =
   | { type: 'key'; layer: number; index: number; keycode: string }
-  | { type: 'comboAdd'; positions: number[]; output: string }
+  | { type: 'comboAdd'; positions: number[]; output: string; layers?: number[] | null }
   | { type: 'comboSet'; name: string; positions: number[]; output: string }
+  | { type: 'comboLayers'; name: string; layers: number[] | null }
   | { type: 'comboRemove'; name: string }
   | { type: 'layerAdd' }
   | { type: 'layerRemove' }
@@ -68,6 +72,9 @@ export function zmkKeymapOf(view: ViewFile): { path: string; sha256: string } | 
 }
 
 const same = (a: unknown[], b: unknown[]) => a.length === b.length && a.every((x, i) => x === b[i]);
+
+/** A combo's layers as the model keeps them: null for every layer, as ZMK reads none. */
+const layersOf = (layers: number[] | null | undefined) => (layers?.length ? [...layers] : null);
 
 // ZMK keeps layers in a 32-bit state; no keyboard Keyballer knows has more than a few hundred keys.
 const MAX_LAYERS = 32;
@@ -113,7 +120,8 @@ export function openZmk(view: ViewFile, src: string | undefined, sha256: string)
     ) &&
     view.combos.every((c) => {
       const s = source.combos.find((sc) => sc.node === c.name);
-      return !!s && same(s.positions, c.positions);
+      const layers = c.layers ?? [];
+      return !!s && same(s.positions, c.positions) && Array.isArray(layers) && same(s.layers ?? [], layers);
     });
   if (!matches || !fits(view, layers)) return { problem: 'edit.err.zmkUnreadable' };
   return {
@@ -121,7 +129,7 @@ export function openZmk(view: ViewFile, src: string | undefined, sha256: string)
       path: keymap.path,
       model: {
         layers: view.layers.map((l, n) => ({ node: layers[n].node, name: l.name, keys: [...l.keys] })),
-        combos: view.combos.map((c) => ({ name: c.name!, positions: c.positions as number[], output: c.output })),
+        combos: view.combos.map((c) => ({ name: c.name!, positions: c.positions as number[], output: c.output, layers: layersOf(c.layers) })),
       },
     },
   };
@@ -200,8 +208,9 @@ function change(doc: ZmkDoc, e: ZmkEdit): ZmkDoc {
     case 'comboAdd': {
       const { src, text } = write(doc, e.output);
       const name = freeName(comboBase(text), readZmkKeymap(src).combos.map((c) => c.node));
-      combos.push({ name, positions: e.positions, output: e.output });
-      return { model: { layers, combos }, src: addZmkCombo(src, name, e.positions, text) };
+      const only = layersOf(e.layers);
+      combos.push({ name, positions: e.positions, output: e.output, layers: only });
+      return { model: { layers, combos }, src: addZmkCombo(src, name, e.positions, text, only) };
     }
     case 'comboSet': {
       const combo = combos.find((c) => c.name === e.name);
@@ -209,6 +218,12 @@ function change(doc: ZmkDoc, e: ZmkEdit): ZmkDoc {
       const { src, text } = write(doc, e.output);
       Object.assign(combo, { positions: e.positions, output: e.output });
       return { model: { layers, combos }, src: setZmkCombo(src, e.name, e.positions, text) };
+    }
+    case 'comboLayers': {
+      const combo = combos.find((c) => c.name === e.name);
+      if (!combo) throw new ZmkSourceError('no such combo');
+      combo.layers = layersOf(e.layers);
+      return { model: { layers, combos }, src: setZmkComboLayers(doc.src, e.name, combo.layers) };
     }
     case 'comboRemove':
       return { model: { layers, combos: combos.filter((c) => c.name !== e.name) }, src: removeZmkCombo(doc.src, e.name) };
@@ -221,7 +236,21 @@ function change(doc: ZmkDoc, e: ZmkEdit): ZmkDoc {
     case 'layerRemove': {
       if (layers.length < 2) throw new ZmkSourceError('the last layer');
       const last = layers.pop()!;
-      return { model: { layers, combos }, src: removeZmkLayer(doc.src, last.node) };
+      let src = removeZmkLayer(doc.src, last.node);
+      // Combos fire on the layers they name: the removed one goes from them, and a combo that
+      // fired only on it goes too, as without layers it would fire on every layer.
+      const removed = layers.length;
+      const kept: ZmkCombo[] = [];
+      for (const c of combos) {
+        if (!c.layers?.includes(removed)) kept.push(c);
+        else if (c.layers.length === 1) src = removeZmkCombo(src, c.name);
+        else {
+          c.layers = c.layers.filter((l) => l !== removed);
+          src = setZmkComboLayers(src, c.name, c.layers);
+          kept.push(c);
+        }
+      }
+      return { model: { layers, combos: kept }, src };
     }
     case 'layerName': {
       const layer = layers[e.layer];

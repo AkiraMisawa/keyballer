@@ -90,10 +90,20 @@ The same model as QMK: Keyballer's own reusable workflow builds the firmware, pu
 
   Such a keymap is shown, but not edited. A change that would leave the file unreadable is not made.
 - **Not yet:**
-  - combos limited to other layers, which stay as they are;
   - sensor bindings;
   - hold-tap settings;
   - editing macros.
+
+**Phase 5: combos on some layers (2026-11-22).** A ZMK combo fires when the highest active layer is one of its `layers`, or on every layer when it has none (`app/src/combo.c`, `combo_active_on_layer` and an empty layer mask, at both pinned commits). meteorite40 uses both: D+F types LANG1 on layer 0 only, and J+K types Home on layer 2 only.
+
+- **The view.** It lists every combo, with `layers` when the combo has them. A combo's `keys` are those of the first layer it fires on.
+- **The board.** A ZMK combo is drawn on each layer it fires on. QMK's combos stay on the base layer, where COMBO_ONLY_FROM_LAYER 0 finds their keys. The side panel lists the shown layer's combos.
+- **Editing.**
+  - **Opening.** The editor opens only when each combo's `layers` in the file are the view's.
+  - **Choosing layers.** The combo panel has a row of layers to choose from: every layer, or some. The command line has `combo layers <number> <all | layer numbers>`.
+  - **New combos.** A combo made on the base layer fires on every layer, as ZMK's do without `layers`. One made on another layer fires there only. Its keys are picked on the shown layer.
+  - **Removing a layer.** The layer also goes from the combos that name it. A combo that fired only on that layer is removed too, because without `layers` it would fire everywhere. The confirmation lists those combos.
+- **Review.** The review says which layers a combo now fires on, and the commit message does too.
 
 ## Decisions
 

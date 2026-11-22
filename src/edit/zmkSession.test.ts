@@ -196,6 +196,53 @@ describe('combos', () => {
   });
 });
 
+describe('combos on some layers', () => {
+  const M40_PATH = 'config/meteorite40.keymap';
+  const m40 = () => session(M40_VIEW, M40_PATH, M40);
+
+  it('opens combos with the layers they fire on, as the file has them', () => {
+    // meteorite40.keymap: J+K types Home on layer 2 only, where those keys are Left and Up.
+    expect(editedView(M40_VIEW, m40()).combos.find((c) => c.name === 'home')).toMatchObject({ layers: [2], keys: ['KC_LEFT', 'KC_UP'] });
+    // A view that says Home fires on every layer is not the file's.
+    const lying = { ...M40_VIEW, combos: M40_VIEW.combos.map(({ layers: _, ...c }) => c) };
+    expect(openZmk(lying, M40, sha(M40))).toEqual({ problem: 'edit.err.zmkUnreadable' });
+  });
+
+  it('limits a combo to layers, and lets it fire on every layer again', () => {
+    const limited = edits(roba(), { type: 'comboLayers', name: 'tab', layers: [0, 3] });
+    onlyChanged(ROBA, fileOf(limited), '            key-positions = <11 12>;\n', '            key-positions = <11 12>;\n            layers = <0 3>;\n');
+    expect(editedView(ROBA_VIEW, limited).combos.find((c) => c.name === 'tab')?.layers).toEqual([0, 3]);
+    expect(review(limited).combos).toEqual([{ change: 'layers', keys: ['KC_S', 'KC_D'], output: 'KC_TAB', layers: [0, 3] }]);
+    expect(review(limited).message).toBe('Make the combo for Tab fire on default_layer and ARROW only');
+    const back = edits(limited, { type: 'comboLayers', name: 'tab', layers: null });
+    expect(fileOf(back)).toBe(ROBA);
+    expect(review(back).combos).toEqual([]);
+    const all = edits(m40(), { type: 'comboLayers', name: 'home', layers: [] });
+    expect(review(all).combos).toEqual([{ change: 'layers', keys: ['KC_J', 'KC_K'], output: 'KC_HOME', layers: null }]);
+    expect(review(all).message).toBe('Make the combo for Home fire on every layer');
+  });
+
+  it('adds a combo for the layers chosen', () => {
+    const s = edits(m40(), { type: 'comboAdd', positions: [16, 19], output: 'KC_PGUP', layers: [2] });
+    expect(currentFiles(s)[M40_PATH]).toContain('key-positions = <16 19>;\n            layers = <2>;\n');
+    // Its keys are those of the layer it fires on.
+    expect(review(s).combos).toEqual([{ change: 'added', keys: ['KC_LEFT', 'KC_RGHT'], output: 'KC_PGUP', layers: [2] }]);
+  });
+
+  it('takes a removed layer out of combos, and removes the combos that fired only on it', () => {
+    const s = edits(
+      roba(),
+      { type: 'layerAdd' },
+      { type: 'comboLayers', name: 'tab', layers: [0, 8] },
+      { type: 'comboAdd', positions: [1, 2], output: 'KC_ESC', layers: [8] },
+      { type: 'layerRemove' },
+    );
+    expect(fileOf(s)).toContain('            key-positions = <11 12>;\n            layers = <0>;\n');
+    expect(fileOf(s)).not.toContain('combo_escape');
+    expect(review(s).combos).toEqual([{ change: 'layers', keys: ['KC_S', 'KC_D'], output: 'KC_TAB', layers: [0] }]);
+  });
+});
+
 describe('layers', () => {
   it('adds a layer, and removing it again gives back the file', () => {
     const added = edits(roba(), { type: 'layerAdd' });
