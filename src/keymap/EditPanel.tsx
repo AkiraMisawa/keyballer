@@ -3,7 +3,7 @@
 // panel for making a combo or changing its output. See docs/plans/keymap-editor.md.
 
 import { useEffect, useState } from 'react';
-import { ballModeEditable, comboProblem, type BallMode } from '../edit/session';
+import { ballModeEditable, comboOutputProblem, comboProblem, type BallMode } from '../edit/session';
 import type { EditSession } from '../edit/useEditSession';
 import { useI18n } from '../i18n/react';
 import { LAYER_FUNCTIONS } from './catalogue';
@@ -155,6 +155,7 @@ export function ComboPanel({ edit, context, picked, change, onDone }: ComboProps
           keyId={existing ? `combo:${change}` : `combo:new:${positions.join()}`}
           keycode={existing?.output ?? 'KC_NO'}
           tapOnly
+          problem={(output) => (edit.session ? comboOutputProblem(edit.session, output) : undefined)}
           listenRequest={0}
           focusRequest={0}
           focusOnMount

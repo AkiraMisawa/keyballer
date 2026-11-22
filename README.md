@@ -29,7 +29,7 @@ Keyballer (this app) ◀──── GitHub API ──────────�
 | ZMK builds | Supported, with Keyballer's workflow |
 | Flashing Pro Micro (ATmega32U4 / Caterina) | Supported |
 | Flashing nRF52840 (UF2, ZMK) | Supported: a checked file to copy onto the keyboard's drive. Writing it from the page, and RP2040, are planned |
-| Keymap editor | Supported (keys, combos, layers) |
+| Keymap editor | Supported (keys, combos, layers), for QMK and ZMK |
 
 ## Config repository
 
@@ -205,11 +205,19 @@ Pushing to `main` runs the tests and the build. Publishing to GitHub Pages is pa
 
 ### Keymap view
 
-Each build also writes `<id>.view.json` next to the firmware: the keymap drawn on the board's real shape (from the keyboard's VIA definition), its layers, combos, `#define` aliases and the keycodes the keymap's code handles, with line numbers. The app shows it with "View keymap" (`V`). If it cannot be made, the manifest says why and the firmware is unaffected. Plan: [docs/plans/keymap-view.md](docs/plans/keymap-view.md). ZMK builds write the same view from the build's devicetree; their keymaps can be viewed, not yet edited.
+Each build also writes `<id>.view.json` next to the firmware: the keymap drawn on the board's real shape (from the keyboard's VIA definition), its layers, combos, `#define` aliases and the keycodes the keymap's code handles, with line numbers. The app shows it with "View keymap" (`V`). If it cannot be made, the manifest says why and the firmware is unaffected. Plan: [docs/plans/keymap-view.md](docs/plans/keymap-view.md). ZMK builds write the same view from the build's devicetree.
 
 ### Keymap editing
 
 On the keymap, `E` starts editing. Select a key and give it a new action from the key picker (search by QMK name, by what it prints, or in English or Japanese words; or press the key on your computer, `K`), with a hold action if you like. Add and remove combos on the board, and add, remove and rename layers. Only the data parts of `keymap.c` change (the layer arrays, the combos, `KEYBALLER_SCROLL_LAYERS`); your own code stays as it was. Layer names and which layers scroll also go to `keyballer.json`. The first combo also turns combos on: `COMBO_ENABLE = yes` in `rules.mk` and `#define COMBO_ONLY_FROM_LAYER 0` in `config.h`. Every command is on the command line too (`assign KC_ESC`, `assign KC_A hold=ctrl`, `combo add`, `layer rename Mouse keys`, `save Fix the comma combo`). Saving works as below. Plan: [docs/plans/keymap-editor.md](docs/plans/keymap-editor.md).
+
+ZMK keymaps are edited the same way, in the `.keymap` file the build used.
+- **When.** Editing opens only when that file on `main` is the one the latest build was made from. Otherwise, wait for the build.
+- **What changes.** Only the bindings, combos and layer nodes, with their `display-name`, change. A key already in the file is written as the file writes it; anything else gets ZMK's names.
+- **What is refused.** Keys ZMK has no binding for, such as Keyball's own, are refused with a reason.
+- **ZMK Studio.** If you have changed a keyboard's keymap in ZMK Studio, the keyboard keeps those changes over the file until you choose "Restore Stock Settings" in ZMK Studio.
+
+Plan: [docs/plans/zmk.md](docs/plans/zmk.md), phase 4.
 
 ### Trackball settings and saving
 

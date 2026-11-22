@@ -31,12 +31,14 @@ interface BarProps {
   onSaved: (sha: string) => void;
   /** How the review names keys and layers: a keycode's legend, a layer's name. */
   describe?: { legend: (keycode: string) => string; layer: (n: number) => string };
+  /** Something the review must say before saving (ZMK Studio's changes win over the file). */
+  note?: string;
 }
 
 const ariaChord = (chord: string) =>
   (isMac() ? 'Meta+' : 'Control+') + (chord.startsWith('shift+') ? `Shift+${chord.slice(6).toUpperCase()}` : chord.toUpperCase());
 
-export function EditBar({ edit, repoName, token, tokenField, signIn, runFor, onSaved, describe }: BarProps) {
+export function EditBar({ edit, repoName, token, tokenField, signIn, runFor, onSaved, describe, note }: BarProps) {
   const { t } = useI18n();
   const [reviewing, setReviewing] = useState(false);
   /** A commit message typed with `save <message>`, for the review to start from. */
@@ -143,6 +145,7 @@ export function EditBar({ edit, repoName, token, tokenField, signIn, runFor, onS
           signIn={signIn}
           describe={describe ?? { legend: (k) => k, layer: (n) => String(n) }}
           draft={draft}
+          note={note}
           onClose={() => setReviewing(false)}
           onSaved={(sha) => {
             setReviewing(false);
@@ -263,11 +266,12 @@ interface ReviewProps {
   signIn: SignIn | null;
   /** The commit message to start from, instead of the drafted one. */
   draft?: string;
+  note?: string;
   onClose: () => void;
   onSaved: (sha: string) => void;
 }
 
-function ReviewDialog({ edit, repoName, describe, token, tokenField, signIn, draft, onClose, onSaved }: ReviewProps) {
+function ReviewDialog({ edit, repoName, describe, token, tokenField, signIn, draft, note, onClose, onSaved }: ReviewProps) {
   const { t, err } = useI18n();
   const [message, setMessage] = useState(draft ?? edit.pending?.message ?? '');
   const [error, setError] = useState<unknown>(null);
@@ -311,6 +315,7 @@ function ReviewDialog({ edit, repoName, describe, token, tokenField, signIn, dra
           </button>
         </div>
         <p className="note">{t('review.where', { branch: BRANCH, repo: repoName })}</p>
+        {note && <p className="notice">{note}</p>}
 
         <h3>{t('review.changes')}</h3>
         {pending.changes.length > 0 && (

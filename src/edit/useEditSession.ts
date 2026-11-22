@@ -5,7 +5,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { LocalizedError } from '../i18n/core';
 import { commitFiles } from '../lib/commit';
+import type { ViewFile } from '../keymap/view';
 import { getBranchHead, getTextAt, type RepoRef } from '../lib/github';
+import { sha256Hex } from '../lib/provenance';
 import {
   apply,
   canRedo,
@@ -15,11 +17,13 @@ import {
   rebase,
   redo,
   review,
+  savedBase,
   undo,
   type Edit,
   type Session,
   type SessionBase,
 } from './session';
+import { openZmk, zmkKeymapOf } from './zmk';
 
 /** Saving and editing go to this branch (docs/plans/keymap-editor.md). */
 export const BRANCH = 'main';
@@ -45,11 +49,32 @@ interface ConfigJson {
   builds: { id: string; name: string; keymap_dir: string }[];
 }
 
-async function load(repo: RepoRef, token: string, buildId: string): Promise<{ base: SessionBase; sharedBy: string[] }> {
+/**
+ * A ZMK keymap's files: keyballer.json and the .keymap file the build recorded, with what the
+ * file means when it is the file built (docs/plans/zmk.md, phase 4).
+ */
+async function loadZmk(repo: RepoRef, token: string, commit: string, json: string, config: ConfigJson, buildId: string, view: ViewFile) {
+  const build = config.builds.find((b) => b.id === buildId);
+  if (!build) throw new LocalizedError('edit.err.noBuild', { id: buildId });
+  const files: Record<string, string> = { 'keyballer.json': json };
+  const keymap = zmkKeymapOf(view);
+  let zmk: SessionBase['zmk'] = { problem: 'edit.err.zmkNoSource' };
+  if (keymap) {
+    const text = await getTextAt(repo, keymap.path, commit, token);
+    zmk = openZmk(view, text ?? undefined, text === null ? '' : await sha256Hex(new TextEncoder().encode(text)));
+    if (text !== null && 'base' in zmk) files[keymap.path] = text;
+  }
+  // Builds of one keyboard need not share a .keymap file (meteorite40 and its low-profile build do
+  // not), and only a split keyboard's central half uses it, so no other build is named.
+  return { base: { commit, buildId, keymapDir: '', files, zmk }, sharedBy: [build.name] };
+}
+
+async function load(repo: RepoRef, token: string, buildId: string, zmkView: ViewFile | null): Promise<{ base: SessionBase; sharedBy: string[] }> {
   const commit = await getBranchHead(repo, BRANCH, token);
   const json = await getTextAt(repo, 'keyballer.json', commit, token);
   if (json === null) throw new LocalizedError('edit.err.noConfig');
   const config = JSON.parse(json) as ConfigJson;
+  if (zmkView) return loadZmk(repo, token, commit, json, config, buildId, zmkView);
   const build = config.builds.find((b) => b.id === buildId);
   if (!build) throw new LocalizedError('edit.err.noBuild', { id: buildId });
   const dir = build.keymap_dir.replace(/\/+$/, '');
@@ -66,7 +91,8 @@ async function load(repo: RepoRef, token: string, buildId: string): Promise<{ ba
   };
 }
 
-export function useEditSession(repo: RepoRef, token: string, buildId: string) {
+/** `zmkView` is the build's view for a ZMK build, which says what its .keymap file means; null for QMK. */
+export function useEditSession(repo: RepoRef, token: string, buildId: string, zmkView: ViewFile | null = null) {
   const [state, setState] = useState<EditState>({ status: 'idle' });
   const [saved, setSaved] = useState<Saved | null>(null);
   const [saving, setSaving] = useState(false);
@@ -79,7 +105,7 @@ export function useEditSession(repo: RepoRef, token: string, buildId: string) {
     (keep: Session | null) => {
       const mine = ++generation.current;
       setState({ status: 'loading' });
-      load(repo, token, buildId)
+      load(repo, token, buildId, zmkView)
         .then(({ base, ...rest }) => {
           if (mine !== generation.current) return;
           let session = keep ? rebase(keep, base) : openSession(base);
@@ -89,7 +115,7 @@ export function useEditSession(repo: RepoRef, token: string, buildId: string) {
         })
         .catch((error: unknown) => mine === generation.current && setState({ status: 'failed', error }));
     },
-    [repo, token, buildId],
+    [repo, token, buildId, zmkView],
   );
 
   // A new build or repository starts over.
@@ -124,9 +150,7 @@ export function useEditSession(repo: RepoRef, token: string, buildId: string) {
         message,
         token,
       });
-      setState((s) =>
-        s.status === 'ready' ? { ...s, session: openSession({ ...started.base, commit: result.sha, files: now }) } : s,
-      );
+      setState((s) => (s.status === 'ready' ? { ...s, session: openSession(savedBase(started, result.sha)) } : s));
       setSaved(result);
       return result;
     } finally {

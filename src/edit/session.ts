@@ -18,8 +18,11 @@ import {
 } from '../config/keymap';
 import { readDefine, setBallMm, setDefine, setRule } from '../config/source';
 import type { MessageKey } from '../i18n/messages';
+import { readCustomKeycodes } from '../config/keymap';
 import { basicLegend } from '../keymap/keycodes';
 import type { ViewFile } from '../keymap/view';
+import { zmkLabel } from '../keymap/zmkKeys';
+import { applyZmkEdit, zmkKeyProblem, type ZmkBase, type ZmkDoc, type ZmkEdit, type ZmkModel } from './zmk';
 
 export interface SessionBase {
   /** The commit the files were read from. */
@@ -28,6 +31,11 @@ export interface SessionBase {
   keymapDir: string;
   /** File texts by path in the repository. */
   files: Record<string, string>;
+  /**
+   * A ZMK keymap (docs/plans/zmk.md, phase 4): its file and what it means, or why it cannot be
+   * edited. Absent for QMK.
+   */
+  zmk?: { base: ZmkBase } | { problem: MessageKey };
 }
 
 /** The settings a session can change. */
@@ -114,6 +122,9 @@ const keymapPath = (base: SessionBase) => `${base.keymapDir}/keymap.c`;
 
 /** The session's keymap.c as it now stands, if the keymap has one. */
 export const keymapFileOf = (session: Session): string | undefined => currentFiles(session)[keymapPath(session.base)];
+
+/** The ZMK keymap's starting point, when the session has one that can be edited. */
+const zmkBaseOf = (base: SessionBase): ZmkBase | undefined => (base.zmk && 'base' in base.zmk ? base.zmk.base : undefined);
 const rulesPath = (base: SessionBase) => `${base.keymapDir}/rules.mk`;
 
 export function openSession(base: SessionBase): Session {
@@ -215,6 +226,7 @@ const TRANSPARENT_OR_NONE = new Set(['_______', 'KC_TRNS', 'KC_TRANSPARENT', 'KC
  * read, or it uses another layout than the build drawn on screen.
  */
 export function keymapProblem(session: Session, layout: string): MessageKey | undefined {
+  if (session.base.zmk) return 'problem' in session.base.zmk ? session.base.zmk.problem : undefined;
   const src = session.base.files[keymapPath(session.base)];
   if (src === undefined) return 'edit.err.noKeymaps';
   try {
@@ -229,6 +241,8 @@ export function keymapProblem(session: Session, layout: string): MessageKey | un
  * follows it, so the new key must still be the only one of its kind there.
  */
 export function keyProblem(session: Session, layer: number, index: number, keycode: string): MessageKey | undefined {
+  // A ZMK combo is a set of positions, so only the binding matters.
+  if (session.base.zmk) return zmkDoc(session) ? zmkKeyProblem(zmkDoc(session)!, keycode) : undefined;
   if (layer !== 0) return undefined;
   const src = keymapFileOf(session);
   if (!src) return undefined;
@@ -246,12 +260,36 @@ export function keyProblem(session: Session, layer: number, index: number, keyco
 /** Why the keys at these positions cannot make a combo, if they cannot. */
 export function comboProblem(session: Session, positions: number[]): MessageKey | undefined {
   if (positions.length < 2) return 'picker.err.comboTooFew';
+  if (session.base.zmk) return undefined;
   const keymap = keymapFileOf(session);
   const base = keymap ? readKeymap(keymap).layers[0] : [];
   const keys = positions.map((p) => base[p]);
   // Combos name keycodes, so each key must be the only one of its kind on the base layer.
   const unique = keys.every((k) => k !== undefined && !TRANSPARENT_OR_NONE.has(k) && base.filter((b) => b === k).length === 1);
   return unique ? undefined : 'picker.err.comboNotUnique';
+}
+
+/** Why a combo cannot type this, if it cannot: a ZMK keymap must have a binding for it. */
+export function comboOutputProblem(session: Session, keycode: string): MessageKey | undefined {
+  const doc = zmkDoc(session);
+  return doc ? zmkKeyProblem(doc, keycode) : undefined;
+}
+
+/**
+ * The keymap's own keys for the key picker: keymap.c's custom keycodes, or, for ZMK, the keys
+ * with no QMK keycode that the keymap uses (macros, custom behaviours), and output and Bluetooth keys.
+ */
+export function ownKeycodes(session: Session): string[] {
+  const doc = zmkDoc(session);
+  if (!doc) {
+    const src = keymapFileOf(session);
+    return src ? readCustomKeycodes(src) : [];
+  }
+  const used = [...doc.model.layers.flatMap((l) => l.keys), ...doc.model.combos.map((c) => c.output)].filter((k) => k.includes('ZMK_'));
+  const bluetooth = used.some((k) => k.startsWith('ZMK_BT_'))
+    ? [...[0, 1, 2, 3, 4].map((n) => `ZMK_BT_SEL_${n}`), 'ZMK_BT_NXT', 'ZMK_BT_PRV', 'ZMK_BT_CLR', 'ZMK_BT_CLR_ALL']
+    : [];
+  return [...new Set([...used, ...bluetooth, 'ZMK_OUT_TOG', 'ZMK_OUT_USB', 'ZMK_OUT_BLE'])];
 }
 
 /** Whether the ball's mode per layer can be changed: keymap.c names its scroll layers in KEYBALLER_SCROLL_LAYERS. */
@@ -360,6 +398,12 @@ const filesCache = new WeakMap<Session, Record<string, string>>();
 export function currentFiles(session: Session): Record<string, string> {
   const cached = filesCache.get(session);
   if (cached) return cached;
+  const zmk = zmkBaseOf(session.base);
+  if (zmk) {
+    const files = { ...session.base.files, [zmk.path]: zmkDoc(session)!.src };
+    filesCache.set(session, files);
+    return files;
+  }
   const saved = savedTrackball(session);
   const now = trackball(session);
   const files = { ...session.base.files };
@@ -375,6 +419,38 @@ export function currentFiles(session: Session): Record<string, string> {
   }
   filesCache.set(session, files);
   return files;
+}
+
+const docCache = new WeakMap<Session, ZmkDoc>();
+
+/**
+ * A ZMK session's keymap as it now stands: the model and the file with each change made in order.
+ * A change that no longer applies (its combo is gone after the repository moved on) is skipped.
+ */
+function zmkDoc(session: Session): ZmkDoc | undefined {
+  const base = zmkBaseOf(session.base);
+  if (!base) return undefined;
+  const cached = docCache.get(session);
+  if (cached) return cached;
+  let doc: ZmkDoc = { model: base.model, src: session.base.files[base.path] };
+  for (const e of session.edits) {
+    if (isSetting(e) || e.type === 'ballMode') continue;
+    try {
+      doc = applyZmkEdit(doc, e as ZmkEdit);
+    } catch {
+      // Skipped, as currentFiles skips a QMK change that no longer applies.
+    }
+  }
+  docCache.set(session, doc);
+  return doc;
+}
+
+/** The starting point after saving: the saved files, and for ZMK what they now mean. */
+export function savedBase(session: Session, commit: string): SessionBase {
+  const files = currentFiles(session);
+  const zmk = zmkBaseOf(session.base);
+  const doc = zmkDoc(session);
+  return { ...session.base, commit, files, ...(zmk && doc ? { zmk: { base: { path: zmk.path, model: doc.model } } } : {}) };
 }
 
 /** The same changes on newer files: for when the repository moved on before saving. */
@@ -475,6 +551,8 @@ function readKeymapChanges(base: SessionBase, before: Record<string, string>, af
 }
 
 export function review(session: Session): Review {
+  const zmk = zmkBaseOf(session.base);
+  if (zmk) return zmkReview(session, zmk);
   const { base } = session;
   const saved = savedTrackball(session);
   const now = trackball(session);
@@ -507,12 +585,70 @@ export function review(session: Session): Review {
   return { changes, keys, combos, layers, files, message };
 }
 
+/** What a ZMK session changes: the model before and after, and the .keymap file's diff. */
+function zmkReview(session: Session, zmk: ZmkBase): Review {
+  const was = zmk.model;
+  const now = zmkDoc(session)!.model;
+  const keys: KeyChange[] = [];
+  for (let layer = 0; layer < Math.min(was.layers.length, now.layers.length); layer++) {
+    now.layers[layer].keys.forEach((to, index) => {
+      const from = was.layers[layer].keys[index];
+      if (from !== to) keys.push({ layer, index, from, to });
+    });
+  }
+  const keysAt = (model: ZmkModel, positions: number[]) => positions.map((p) => model.layers[0]?.keys[p] ?? 'KC_NO');
+  const combos: ComboChange[] = [];
+  for (const c of now.combos) {
+    const old = was.combos.find((w) => w.name === c.name);
+    if (!old) combos.push({ change: 'added', keys: keysAt(now, c.positions), output: c.output });
+    else if (old.output !== c.output || old.positions.join() !== c.positions.join()) {
+      combos.push({ change: 'changed', keys: keysAt(now, c.positions), output: c.output, was: old.output });
+    }
+  }
+  for (const w of was.combos) if (!now.combos.some((c) => c.name === w.name)) combos.push({ change: 'removed', keys: keysAt(was, w.positions), output: w.output });
+  const layers: LayerChange[] = [];
+  for (let n = was.layers.length; n < now.layers.length; n++) layers.push({ change: 'added', layer: n });
+  for (let n = now.layers.length; n < was.layers.length; n++) layers.push({ change: 'removed', layer: n });
+  for (let n = 0; n < Math.min(was.layers.length, now.layers.length); n++) {
+    const name = now.layers[n].name;
+    if (name && name !== was.layers[n].name) layers.push({ change: 'renamed', layer: n, name });
+  }
+  const before = session.base.files[zmk.path];
+  const after = zmkDoc(session)!.src;
+  const files = after === before ? [] : [{ path: zmk.path, diff: unifiedDiff(before, after) }];
+  const names = now.layers.map((l) => l.name);
+  const message = draftMessage({ settings: [], keys, combos, layers }, session.base, names);
+  return { changes: [], keys, combos, layers, files, message };
+}
+
 /**
  * The built view with the session's keymap over it: the keys, layers, names, ball modes and combos
  * as they now stand; the board's shape, aliases and code notes stay those of the build.
  */
 export function editedView(view: ViewFile, session: Session | null): ViewFile {
   if (!session) return view;
+  if (session.base.zmk) {
+    const doc = zmkDoc(session);
+    if (!doc) return view;
+    const codes = [...doc.model.layers.flatMap((l) => l.keys), ...doc.model.combos.map((c) => c.output)];
+    const labels = { ...view.labels };
+    for (const code of codes) {
+      const label = labels[code] ? undefined : zmkLabel(code);
+      if (label) labels[code] = label;
+    }
+    return {
+      ...view,
+      labels,
+      layers: doc.model.layers.map((l) => ({ name: l.name, ball: null, keys: l.keys })),
+      combos: doc.model.combos.map((c, i) => ({
+        name: c.name,
+        keys: c.positions.map((p) => doc.model.layers[0]?.keys[p] ?? 'KC_NO'),
+        positions: c.positions,
+        output: c.output,
+        line: view.combos.find((v) => v.name === c.name)?.line ?? view.combos.length + i + 1,
+      })),
+    };
+  }
   const files = currentFiles(session);
   const src = files[keymapPath(session.base)];
   if (src === undefined || keymapProblem(session, view.layout)) return view;

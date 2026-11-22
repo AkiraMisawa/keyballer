@@ -7,9 +7,9 @@ import { CommandRefused } from '../commands/model';
 import { useCommand } from '../commands/react';
 import { msg, type Lang, type Localized } from '../i18n/core';
 import { useI18n } from '../i18n/react';
-import { readCustomKeycodes } from '../config/keymap';
 import { ConfirmDialog, EditBar, LeaveDialog, SessionState } from '../edit/EditBar';
-import { ballModeEditable, editedView, keymapFileOf, keymapProblem, keyProblem } from '../edit/session';
+import { ballModeEditable, editedView, keymapProblem, keyProblem, ownKeycodes } from '../edit/session';
+import { zmkKeymapOf } from '../edit/zmk';
 import { useEditSession, type EditSession } from '../edit/useEditSession';
 import { getFirmwareText, repoName, type RepoRef, type WorkflowRun } from '../lib/github';
 import { isZmk, type FirmwareBuild, type FirmwareManifest } from '../lib/manifest';
@@ -89,7 +89,8 @@ export function KeymapScreen(props: Props) {
   const [selected, setSelected] = useState<Selection>(null);
   const [os, setOs] = useState<Os>(savedOs);
   const [layout, setLayout] = useState<Layout>(savedLayout);
-  const edit = useEditSession(repo, token, build.id);
+  // A ZMK build's view says what its .keymap file means, so the session waits for it.
+  const edit = useEditSession(repo, token, build.id, isZmk(build) ? builtView : null);
   const [editing, setEditing] = useState(false);
   /**
    * What the board draws: the built firmware's keymap, or, while editing or with unsaved
@@ -341,19 +342,22 @@ export function KeymapScreen(props: Props) {
   }, (mode) => setPadRequest({ mode, id: ++padRequests.current }));
 
   // ---- editing (docs/plans/keymap-editor.md) ----
-  const keymapFile = edit.session ? keymapFileOf(edit.session) : undefined;
   const editProblem = edit.session && builtView ? keymapProblem(edit.session, builtView.layout) : undefined;
   const canEdit = editing && !!edit.session && !editProblem;
+  const own = useMemo(() => (edit.session && !editProblem ? ownKeycodes(edit.session) : []), [edit.session, editProblem]);
   const catalogue = useMemo(
     () =>
       makeCatalogue({
         layers: view?.layers.map((l) => l.name) ?? [],
-        custom: keymapFile && !editProblem ? readCustomKeycodes(keymapFile) : [],
+        custom: own,
         defines: view?.defines ?? {},
         labels: view?.labels ?? {},
+        zmk: isZmk(build),
       }),
-    [view, keymapFile, editProblem],
+    [view, own, build],
   );
+  // A ZMK build that did not record its .keymap file cannot be edited (docs/plans/zmk.md, phase 4).
+  const noZmkEdit: Localized | undefined = isZmk(build) && builtView && !zmkKeymapOf(builtView) ? msg('why.zmkNoEdit') : undefined;
   const pickerContext: PickerContext | null = view
     ? { view, display, catalogue, layerNames: view.layers.map((_, n) => layerName(view, n, lang)) }
     : null;
@@ -419,8 +423,7 @@ export function KeymapScreen(props: Props) {
     group: 'group.keymap',
     page: true,
     shortcut: 'e',
-    // ZMK keymaps are shown, not yet edited (docs/plans/zmk.md, phase 3).
-    unavailable: isZmk(build) ? msg('why.zmkReadOnly') : noView,
+    unavailable: noView ?? noZmkEdit,
     run: () => (editing ? setEditing(false) : startEditing()),
   });
   const holdOf = (text: string): Hold | null | undefined => {
@@ -654,8 +657,8 @@ export function KeymapScreen(props: Props) {
               </div>
               <p className="note">{t('keymap.displayOnly')}</p>
             </div>
-            {isZmk(build) ? (
-              <p className="note">{t('why.zmkReadOnly')}</p>
+            {noZmkEdit ? (
+              <p className="note">{t('why.zmkNoEdit')}</p>
             ) : (
               <button type="button" className={editing ? 'primary' : ''} onClick={() => (editing ? setEditing(false) : startEditing())} aria-keyshortcuts="E">
                 {editing ? t('edit.leave') : t('edit.enter')}
@@ -672,6 +675,7 @@ export function KeymapScreen(props: Props) {
             signIn={signIn}
             runFor={runFor}
             onSaved={onSaved}
+            note={isZmk(build) && build.studio ? t('save.zmkStudio', { name: build.name }) : undefined}
             describe={{
               legend: (k) => {
                 const l = legendOf(view, k, display);
