@@ -42,7 +42,7 @@ export interface ViewLayer {
 }
 
 export interface ViewCombo {
-  /** The key array's name in keymap.c, when known (edited views). */
+  /** The combo's name: its key array in keymap.c (edited QMK views), or its node in a ZMK .keymap file. */
   name?: string;
   keys: string[];
   positions: (number | null)[];
@@ -64,6 +64,14 @@ export interface ViewFile {
   keymap?: string;
   /** Where keymap.c is: its path, and the repository and commit it was built from. */
   source?: { path: string; repository?: string; commit?: string };
+  /**
+   * What a ZMK build was made from, for the editor (scripts/zmk_view.py, build_zmk.py): the .keymap
+   * file with its SHA-256, and every layer node with the behaviour each binding refers to.
+   */
+  zmk?: {
+    keymap?: { path: string; sha256: string };
+    layers?: { node: string; status?: string; refs: string[] }[];
+  };
 }
 
 /** How legends are written. It changes the labels only, never the firmware. */

@@ -157,6 +157,8 @@ interface CatalogueInput {
   /** The keymap's #define aliases, such as TH_EISU. */
   defines?: Record<string, string>;
   labels: Record<string, { en?: string; ja?: string }>;
+  /** A ZMK keymap: keys only QMK has are left out (docs/plans/zmk.md, phase 4). */
+  zmk?: boolean;
 }
 
 const lower = (words: (string | undefined)[]) => [...new Set(words.filter((w): w is string => !!w).map((w) => w.toLowerCase()))];
@@ -174,10 +176,14 @@ function wordsFor(code: string): string[] {
   ]);
 }
 
-export function makeCatalogue({ layers, custom, defines = {}, labels }: CatalogueInput): Catalogue {
+/** QMK's keys that ZMK has no binding for: Keyball's own, mouse movement, EEPROM, and two layer keys. */
+const QMK_ONLY = new Set([...KEYBALL, 'EE_CLR', 'KC_MS_U', 'KC_MS_D', 'KC_MS_L', 'KC_MS_R', 'KC_WH_U', 'KC_WH_D', 'KC_WH_L', 'KC_WH_R']);
+const QMK_ONLY_LAYER_FUNCTIONS = new Set(['TT', 'DF']);
+
+export function makeCatalogue({ layers, custom, defines = {}, labels, zmk = false }: CatalogueInput): Catalogue {
   const group = (codes: string[], category: Category): Entry[] => codes.map((code) => ({ code, category, words: wordsFor(code) }));
   const layerEntries: Entry[] = layers.flatMap((name, n) =>
-    LAYER_FUNCTIONS.map((fn) => ({
+    LAYER_FUNCTIONS.filter((fn) => !zmk || !QMK_ONLY_LAYER_FUNCTIONS.has(fn)).map((fn) => ({
       code: `${fn}(${n})`,
       category: 'layers' as const,
       words: lower([`${fn}(${n})`, `${fn} ${n}`, `layer ${n}`, name ?? undefined]),
@@ -188,24 +194,23 @@ export function makeCatalogue({ layers, custom, defines = {}, labels }: Catalogu
     ...Object.keys(defines).map((code) => ({ code, category: 'own' as const, words: lower([code, labels[code]?.en, labels[code]?.ja]) })),
   ];
   const oneShot: Entry[] = Object.entries(ONE_SHOT).map(([code, words]) => ({ code, category: 'modifiers', words: lower([code, ...words]) }));
-  return {
-    entries: [
-      ...group(LETTERS, 'letters'),
-      ...group(NUMBERS, 'numbers'),
-      ...group([...SYMBOLS, ...SHIFTED], 'symbols'),
-      ...group(EDITING, 'editing'),
-      ...group(MODIFIERS, 'modifiers'),
-      ...oneShot,
-      ...group(JAPANESE, 'japanese'),
-      ...group(FUNCTION, 'function'),
-      ...layerEntries,
-      ...group(MOUSE, 'mouse'),
-      ...group(MEDIA, 'media'),
-      ...group(KEYBALL, 'keyball'),
-      ...group(SPECIAL, 'special'),
-      ...own,
-    ],
-  };
+  const entries = [
+    ...group(LETTERS, 'letters'),
+    ...group(NUMBERS, 'numbers'),
+    ...group([...SYMBOLS, ...SHIFTED], 'symbols'),
+    ...group(EDITING, 'editing'),
+    ...group(MODIFIERS, 'modifiers'),
+    ...oneShot,
+    ...group(JAPANESE, 'japanese'),
+    ...group(FUNCTION, 'function'),
+    ...layerEntries,
+    ...group(MOUSE, 'mouse'),
+    ...group(MEDIA, 'media'),
+    ...group(KEYBALL, 'keyball'),
+    ...group(SPECIAL, 'special'),
+    ...own,
+  ];
+  return { entries: zmk ? entries.filter((e) => !QMK_ONLY.has(e.code)) : entries };
 }
 
 /**
