@@ -29,7 +29,9 @@ class ParseDts(unittest.TestCase):
 
 
 class RobaView(unittest.TestCase):
-    view = make_view(ROBA)
+    @classmethod
+    def setUpClass(cls):
+        cls.view = make_view(ROBA)
 
     def test_draws_the_physical_layout_in_key_units(self):
         keys = self.view["keys"]
@@ -74,7 +76,8 @@ class RobaView(unittest.TestCase):
     def test_turns_a_custom_hold_tap_that_holds_a_layer_into_a_layer_tap(self):
         # &lt_to_layer_0 5 APOSTROPHE: hold for layer 5; the tap is a macro (TO_LAYER_0) with the key.
         key = self.view["layers"][0]["keys"][21]
-        self.assertTrue(key.startswith("LT(5,"), key)
+        self.assertEqual(key, "LT(5,ZMK_TO_LAYER_0_70034)")
+        self.assertEqual(self.view["labels"]["ZMK_TO_LAYER_0_70034"]["en"], "TO_LAYER_0 QUOT")
 
     def test_lists_combos_with_their_positions_and_output(self):
         combos = self.view["combos"]
@@ -87,15 +90,77 @@ class RobaView(unittest.TestCase):
 class Meteorite40View(unittest.TestCase):
     def test_reads_a_whole_keyboard(self):
         view = make_view(M40)
-        self.assertGreater(len(view["keys"]), 30)
-        self.assertEqual(len(view["layers"][0]["keys"]), len(view["keys"]))
+        # Rows of 10, 10, 12 and 8 keys in meteorite40.keymap.
+        self.assertEqual(len(view["keys"]), 40)
+        base = view["layers"][0]
+        self.assertEqual(base["name"], "BASE")
+        # &mt LSHIFT A, &kp MINUS, &mkp MB1, &lt 4 SLASH
+        self.assertEqual([base["keys"][i] for i in (10, 19, 25, 31)], ["LSFT_T(KC_A)", "KC_MINS", "KC_BTN1", "LT(4,KC_SLSH)"])
+        # Combos D+F and J+K for layer 0 (LANG1, LANG2); the ones for layer 2 only are left out.
+        outputs = {tuple(c["positions"]): c["output"] for c in view["combos"]}
+        self.assertEqual((outputs[(12, 13)], outputs[(16, 17)]), ("KC_LNG1", "KC_LNG2"))
+        self.assertEqual(len({c["line"] for c in view["combos"]}), len(view["combos"]))
         self.assertEqual(view["balls"], [])
+
+
+def tiny(layers, extra=""):
+    """A devicetree with two keys, the behaviours ZMK defines in the same shape, and these layers."""
+    return """/dts-v1/;
+/ {
+\tchosen {
+\t\tzmk,physical-layout = &pl;
+\t};
+\tbehaviors {
+\t\tkp: key_press { compatible = "zmk,behavior-key-press"; #binding-cells = < 0x1 >; };
+\t\tmo: momentary_layer { compatible = "zmk,behavior-momentary-layer"; #binding-cells = < 0x1 >; };
+\t\tsk: sticky_key { compatible = "zmk,behavior-sticky-key"; #binding-cells = < 0x1 >; bindings = < &kp >; };
+\t\tsl: sticky_layer { compatible = "zmk,behavior-sticky-key"; #binding-cells = < 0x1 >; bindings = < &mo >; };
+\t\tbt: bluetooth { compatible = "zmk,behavior-bluetooth"; #binding-cells = < 0x2 >; };
+\t\tout: outputs { compatible = "zmk,behavior-outputs"; #binding-cells = < 0x1 >; };
+\t};
+\tkpa: key_physical_attrs { compatible = "zmk,key-physical-attrs"; };
+\tpl: layout {
+\t\tcompatible = "zmk,physical-layout";
+\t\tkeys = < &kpa 0x64 0x64 0x0 0x0 0x0 0x0 0x0 >, < &kpa 0x64 0x64 0x64 0x0 0x0 0x0 0x0 >;
+\t};
+\tkeymap {
+\t\tcompatible = "zmk,keymap";
+%s
+\t};
+%s
+};
+""" % (layers, extra)
+
+
+class Synthetic(unittest.TestCase):
+    def test_keeps_text_in_any_script(self):
+        view = make_view(tiny('\t\tbase { display-name = "記号"; bindings = < &kp 0x70004 &kp 0x70005 >; };'))
+        self.assertEqual(view["layers"][0]["name"], "記号")
+
+    def test_fills_a_short_layer_and_leaves_out_unused_layers_at_the_end(self):
+        view = make_view(tiny('\t\tbase { bindings = < &kp 0x70004 >; };\n'
+                              '\t\textra { status = "reserved"; bindings = < &kp 0x70004 &kp 0x70004 >; };'))
+        self.assertEqual(view["layers"][0]["keys"], ["KC_A", "KC_NO"])
+        self.assertEqual(len(view["layers"]), 1)
+
+    def test_reads_sticky_keys_outputs_and_bluetooth(self):
+        # &sk LSHIFT, &sl 2 / &out OUT_USB (1), &bt BT_NXT (1)
+        view = make_view(tiny('\t\ta { bindings = < &sk 0x700e1 &sl 0x2 >; };\n\t\tb { bindings = < &out 0x1 &bt 0x1 0x0 >; };'))
+        self.assertEqual(view["layers"][0]["keys"], ["OSM(MOD_LSFT)", "OSL(2)"])
+        self.assertEqual(view["layers"][1]["keys"], ["ZMK_OUT_USB", "ZMK_BT_NXT"])
+        self.assertEqual(view["labels"]["ZMK_BT_NXT"]["en"], "BT next")
+
+    def test_takes_only_numbers_as_parameters(self):
+        with self.assertRaises(ViewError):
+            make_view(tiny('\t\tbase { bindings = < &mo >, "1),LT(2,KC_A", < &kp 0x70004 >; };'))
 
 
 class Refusals(unittest.TestCase):
     def test_says_why_when_there_is_no_keymap_or_layout(self):
-        with self.assertRaises(ViewError):
+        with self.assertRaisesRegex(ViewError, "no keymap"):
             make_view("/dts-v1/;\n/ {\n};\n")
+        with self.assertRaisesRegex(ViewError, "3 bindings for 2 keys"):
+            make_view(tiny('\t\tbase { bindings = < &kp 0x70004 &kp 0x70004 &kp 0x70004 >; };'))
 
 
 if __name__ == "__main__":
