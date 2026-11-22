@@ -397,13 +397,18 @@ def make_view(dts_text):
     for n, combo in enumerate(combos_node.children if combos_node else []):
         positions = list(combo.prop("key-positions") or [])
         bound = conv.read(combo.prop("bindings") or [])
-        only = combo.prop("layers")
-        # The view draws combos over the base layer; one limited to other layers is left out.
-        if not bound or any(not 0 <= p < len(keys) for p in positions) or (only and 0 not in only):
+        if not bound or any(not 0 <= p < len(keys) for p in positions):
             continue
+        # A combo fires when the highest active layer is one of its `layers`, or on every layer
+        # without them (app/src/combo.c: combo_active_on_layer, an empty layer mask).
+        only = list(combo.prop("layers") or [])
+        shown = next((at for at in only if at < len(layers)), 0)
         # There is no source line to link to; `line` only has to tell combos apart.
-        combos.append({"name": combo.name, "keys": [layers[0]["keys"][p] for p in positions],
-                       "positions": positions, "output": conv.convert(*bound[0]), "line": n + 1})
+        entry = {"name": combo.name, "keys": [layers[shown]["keys"][p] for p in positions],
+                 "positions": positions, "output": conv.convert(*bound[0]), "line": n + 1}
+        if only:
+            entry["layers"] = only
+        combos.append(entry)
 
     return {
         "schema": 1,
