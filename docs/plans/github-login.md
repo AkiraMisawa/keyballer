@@ -70,7 +70,8 @@ Every phase is reviewed adversarially; the findings are folded in below. Facts a
 
 **Checking (`src/lib/provenance.ts`, `src/lib/firmware.ts`).** Keyballer downloads `manifest.json` and the firmware file from the `firmware` branch and hashes both. It reads the run named in the manifest (`run.id`) and the run's artifacts, from the connected repository only. It flashes only if all of these hold:
 - The run's commit is `source.sha`.
-- The run references `AkiraMisawa/keyballer/.github/workflows/build-qmk.yml` at any ref.
+- The run references `AkiraMisawa/keyballer/.github/workflows/build-qmk.yml`, and the workflow commit it used is on Keyballer's own `main`. GitHub serves a fork's commits through the parent's name, so a SHA alone is not Keyballer's code.
+- The repository's default branch is exactly `main`, as the editor already assumes. A renamed or look-alike branch (a Cyrillic `а`) is refused.
 - The run completed successfully.
 - The run's branch is the default branch, and it was started by a push or a manual dispatch.
 - The commit is still on the default branch: the compare API, from the branch head SHA to `source.sha`, reports `identical` or `behind`. SHAs are used, not names, so a tag named like the branch cannot answer for it. A commit force-pushed away from `main` is refused.
@@ -90,13 +91,15 @@ An earlier version used a check run, which any workflow in the repository can cr
   - The flash dialog shows the run, the commit, its message and its date, so I can tell whether I recognise the change.
   - It says plainly that a commit's author, date and message are written by whoever made it. A stolen token acts as my own account, so no identity check can tell the attacker from me.
   - Tokens should be short-lived and scoped (phase 2 and phase 3).
-- **Rolling back** to an older firmware that a run did record is possible, while its commit is still on `main`. The dialog says how many commits `main` has gained since then.
+- **Rolling back** to an older firmware that a run did record is possible, while its commit is still on `main` and its record has not expired. That includes a commit merged in with `-s ours`, and an old run re-run with Actions: write, which renews its record. The dialog says how many commits `main` has gained since then, and when the firmware is older than the last one flashed.
+- **Upstream.** QMK is checked out by version tag, and the build image's Python packages are installed without hashes. Both are trusted upstreams, not inputs a token controls.
 - **What changed.** Keyballer remembers (in `localStorage`; it is not a secret) the commit of the last firmware it flashed from each repository, and the dialog links to the comparison and counts the commits.
 - **Expiry.** Artifacts expire after 90 days; older firmware is built again before flashing.
 
 ### The build's own inputs
 
 `keyballer.json` is untrusted input to the build: its values reach `$GITHUB_OUTPUT`, container images and git. The independent review showed that a newline in `qmk.image` could add lines to the plan job's outputs and run code in the publish job, which could then record a forged manifest in a genuine run. Now:
+- `build_qmk.py` fetches each source repository's branches and tags (history only), and requires one of them to contain `sources[].ref`. A fork's commit, which GitHub also serves through the parent's URL, is refused. This was verified with a real fork commit of `Yowkees/keyball`.
 - `build_qmk.py` checks every value with `fullmatch`:
   - build ids;
   - `qmk.version` (`0.22.14`);
@@ -107,6 +110,8 @@ An earlier version used a check run, which any workflow in the repository can cr
 - The workflow never puts expressions in shell text. Values arrive as environment variables and are quoted.
 - Checkouts do not keep their token (`persist-credentials: false`).
 - The publish job also checks the branch case-sensitively, because GitHub's `==` ignores case.
+
+This validation guards the workflow's own shell. It is not a boundary against the config repository's code: `rules.mk` and `keymap.c` already run in the build job, which could upload a record too. That stays the accepted "commit to `main`" case, because such a record names the attacker's commit, which must still be on `main`.
 
 ### Smaller hardening
 
@@ -133,7 +138,8 @@ An earlier version used a check run, which any workflow in the repository can cr
 
 - **Storage.** The personal access token is kept in memory for the tab, typed in the repository section or in the review. Nothing token-like is written to `localStorage`.
 - **Removing the old token.** On load, `keyballer.token` is removed from `localStorage`. If it was there, a one-time notice says so and links to GitHub's token settings, because deleting a token does not revoke it.
-- **Classic tokens.** A token starting with `ghp_` gets a warning. Classic tokens reach every repository, and can carry `workflow`, which lets a stolen token change what `main` builds. The warning recommends a fine-grained token for the config repository only, with Contents: Read and write and Actions: Read.
+- **Classic tokens are refused.** Tokens starting with `ghp_` are refused. A classic token reaches every repository, `AkiraMisawa/keyballer` included, so a stolen one is an owner compromise: it could change the build workflow itself. Only fine-grained tokens (`github_pat_`) and, locally, the app's tokens (`ghu_`) are taken. The recommended fine-grained token covers the config repository only, with Contents: Read and write and Actions: Read.
+- **Its own origin.** Web Serial permission belongs to the origin. `3style` and `ex-grid` share `akiramisawa.github.io` with Keyballer, so a script on either could use the keyboard's port and set Keyballer's `localStorage`. Only an origin of its own fixes this: the owner creates an organization (for example `keyballer-app`), Keyballer moves there, and callers update `uses:`. Until then, this row is unmitigated.
 
 ## Phase 3: local sign-in
 
@@ -195,7 +201,11 @@ GitHub's web flow with PKCE (S256), in a popup, as reviewed. The device flow was
 | A malicious `?repo=` link, or a page navigating my tab | Me flashing someone else's firmware | Asks first, with the focus on keeping mine. The flash dialog names the source. |
 | A crafted manifest path (`../`) | Authenticated GETs to other API paths | Path and SHA checks, and `getRaw` refuses unsafe paths. |
 | XSS (data from a config repository) | Steal the token | React escapes text, and there is no `innerHTML` (checked). A `script-src 'self'` CSP and Trusted Types (verified to block `innerHTML`). Tokens in memory only (phases 2 and 3). |
-| Other pages on the same origin (`3style`, `ex-grid`) | Read storage, script Keyballer's windows | Tokens are never in storage (phase 2). Local sign-in runs on `127.0.0.1`, its own origin. |
+| Other pages on the same origin (`3style`, `ex-grid`) | Read storage, script Keyballer's windows, use the keyboard's serial port (permission is per origin) | **Unmitigated until Keyballer has its own origin (phase 2).** Tokens are never in storage (phase 2). Local sign-in runs on `127.0.0.1`. |
+| A stolen classic token, or any token that can write `AkiraMisawa/keyballer` | Changing the build workflow or the app itself | An owner compromise, outside what Keyballer can check. Classic tokens are refused (phase 2), and a ruleset on Keyballer's `main` is recommended. |
+| A stolen admin token switches the default branch (a look-alike name) | A record for code that is not on the real `main` | Only `main` is accepted. |
+| A commit to `main` changing `sources[].ref` to a fork's commit | Building someone else's code behind an "upstream" name | The ref must be contained in a branch or tag of the named repository. |
+| A run using a fork or imposter commit of Keyballer's workflow | A forged record | The workflow commit must be on Keyballer's `main`. |
 | Clickjacking | Tricking me into flashing or saving | Framed, only a link renders (verified, including a sandboxed frame). |
 | Other websites calling the local auth endpoints | Using the app's identity | Exact `Origin` and `Host` checks, and JSON only. Codes are useless without the verifier, which stays in the page's memory. |
 | A code or state leaking | Exchanging the code | PKCE, single-use `state`, `replaceState` first, and `no-referrer`. |

@@ -33,6 +33,8 @@ const judge = (over: Partial<Parameters<typeof judgeProvenance>[0]> = {}) =>
     file: { expected: ABC, actual: ABC },
     // The compare API's status for <default branch head>...<source commit>.
     branchStatus: 'identical',
+    // Whether the workflow commit the run used is on Keyballer's own main branch.
+    workflowOnKeyballerMain: true,
     ...over,
   });
 
@@ -88,6 +90,19 @@ describe('judgeProvenance', () => {
   it('refuses a commit that is no longer on the default branch (force-pushed away)', () => {
     expect(judge({ branchStatus: 'diverged' })).toEqual({ ok: false, reason: 'provenance.err.notDefault' });
     expect(judge({ branchStatus: 'ahead' })).toEqual({ ok: false, reason: 'provenance.err.notDefault' });
+  });
+
+  it('refuses a run that used a Keyballer workflow commit not on Keyballer main (a fork or imposter commit)', () => {
+    expect(judge({ workflowOnKeyballerMain: false })).toEqual({ ok: false, reason: 'provenance.err.workflow' });
+  });
+
+  it('works only with main, so a renamed or look-alike default branch cannot stand in', () => {
+    // A Cyrillic "а" in place of the Latin "a".
+    expect(judge({ defaultBranch: 'm\u0430in', run: run({ head_branch: 'm\u0430in' }) })).toEqual({
+      ok: false,
+      reason: 'provenance.err.notMain',
+    });
+    expect(judge({ defaultBranch: 'master', run: run({ head_branch: 'master' }) })).toEqual({ ok: false, reason: 'provenance.err.notMain' });
   });
 
   it('refuses a build run for another branch or started some other way', () => {

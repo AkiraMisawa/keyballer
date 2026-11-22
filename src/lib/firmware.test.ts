@@ -10,10 +10,12 @@ const SOURCE = 'a'.repeat(40);
 const HEAD = 'b'.repeat(40);
 const FIRMWARE = 'f'.repeat(40);
 const RUN = 4242;
+const KB_HEAD = 'c'.repeat(40);
+const KB_OLD = 'd'.repeat(40);
 // A one-byte Intel HEX image: byte 0xAA at address 0 (record checksum 0x55), then end of file.
 const IMAGE_HEX = ':01000000AA55\r\n:00000001FF\r\n';
 
-async function setup(over: { artifactFor?: (digest: string) => string; runBranch?: string; hex?: string } = {}) {
+async function setup(over: { artifactFor?: (digest: string) => string; runBranch?: string; hex?: string; workflowSha?: string } = {}) {
   const enc = new TextEncoder();
   const hex = enc.encode(over.hex ?? IMAGE_HEX);
   const manifest = enc.encode(
@@ -34,6 +36,9 @@ async function setup(over: { artifactFor?: (digest: string) => string; runBranch
       const u = new URL(url);
       requested.push(u.pathname + u.search);
       const p = u.pathname;
+      if (p === '/repos/AkiraMisawa/keyballer/git/ref/heads/main') return json({ object: { sha: KB_HEAD } });
+      if (p === `/repos/AkiraMisawa/keyballer/compare/${KB_HEAD}...${KB_OLD}`) return json({ status: 'behind', behind_by: 3, ahead_by: 0, html_url: 'k' });
+      if (p.startsWith('/repos/AkiraMisawa/keyballer/compare/')) return json({ status: 'ahead', behind_by: 0, ahead_by: 1, html_url: 'k' });
       if (!p.startsWith('/repos/me/config')) return new Response('{}', { status: 404 });
       if (p.endsWith('/contents/manifest.json')) return new Response(manifest);
       if (p.endsWith('/contents/kb.hex')) return new Response(hex);
@@ -45,7 +50,7 @@ async function setup(over: { artifactFor?: (digest: string) => string; runBranch
           head_sha: SOURCE,
           status: 'completed',
           conclusion: 'success',
-          referenced_workflows: [{ path: 'AkiraMisawa/keyballer/.github/workflows/build-qmk.yml@main' }],
+          referenced_workflows: [{ path: 'AkiraMisawa/keyballer/.github/workflows/build-qmk.yml@main', sha: over.workflowSha ?? KB_OLD }],
         });
       }
       if (p.endsWith(`/actions/runs/${RUN}/artifacts`)) {
@@ -70,7 +75,8 @@ describe('loadVerifiedFirmware', () => {
     const verified = await loadVerifiedFirmware(REPO, FIRMWARE, 'kb', '');
     expect([...verified.image.slice(0, 1)]).toEqual([0xaa]);
     expect(verified.source).toMatchObject({ sha: SOURCE, branch: 'main', behindBy: 2, repository: 'me/config' });
-    expect(requested.every((r) => r.startsWith('/repos/me/config'))).toBe(true);
+    // Lookups about the firmware go to the connected repository; Keyballer's repo is asked only about its workflow.
+    expect(requested.every((r) => r.startsWith('/repos/me/config') || r.startsWith('/repos/AkiraMisawa/keyballer/'))).toBe(true);
   });
 
   it('refuses when the run kept no record of these manifest bytes', async () => {
@@ -81,6 +87,11 @@ describe('loadVerifiedFirmware', () => {
   it('refuses a firmware file that differs from the manifest', async () => {
     await setup({ hex: ':01000000BB44\r\n:00000001FF\r\n' });
     await expect(loadVerifiedFirmware(REPO, FIRMWARE, 'kb', '')).rejects.toMatchObject({ key: 'provenance.err.mismatch' });
+  });
+
+  it('refuses a run that used a workflow commit not on Keyballer main', async () => {
+    await setup({ workflowSha: 'e'.repeat(40) });
+    await expect(loadVerifiedFirmware(REPO, FIRMWARE, 'kb', '')).rejects.toMatchObject({ key: 'provenance.err.workflow' });
   });
 
   it('refuses a build run of another branch', async () => {

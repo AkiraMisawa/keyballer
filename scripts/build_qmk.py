@@ -190,10 +190,23 @@ def fetch_source(src, work_dir, qmk):
     if head != src["ref"]:
         shutil.rmtree(dest, ignore_errors=True)
         dest.mkdir(parents=True)
-        run(["git", "-C", str(dest), "init", "--quiet"])
-        run(["git", "-C", str(dest), "fetch", "--quiet", "--depth", "1",
-             "https://github.com/{}.git".format(src["repo"]), src["ref"]])
-        run(["git", "-C", str(dest), "checkout", "--quiet", "FETCH_HEAD"])
+        git = ["git", "-C", str(dest)]
+        run(git + ["init", "--quiet"])
+        run(git + ["remote", "add", "origin", "https://github.com/{}.git".format(src["repo"])])
+        # GitHub serves any commit of a fork network through the parent's URL, so a SHA alone does
+        # not prove the code is the named repository's. Fetch its branches and tags (history only,
+        # no file contents) and require one of them to contain the commit.
+        run(git + ["fetch", "--quiet", "--filter=blob:none", "origin",
+                   "+refs/heads/*:refs/remotes/origin/*", "+refs/tags/*:refs/tags/*"])
+        containing = subprocess.run(
+            git + ["for-each-ref", "--count=1", "--contains", src["ref"], "refs/remotes/origin", "refs/tags"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+        ).stdout.strip()
+        if not containing:
+            raise ConfigError(
+                "{} has no branch or tag containing {}: it may be a fork's commit".format(src["repo"], src["ref"])
+            )
+        run(git + ["checkout", "--quiet", src["ref"]])
 
     target = dest / src["path"]
     if not target.is_dir():

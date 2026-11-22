@@ -14,6 +14,12 @@ import type { MessageKey } from '../i18n/messages';
 
 /** The reusable workflow that config repositories call to build firmware; any ref of it. */
 const KEYBALLER_WORKFLOW = 'AkiraMisawa/keyballer/.github/workflows/build-qmk.yml@';
+/** Keyballer builds, saves and flashes from this branch (the editor commits to it too). */
+export const BRANCH = 'main';
+
+/** The Keyballer workflow commit a run used, if it used Keyballer's workflow. */
+export const keyballerWorkflowSha = (run: ProvenanceRun): string | undefined =>
+  (run.referenced_workflows ?? []).find((w) => w.path.startsWith(KEYBALLER_WORKFLOW))?.sha;
 
 /** The fields of a GitHub Actions workflow run that provenance reads. */
 export interface ProvenanceRun {
@@ -23,7 +29,7 @@ export interface ProvenanceRun {
   head_sha: string;
   status: string | null;
   conclusion: string | null;
-  referenced_workflows?: { path: string }[] | null;
+  referenced_workflows?: { path: string; sha?: string }[] | null;
 }
 
 export interface RunArtifact {
@@ -53,6 +59,7 @@ export function judgeProvenance({
   manifest,
   file,
   branchStatus,
+  workflowOnKeyballerMain,
 }: {
   run: ProvenanceRun;
   artifacts: readonly RunArtifact[];
@@ -66,6 +73,11 @@ export function judgeProvenance({
    * when the commit is still on the default branch. Anything else means it was force-pushed away.
    */
   branchStatus: CompareStatus;
+  /**
+   * Whether the Keyballer workflow commit the run used is on Keyballer's own main branch. GitHub
+   * serves a fork's commits through the parent's name, so a SHA alone is not Keyballer's code.
+   */
+  workflowOnKeyballerMain: boolean;
 }): Verdict {
   const usesKeyballer = (run.referenced_workflows ?? []).some((w) => w.path.startsWith(KEYBALLER_WORKFLOW));
   const isTheBuild =
@@ -75,6 +87,9 @@ export function judgeProvenance({
     run.status === 'completed' &&
     run.conclusion === 'success';
   if (!isTheBuild || file.expected === undefined) return { ok: false, reason: 'provenance.err.noRecord' };
+  if (!workflowOnKeyballerMain) return { ok: false, reason: 'provenance.err.workflow' };
+  // Exactly "main": a renamed or look-alike default branch (Cyrillic "а") is not it.
+  if (defaultBranch !== BRANCH) return { ok: false, reason: 'provenance.err.notMain' };
   if (run.head_branch !== defaultBranch || !STARTED_ON_PURPOSE.has(run.event) || !STILL_ON_BRANCH.has(branchStatus)) {
     return { ok: false, reason: 'provenance.err.notDefault' };
   }
