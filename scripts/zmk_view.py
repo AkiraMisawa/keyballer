@@ -41,7 +41,7 @@ class Node:
 _TOKEN = re.compile(r'''
     \s+ | /\*.*?\*/ | //[^\n]*                       # space and comments
   | (?P<string>"(?:[^"\\]|\\.)*")
-  | (?P<ref>&[A-Za-z0-9_]+)
+  | (?P<ref>&(?:[A-Za-z0-9_]+|\{[^}]*\}))
   | (?P<labeldef>[A-Za-z_][A-Za-z0-9_]*):(?=\s)
   | (?P<punct>[{}<>\[\];=])
   | (?P<comma>,)(?=\s)
@@ -59,6 +59,11 @@ def _tokens(text):
         kind = m.lastgroup
         if kind:
             yield kind, m.group(kind)
+
+
+def _unescape(text):
+    """A string as dtlib writes it: UTF-8 kept as it is, with backslash escapes."""
+    return re.sub(r'\\(.)', lambda m: {"n": "\n", "t": "\t", "r": "\r"}.get(m.group(1), m.group(1)), text)
 
 
 def parse_dts(text):
@@ -89,7 +94,7 @@ def parse_dts(text):
                         raise ViewError("zephyr.dts: unexpected {!r} in cells".format(t))
                 take()
             elif kind == "string":
-                values.append(bytes(tok[1:-1], "utf-8").decode("unicode_escape"))
+                values.append(_unescape(tok[1:-1]))
             elif kind == "ref":
                 values.append(tok)
             elif tok == "[":
@@ -143,21 +148,31 @@ def parse_dts(text):
 
 # --- Keycodes ---------------------------------------------------------------------------------
 
-# HID keyboard page (0x07) usages, which QMK's basic keycodes share (QMK data/constants/keycodes,
-# keycodes_0.0.1_basic.hjson), by QMK's short names.
-_BASIC = {}
-for _i, _c in enumerate("ABCDEFGHIJKLMNOPQRSTUVWXYZ"):
-    _BASIC[0x04 + _i] = "KC_" + _c
-for _i, _c in enumerate("123456789"):
-    _BASIC[0x1E + _i] = "KC_" + _c
-for _i in range(12):
-    _BASIC[0x3A + _i] = "KC_F{}".format(_i + 1)
-    _BASIC[0x68 + _i] = "KC_F{}".format(_i + 13)
-for _i in range(9):
-    _BASIC[0x59 + _i] = "KC_P{}".format(_i + 1)
-    _BASIC[0x87 + _i] = "KC_INT{}".format(_i + 1)
-    _BASIC[0x90 + _i] = "KC_LNG{}".format(_i + 1)
-_BASIC.update({
+_MODIFIERS = ["LCTL", "LSFT", "LALT", "LGUI", "RCTL", "RSFT", "RALT", "RGUI"]
+
+
+def _basic_keycodes():
+    """HID keyboard page (0x07) usages, which QMK's basic keycodes share (QMK data/constants/keycodes,
+    keycodes_0.0.1_basic.hjson), by QMK's short names."""
+    table = {}
+    for i, c in enumerate("ABCDEFGHIJKLMNOPQRSTUVWXYZ"):
+        table[0x04 + i] = "KC_" + c
+    for i, c in enumerate("123456789"):
+        table[0x1E + i] = "KC_" + c
+    for i in range(12):
+        table[0x3A + i] = "KC_F{}".format(i + 1)
+        table[0x68 + i] = "KC_F{}".format(i + 13)
+    for i in range(9):
+        table[0x59 + i] = "KC_P{}".format(i + 1)
+        table[0x87 + i] = "KC_INT{}".format(i + 1)
+        table[0x90 + i] = "KC_LNG{}".format(i + 1)
+    for i, m in enumerate(_MODIFIERS):
+        table[0xE0 + i] = "KC_" + m
+    table.update(_BASIC_NAMED)
+    return table
+
+
+_BASIC_NAMED = {
     0x27: "KC_0", 0x28: "KC_ENT", 0x29: "KC_ESC", 0x2A: "KC_BSPC", 0x2B: "KC_TAB", 0x2C: "KC_SPC",
     0x2D: "KC_MINS", 0x2E: "KC_EQL", 0x2F: "KC_LBRC", 0x30: "KC_RBRC", 0x31: "KC_BSLS", 0x32: "KC_NUHS",
     0x33: "KC_SCLN", 0x34: "KC_QUOT", 0x35: "KC_GRV", 0x36: "KC_COMM", 0x37: "KC_DOT", 0x38: "KC_SLSH",
@@ -166,11 +181,11 @@ _BASIC.update({
     0x51: "KC_DOWN", 0x52: "KC_UP", 0x53: "KC_NUM", 0x54: "KC_PSLS", 0x55: "KC_PAST", 0x56: "KC_PMNS",
     0x57: "KC_PPLS", 0x58: "KC_PENT", 0x62: "KC_P0", 0x63: "KC_PDOT", 0x64: "KC_NUBS", 0x65: "KC_APP",
     0x67: "KC_PEQL", 0x7F: "KC_KB_MUTE", 0x80: "KC_KB_VOLUME_UP", 0x81: "KC_KB_VOLUME_DOWN",
-    0x85: "KC_PCMM",
-})
-_MODIFIERS = ["LCTL", "LSFT", "LALT", "LGUI", "RCTL", "RSFT", "RALT", "RGUI"]
-for _i, _m in enumerate(_MODIFIERS):
-    _BASIC[0xE0 + _i] = "KC_" + _m
+    0x85: "KC_PCMM", 0x66: "KC_KB_POWER", 0x74: "KC_EXEC", 0x75: "KC_HELP", 0x76: "KC_MENU",
+    0x77: "KC_SLCT", 0x78: "KC_STOP", 0x79: "KC_AGIN", 0x7A: "KC_UNDO", 0x7B: "KC_CUT", 0x7C: "KC_COPY",
+    0x7D: "KC_PSTE", 0x7E: "KC_FIND",
+}
+_BASIC = _basic_keycodes()
 # HID consumer page (0x0C) usages that QMK has keycodes for.
 _CONSUMER = {
     0xE2: "KC_MUTE", 0xE9: "KC_VOLU", 0xEA: "KC_VOLD", 0xB5: "KC_MNXT", 0xB6: "KC_MPRV", 0xB7: "KC_MSTP",
@@ -228,7 +243,10 @@ class Converter:
             if not isinstance(ref, str):
                 raise ViewError("bindings: expected a behaviour at cell {}".format(i))
             node, count = self.cells(ref)
-            out.append((node, ref, cells[i + 1:i + 1 + count]))
+            params = cells[i + 1:i + 1 + count]
+            if len(params) != count or not all(isinstance(x, int) for x in params):
+                raise ViewError("bindings: {} needs {} number(s)".format(ref, count))
+            out.append((node, ref, params))
             i += 1 + count
         return out
 
@@ -249,11 +267,13 @@ class Converter:
         if kind == "to-layer":
             return "TO({})".format(p[0])
         if kind == "sticky-key":
+            inner = self._behaviour((node.prop("bindings") or [None])[0])
             mod = _modifier_of(p[0])
-            if mod and node.prop("bindings") and self._behaviour(node.prop("bindings")[0]) == "key-press":
+            if inner == "key-press" and mod:
                 return "OSM(MOD_{})".format(mod)
-            if node.prop("bindings") and self._behaviour(node.prop("bindings")[0]) == "momentary-layer":
+            if inner == "momentary-layer":
                 return "OSL({})".format(p[0])
+            return self._named(node, ref, params)
         if kind == "mouse-key-press":
             for bit in range(5):
                 if p[0] & (1 << bit):
@@ -282,7 +302,7 @@ class Converter:
         return ((node.prop("compatible") or [""])[0] if node else "").replace("zmk,behavior-", "")
 
     def _hold_tap(self, node, ref, p):
-        hold_ref, tap_ref = (node.prop("bindings") + [None, None])[:2]
+        hold_ref, tap_ref = ((node.prop("bindings") or []) + [None, None])[:2]
         tap_node = self.labelled.get(tap_ref)
         tap = self.convert(tap_node, tap_ref, [p[1]]) if tap_node else None
         hold = self._behaviour(hold_ref)
@@ -308,7 +328,9 @@ class Converter:
 def _param_word(param):
     """A parameter as the key it names (APOSTROPHE as QUOT), or as a number."""
     name = keycode(param) if param > 0xFFFF else None
-    return name[3:] if name and name.startswith("KC_") else name or str(param)
+    if name:
+        return name[3:] if name.startswith("KC_") else name
+    return str(param) if param <= 0xFFFF else "0x{:X}".format(param)
 
 
 # --- The view ---------------------------------------------------------------------------------
@@ -345,24 +367,35 @@ def make_view(dts_text):
     conv = Converter(root)
     layout_name, keys = _layout(root, conv.labelled)
 
+    # Layers that are not in use (status other than okay) at the end are left out; one in the middle
+    # stays, so that layer numbers keep meaning the same layer.
+    nodes = list(keymap.children)
+    while nodes and (nodes[-1].prop("status") or ["okay"])[0] != "okay":
+        nodes.pop()
     layers = []
-    for layer in keymap.children:
+    for layer in nodes:
         bindings = [conv.convert(*b) for b in conv.read(layer.prop("bindings") or [])]
-        if len(bindings) != len(keys):
+        if len(bindings) > len(keys):
             raise ViewError("layer {} has {} bindings for {} keys".format(layer.name, len(bindings), len(keys)))
-        layers.append({"name": (layer.prop("display-name") or [layer.name])[0], "ball": None, "keys": bindings})
+        # ZMK leaves the keys past the last binding without one.
+        bindings += ["KC_NO"] * (len(keys) - len(bindings))
+        name = (layer.prop("display-name") or layer.prop("label") or [layer.name])[0]
+        layers.append({"name": name, "ball": None, "keys": bindings})
     if not layers:
         raise ViewError("the keymap has no layers")
 
     combos = []
     combos_node = next((n for n in root.walk() if (n.prop("compatible") or [None])[0] == "zmk,combos"), None)
-    for combo in combos_node.children if combos_node else []:
+    for n, combo in enumerate(combos_node.children if combos_node else []):
         positions = list(combo.prop("key-positions") or [])
         bound = conv.read(combo.prop("bindings") or [])
-        if not bound or any(not 0 <= p < len(keys) for p in positions):
+        only = combo.prop("layers")
+        # The view draws combos over the base layer; one limited to other layers is left out.
+        if not bound or any(not 0 <= p < len(keys) for p in positions) or (only and 0 not in only):
             continue
+        # There is no source line to link to; `line` only has to tell combos apart.
         combos.append({"keys": [layers[0]["keys"][p] for p in positions], "positions": positions,
-                       "output": conv.convert(*bound[0]), "line": 0})
+                       "output": conv.convert(*bound[0]), "line": n + 1})
 
     return {
         "schema": 1,

@@ -258,17 +258,17 @@ def prepare_workspace(config_dir, work_dir):
 def write_view(build, build_dir, out_dir):
     """Writes <id>.view.json from the final devicetree; returns view, or view_error. A view that
     cannot be made never fails the build."""
+    name = "{}.view.json".format(build["id"])
     try:
         view = make_view((build_dir / "zephyr" / "zephyr.dts").read_text(encoding="utf-8"))
+        view["keyboard"] = "{} {}".format(build["board"], build["shield"])
+        (out_dir / name).write_text(json.dumps(view, ensure_ascii=False) + "\n", encoding="utf-8")
     except ViewError as e:
         print("No keymap view for {}: {}".format(build["id"], e), flush=True)
         return {"view_error": str(e)}
     except Exception as e:  # the view must never fail the build
         print("No keymap view for {}: {!r}".format(build["id"], e), flush=True)
         return {"view_error": "Keyballer could not read the build's devicetree ({}: {})".format(type(e).__name__, e)}
-    view["keyboard"] = "{} {}".format(build["board"], build["shield"])
-    name = "{}.view.json".format(build["id"])
-    (out_dir / name).write_text(json.dumps(view, ensure_ascii=False) + "\n", encoding="utf-8")
     return {"view": name}
 
 

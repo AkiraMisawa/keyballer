@@ -43,7 +43,8 @@ The same model as QMK: Keyballer's own reusable workflow builds the firmware, pu
 - **Bindings, as the QMK keycode that means the same:** `&kp` usages (HID keyboard and consumer pages; implicit modifiers in the top byte become `LSFT(…)` and so on), hold-taps holding a modifier as `LALT_T(…)` and holding a layer as `LT(n, …)`, `&mo`, `&to`, `&tog`, `&sl`, `&sk`, `&trans`, `&none`, `&mkp`, `&bootloader`, `&sys_reset`, `&caps_word`, `&key_repeat`. Behaviours are recognised by their node's `compatible`, so a renamed or custom hold-tap reads the same.
 - **No QMK keycode** (Bluetooth, output selection, macros, mouse movement, underglow…): a name of Keyballer's own (`ZMK_BT_SEL_0`) with a label (`BT 1`).
 - **Combos:** key positions and output; their trigger keys are the base layer's keys there.
-- **Not yet:** the trackball (its position is not in the devicetree), layer names beyond the node names, and links to `.keymap` lines.
+- **Layers:** named by `display-name`, then `label`, then the node name, as ZMK does. A layer with fewer bindings than keys is filled with no action, as ZMK leaves those keys; unused layers (`status` other than okay) at the end are left out, so that layer numbers keep their meaning.
+- **Not yet:** the trackball (its position is not in the devicetree), combos limited to layers other than the base layer, and links to `.keymap` lines.
 - **Errors:** a view that cannot be made is recorded as `view_error` and never fails the build; the settings reset gets none.
 
 ## Decisions
