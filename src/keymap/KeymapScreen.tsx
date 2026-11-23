@@ -131,18 +131,30 @@ export function KeymapScreen(props: Props) {
   const backButton = useRef<HTMLButtonElement>(null);
   const focusAfter = useRef(false);
 
+  // The view is read again only for another build or repository, or when a token arrives after
+  // it could not be read (a private repository). Pasting a token in the save review must not
+  // read it again: the screen behind the review would be drawn anew, and the review closed.
+  // Meanwhile the view shown stays until the new one is read.
+  const tokenRef = useRef(token);
+  tokenRef.current = token;
+  const [viewAttempt, setViewAttempt] = useState(0);
   useEffect(() => {
     if (!build.view) return;
     let live = true;
-    setView(null);
     setLoadError(null);
-    getFirmwareText(repo, firmwareSha, build.view, token)
+    getFirmwareText(repo, firmwareSha, build.view, tokenRef.current)
       .then((text) => live && setView(parseView(JSON.parse(text))))
       .catch((e: unknown) => live && setLoadError(e));
     return () => {
       live = false;
     };
-  }, [build.view, repo, firmwareSha, token]);
+  }, [build.view, repo, firmwareSha, viewAttempt]);
+  const failedView = loadError !== null && builtView === null;
+  useEffect(() => {
+    if (failedView && token) setViewAttempt((n) => n + 1);
+    // Only a new token tries again; a failure alone must not loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
   // Focus moves on (DESIGN.md §8): to the board once it is drawn, or to Back when there is nothing to see.
   const settled = builtView !== null || loadError !== null || !build.view;
