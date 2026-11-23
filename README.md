@@ -79,7 +79,7 @@ keymaps/<keymap>/           QMK keymap (keymap.c, config.h, rules.mk)
 
 | Field | Meaning |
 | --- | --- |
-| `qmk.version` | QMK tag to build with |
+| `qmk.version` | QMK tag to build with. Before changing it, see [docs/plans/qmk-upgrades.md](docs/plans/qmk-upgrades.md) |
 | `qmk.image` | (Optional) `ghcr.io/qmk/qmk_cli` image to build in. Defaults to one tested with QMK 0.22.14 |
 | `sources[]` | Keyboard definitions that are not in qmk_firmware. `path` in `repo` at `ref` is used as QMK's `keyboards/<as>` |
 | `builds[].id` | ID used for output file names (lowercase letters, digits, `-`, `_`) |

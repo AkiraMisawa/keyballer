@@ -79,7 +79,7 @@ keymaps/<keymap>/           QMK のキーマップ（keymap.c、config.h、rules
 
 | 項目 | 内容 |
 | --- | --- |
-| `qmk.version` | 使う QMK のタグ |
+| `qmk.version` | 使う QMK のタグ。変える前に [docs/plans/qmk-upgrades.md](docs/plans/qmk-upgrades.md)（英語）を見てください |
 | `qmk.image` | （省略可）ビルドに使う `ghcr.io/qmk/qmk_cli` のイメージ。省略すると QMK 0.22.14 で動作確認済みのものを使います |
 | `sources[]` | QMK 本体にない機種定義の取り込み元。`repo` の `ref` の時点の `path` を、QMK の `keyboards/<as>` として使います |
 | `builds[].id` | 出力ファイル名に使う ID（英小文字・数字・`-`・`_`） |
