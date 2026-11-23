@@ -46,10 +46,18 @@ interface RepoState {
   runs: WorkflowRun[];
 }
 
+/**
+ * While a build runs, how often to check on it: GitHub allows 60 requests an hour without a token
+ * (each check is one), 5,000 with one.
+ */
 const POLL_MS = 30_000;
+const POLL_MS_WITHOUT_TOKEN = 60_000;
 /** After a save, how often and how long to look for the build it started. */
-const AWAIT_RUN_POLL_MS = 5_000;
+const AWAIT_RUN_POLL_MS = 10_000;
 const AWAIT_RUN_MS = 180_000;
+
+/** Whether an error is GitHub's request limit: checking again only uses up the wait. */
+const isRateLimit = (e: unknown) => e instanceof LocalizedError && (e.key === 'gh.err.rateLimit' || e.key === 'gh.err.rateLimitUntil');
 
 /** english / japanese (and en, ja, 英語, 日本語) as a language. */
 function toLang(value: string): Lang | undefined {
@@ -195,13 +203,33 @@ export function App({ forgottenToken = null }: { forgottenToken?: ForgottenToken
     void connect(repoInput);
   }, [connect, repoInput]);
 
-  // While a build is running, check on it every 30 seconds.
+  /**
+   * Checks on the builds with one request: the firmware branch and its manifest are read again
+   * only when a build has finished since the last look.
+   */
+  const checkRuns = useCallback(async () => {
+    if (!repo) return;
+    try {
+      const runs = await getBuildRuns(repo.ref, tokenRef.current);
+      const finished = runs.some((r) => r.status === 'completed' && !repo.runs.some((o) => o.id === r.id && o.status === 'completed'));
+      setRepo(finished ? await fetchState(repo.ref) : { ...repo, runs });
+      setError(null);
+    } catch (e) {
+      setError(e);
+    }
+  }, [repo, fetchState]);
+
+  // While a build is running, check on it: every 30 seconds, or every minute without a token.
+  // Not while the tab is hidden, and not once GitHub's limit is reached.
   const building = repo?.runs[0] && repo.runs[0].status !== 'completed';
+  const limited = isRateLimit(error);
   useEffect(() => {
-    if (!building) return;
-    const timer = setInterval(() => void refresh(), POLL_MS);
+    if (!building || limited) return;
+    const timer = setInterval(() => {
+      if (!document.hidden) void checkRuns();
+    }, tokenRef.current ? POLL_MS : POLL_MS_WITHOUT_TOKEN);
     return () => clearInterval(timer);
-  }, [building, refresh]);
+  }, [building, limited, checkRuns]);
 
   /**
    * Asked before leaving or switching the keymap screen: it runs `go` at once, or after asking when
@@ -280,18 +308,18 @@ export function App({ forgottenToken = null }: { forgottenToken?: ForgottenToken
   // After saving from the keymap screen, look for the build it started until GitHub lists it.
   const [awaitingRun, setAwaitingRun] = useState<string | null>(null);
   const awaitedListed = !!awaitingRun && !!repo?.runs.some((r) => r.head_sha === awaitingRun);
+  const checkRunsRef = useRef(checkRuns);
+  checkRunsRef.current = checkRuns;
   useEffect(() => {
-    if (!awaitingRun || awaitedListed) return;
+    if (!awaitingRun || awaitedListed || limited) return;
     const startedAt = Date.now();
-    void refresh();
+    void checkRunsRef.current();
     const timer = setInterval(() => {
       if (Date.now() - startedAt > AWAIT_RUN_MS) setAwaitingRun(null);
-      else void refresh();
+      else if (!document.hidden) void checkRunsRef.current();
     }, AWAIT_RUN_POLL_MS);
     return () => clearInterval(timer);
-    // refresh changes with each repository state; the timer only needs to start once per save.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [awaitingRun, awaitedListed]);
+  }, [awaitingRun, awaitedListed, limited]);
 
   const openTarget = (next: FlashTarget) => {
     returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
