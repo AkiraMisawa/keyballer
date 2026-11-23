@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { appReaches, getBuildRuns, getFirmwareText, getTextAt, parseRepo } from './github';
+import { appReaches, getBuildRuns, getFirmwareText, getTextAt, GitHubError, parseRepo, statusError } from './github';
 
 describe('parseRepo', () => {
   it('accepts owner/repo', () => {
@@ -161,3 +161,17 @@ describe('reading files at a commit without a token', () => {
     expect(spy.mock.calls.every(([url]) => String(url).startsWith('https://api.github.com/'))).toBe(true);
   });
 });
+
+describe('the API limit', () => {
+  it('says when the limit comes back', () => {
+    const reset = 1795392000; // a whole minute, as GitHub sends it
+    const e = statusError(new Response('', { status: 403, headers: { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(reset) } }));
+    expect(e).toBeInstanceOf(GitHubError);
+    const at = new Date(reset * 1000);
+    expect(e.key).toBe('gh.err.rateLimitUntil');
+    expect(e.params).toEqual({ time: `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}` });
+    // Without the time, the plain message.
+    expect(statusError(new Response('', { status: 429, headers: { 'x-ratelimit-remaining': '0' } })).key).toBe('gh.err.rateLimit');
+  });
+});
+

@@ -613,6 +613,7 @@ export const en = {
 
   'gh.err.badToken': 'The token is not valid',
   'gh.err.rateLimit': 'You have reached the GitHub API rate limit. Wait a while or set a token',
+  'gh.err.rateLimitUntil': 'GitHub allows 60 requests an hour without a token, and they are used up until {time}. Paste a token under Token to go on now: it allows 5,000.',
   'gh.err.notFound': 'Not found',
   'gh.err.status': 'GitHub API returned an error ({status})',
   'gh.err.repoNotFound': '{repo} was not found. If it is private, set a token',
@@ -1238,6 +1239,7 @@ export const ja: Record<MessageKey, string> = {
   'gh.err.badToken': 'トークンが無効です',
   'gh.err.rateLimit':
     'GitHub API の利用回数の上限に達しました。しばらく待つか、トークンを設定してください',
+  'gh.err.rateLimitUntil': 'トークンなしで使える GitHub API（1 時間 60 回）を使い切りました。{time} に戻ります。今すぐ続けるには「トークン」欄にトークンを貼ってください（1 時間 5,000 回になります）。',
   'gh.err.notFound': '見つかりません',
   'gh.err.status': 'GitHub API がエラーを返しました（{status}）',
   'gh.err.repoNotFound': '{repo} が見つかりません。非公開リポジトリならトークンを設定してください',

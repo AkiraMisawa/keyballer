@@ -72,7 +72,12 @@ export function githubFetch(path: string, { token, accept, method = 'GET', body,
 export function statusError(res: Response): GitHubError {
   if (res.status === 401) return new GitHubError('gh.err.badToken', 401);
   if ((res.status === 403 || res.status === 429) && res.headers.get('x-ratelimit-remaining') === '0') {
-    return new GitHubError('gh.err.rateLimit', res.status);
+    // When the limit comes back, as the computer's clock reads it.
+    const reset = Number(res.headers.get('x-ratelimit-reset'));
+    if (!Number.isFinite(reset) || reset <= 0) return new GitHubError('gh.err.rateLimit', res.status);
+    const at = new Date(reset * 1000);
+    const time = `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
+    return new GitHubError('gh.err.rateLimitUntil', res.status, { time });
   }
   if (res.status === 404) return new GitHubError('gh.err.notFound', 404);
   return new GitHubError('gh.err.status', res.status, { status: String(res.status) });
