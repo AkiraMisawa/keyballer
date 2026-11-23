@@ -20,6 +20,10 @@ describe('parseRepo', () => {
   it('rejects anything else', () => {
     expect(parseRepo('keyballer-config')).toBeNull();
     expect(parseRepo('a b/c')).toBeNull();
+    // Names of only dots would make URLs that leave the repository's place.
+    expect(parseRepo('../evil')).toBeNull();
+    expect(parseRepo('a/..')).toBeNull();
+    expect(parseRepo('a/.')).toBeNull();
   });
 });
 
@@ -97,21 +101,53 @@ describe('reading files at a commit without a token', () => {
   afterEach(() => vi.unstubAllGlobals());
   const repo = { owner: 'AkiraMisawa', repo: 'keyballer-config' };
   const SHA = '05a21d7c0ffee0000000000000000000000000ab';
-  const calls = (spy: { mock: { calls: unknown[][] } }) => spy.mock.calls.map(([url, init]) => [String(url), (init as RequestInit | undefined)?.headers]);
+  const CONFIG = '#pragma once\n';
+  // git hash-object of "#pragma once\n".
+  const CONFIG_BLOB = '6f70f09beec2219624baeca92e2cd7deaa104fb4';
+  const tree = (entries: Record<string, string>) =>
+    Response.json({ truncated: false, tree: Object.entries(entries).map(([path, sha]) => ({ path, type: 'blob', sha })) });
 
-  it('reads from raw.githubusercontent.com, without sending anything else, and caches it', async () => {
-    const spy = vi.fn(async (_url: string, _init?: RequestInit) => new Response('#pragma once\n'));
+  it('reads a top-level file from raw, sending nothing else, and keeps it cached', async () => {
+    const spy = vi.fn(async (_url: string, _init?: RequestInit) => new Response('{"schema": 1}'));
     vi.stubGlobal('fetch', spy);
-    expect(await getTextAt(repo, 'keymaps/am338/config.h', SHA, '')).toBe('#pragma once\n');
-    expect(calls(spy)).toEqual([[`https://raw.githubusercontent.com/AkiraMisawa/keyballer-config/${SHA}/keymaps/am338/config.h`, undefined]]);
-    expect(spy.mock.calls[0][1]).toMatchObject({ cache: 'force-cache', credentials: 'omit', redirect: 'error' });
+    expect(await getTextAt(repo, 'manifest.json', SHA, '')).toBe('{"schema": 1}');
+    expect(spy.mock.calls.map(([url]) => url)).toEqual([`https://raw.githubusercontent.com/AkiraMisawa/keyballer-config/${SHA}/manifest.json`]);
+    expect(spy.mock.calls[0][1]).toEqual({ cache: 'force-cache', credentials: 'omit', redirect: 'error' });
   });
 
-  it('takes a missing file as missing, without asking the API', async () => {
-    const spy = vi.fn(async () => new Response('404: Not Found', { status: 404 }));
+  it('asks once more past the cache before taking a top-level file as missing', async () => {
+    const spy = vi.fn(async (_url: string, _init?: RequestInit) => new Response('404: Not Found', { status: 404 }));
     vi.stubGlobal('fetch', spy);
+    expect(await getTextAt(repo, 'manifest.json', SHA, '')).toBeNull();
+    expect(spy.mock.calls.map(([, init]) => init?.cache)).toEqual(['force-cache', 'reload']);
+  });
+
+  it('checks a file in a folder against the commit’s tree, as raw could read the folder as a branch', async () => {
+    const spy = vi.fn(async (url: string) => {
+      if (url.includes('/git/trees/')) return tree({ 'keymaps/am338/config.h': CONFIG_BLOB });
+      return new Response(url.startsWith('https://raw.') ? CONFIG : 'from the api');
+    });
+    vi.stubGlobal('fetch', spy);
+    expect(await getTextAt(repo, 'keymaps/am338/config.h', SHA, '')).toBe(CONFIG);
+    expect(spy.mock.calls.map(([url]) => url)).toEqual([
+      `https://api.github.com/repos/AkiraMisawa/keyballer-config/git/trees/${SHA}?recursive=1`,
+      `https://raw.githubusercontent.com/AkiraMisawa/keyballer-config/${SHA}/keymaps/am338/config.h`,
+    ]);
+    // A file the tree does not have is missing, without asking raw.
+    spy.mockClear();
     expect(await getTextAt(repo, 'keymaps/am338/rules.mk', SHA, '')).toBeNull();
-    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('reads a file from the API when raw serves other bytes than the commit has', async () => {
+    const spy = vi.fn(async (url: string) => {
+      if (url.includes('/git/trees/')) return tree({ 'keymaps/x/config.h': CONFIG_BLOB });
+      return new Response(url.startsWith('https://raw.') ? '#define EVIL\n' : CONFIG);
+    });
+    vi.stubGlobal('fetch', spy);
+    const other = { owner: 'someone', repo: 'config' };
+    expect(await getTextAt(other, 'keymaps/x/config.h', SHA, '')).toBe(CONFIG);
+    expect(String(spy.mock.calls.at(-1)?.[0])).toMatch(/^https:\/\/api\.github\.com\/repos\/someone\/config\/contents\/keymaps\/x\/config\.h\?ref=/);
   });
 
   it('asks the API when raw fails some other way, and with a token or a branch name', async () => {
@@ -125,4 +161,3 @@ describe('reading files at a commit without a token', () => {
     expect(spy.mock.calls.every(([url]) => String(url).startsWith('https://api.github.com/'))).toBe(true);
   });
 });
-
