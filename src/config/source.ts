@@ -53,6 +53,16 @@ export function setFlag(text: string, name: string, on: boolean): string {
   return `${text}${ending}#define ${name}\n`;
 }
 
+/**
+ * Sets `#define NAME value` over a keyboard's own define of it: in place when the file defines it,
+ * else `#undef NAME` and the define at the end (QMK reads the keyboard's config.h first).
+ */
+export function setOverride(text: string, name: string, value: string): string {
+  if (readDefine(text, name) !== undefined) return setDefine(text, name, value);
+  const ending = text === '' || text.endsWith('\n') ? '' : '\n';
+  return `${text}${ending}#undef ${name}\n#define ${name} ${value}\n`;
+}
+
 /** Sets `NAME = value` in a rules.mk: in place when set, else at the end. */
 export function setRule(text: string, name: string, value: string): string {
   const line = new RegExp(`^([ \\t]*${escape(name)}[ \\t]*=[ \\t]*)(.*?)([ \\t]*(?:#.*)?)$`, 'm');
