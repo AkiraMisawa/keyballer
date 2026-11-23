@@ -11,6 +11,7 @@ import {
   getFirmwareBytes,
   getProvenanceRun,
   getRunArtifacts,
+  GitHubError,
   repoName,
   type CommitInfo,
   type RepoRef,
@@ -21,6 +22,25 @@ import { BRANCH, judgeProvenance, keyballerWorkflowSha, manifestArtifactName, sh
 
 /** Keyballer's own repository, home of the build workflow. */
 const KEYBALLER_REPO: RepoRef = { owner: 'AkiraMisawa', repo: 'keyballer' };
+
+/**
+ * A question to Keyballer's own repository, which is public. It is asked with the token when there
+ * is one, since GitHub allows 60 requests an hour without one and 5,000 with one; the token goes
+ * to api.github.com only, as every request with it does. A token GitHub will not show the
+ * repository to (a GitHub App's token reaches only the repositories it is installed on) is left
+ * out and the question asked again.
+ */
+async function askKeyballer<T>(token: string, ask: (token: string) => Promise<T>): Promise<T> {
+  if (!token) return ask('');
+  try {
+    return await ask(token);
+  } catch (e) {
+    // Refused for this token, but not GitHub's request limit: asking again would only spend more.
+    const refused = e instanceof GitHubError && [401, 403, 404].includes(e.status) && !e.key.startsWith('gh.err.rateLimit');
+    if (refused) return ask('');
+    throw e;
+  }
+}
 
 /** Where checked firmware came from, for the flash dialog. */
 export interface FirmwareSource extends CommitInfo {
@@ -75,12 +95,12 @@ export async function loadVerifiedFirmware(
   // Still on the default branch? Compared by SHA, so a tag named like the branch cannot answer.
   const head = await getBranchHead(r, defaultBranch, token);
   const sinceSource = await compareCommits(r, head, manifest.source.sha, token);
-  // The Keyballer workflow commit the run used must be on Keyballer's main (public; no token).
+  // The Keyballer workflow commit the run used must be on Keyballer's main.
   const workflowSha = keyballerWorkflowSha(run);
   let workflowOnKeyballerMain = false;
   if (workflowSha && isCommitSha(workflowSha)) {
-    const keyballerHead = await getBranchHead(KEYBALLER_REPO, BRANCH, '');
-    const status = (await compareCommits(KEYBALLER_REPO, keyballerHead, workflowSha, '')).status;
+    const keyballerHead = await askKeyballer(token, (t) => getBranchHead(KEYBALLER_REPO, BRANCH, t));
+    const status = (await askKeyballer(token, (t) => compareCommits(KEYBALLER_REPO, keyballerHead, workflowSha, t))).status;
     workflowOnKeyballerMain = status === 'identical' || status === 'behind';
   }
   const verdict = judgeProvenance({

@@ -149,6 +149,8 @@ export function App({ forgottenToken = null }: { forgottenToken?: ForgottenToken
   const tokenRef = useRef(token);
   tokenRef.current = token;
   const repoField = useRef<HTMLInputElement>(null);
+  /** Where errors show, under the repository field. */
+  const errorLine = useRef<HTMLParagraphElement>(null);
   // Where focus goes back to when the flash panel closes.
   const returnFocus = useRef<HTMLElement | null>(null);
 
@@ -454,6 +456,11 @@ export function App({ forgottenToken = null }: { forgottenToken?: ForgottenToken
       );
     } catch (e) {
       setError(e);
+      // The firmware cards are below the repository section, where the error shows: bring it into view.
+      requestAnimationFrame(() => {
+        errorLine.current?.scrollIntoView({ block: 'center' });
+        errorLine.current?.focus({ preventScroll: true });
+      });
     } finally {
       setLoadingBuild('');
     }
@@ -549,7 +556,7 @@ export function App({ forgottenToken = null }: { forgottenToken?: ForgottenToken
           </details>
           )}
           {error !== null && (
-            <p className="err" role="alert">
+            <p ref={errorLine} className="err" role="alert" tabIndex={-1}>
               {err(error)}
             </p>
           )}

@@ -24,6 +24,8 @@ async function setup(
     workflowSha?: string;
     /** A ZMK build instead: the UF2 bytes served, and the range the manifest records. */
     zmk?: { bytes: Uint8Array; blocks: number; start?: number };
+    /** Keyballer's repository refuses requests with a token (as a GitHub App's token may be refused). */
+    keyballerRefusesToken?: boolean;
   } = {},
 ) {
   const enc = new TextEncoder();
@@ -48,11 +50,17 @@ async function setup(
   );
   const manifestDigest = await sha256Hex(manifest);
   const requested: string[] = [];
+  keyballerAuth.length = 0;
   const json = (body: unknown) => new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
   vi.stubGlobal(
     'fetch',
-    vi.fn(async (url: string) => {
+    vi.fn(async (url: string, init?: RequestInit) => {
       const u = new URL(url);
+      const auth = (init?.headers as Record<string, string> | undefined)?.Authorization;
+      if (u.pathname.startsWith('/repos/AkiraMisawa/keyballer/')) {
+        keyballerAuth.push(auth ?? '');
+        if (auth && over.keyballerRefusesToken) return new Response('{}', { status: 404 });
+      }
       // Without a token, files at a commit come from raw.githubusercontent.com (github.ts).
       if (u.hostname === 'raw.githubusercontent.com') {
         requested.push(`raw:${u.pathname}`);
@@ -92,6 +100,9 @@ async function setup(
   );
   return requested;
 }
+
+/** Whether each request to Keyballer's own repository carried a token. */
+const keyballerAuth: string[] = [];
 
 describe('loadVerifiedFirmware', () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -148,6 +159,18 @@ describe('loadVerifiedFirmware', () => {
   it('refuses a build run of another branch', async () => {
     await setup({ runBranch: 'feature' });
     await expect(loadVerifiedFirmware(REPO, FIRMWARE, 'kb', '')).rejects.toMatchObject({ key: 'provenance.err.notDefault' });
+  });
+
+  it('asks Keyballer’s repository with the token when there is one, and without it when it is refused', async () => {
+    // Without a token GitHub allows 60 requests an hour; one pasted for saving should count for flashing too.
+    await setup();
+    await loadVerifiedFirmware(REPO, FIRMWARE, 'kb', 'github_pat_test');
+    expect(keyballerAuth.length).toBeGreaterThan(0);
+    expect(keyballerAuth.every((a) => a === 'Bearer github_pat_test')).toBe(true);
+    await setup({ keyballerRefusesToken: true });
+    const verified = await loadVerifiedFirmware(REPO, FIRMWARE, 'kb', 'github_pat_test');
+    expect(new TextDecoder().decode(verified.bytes)).toBe(IMAGE_HEX);
+    expect(keyballerAuth).toContain('');
   });
 });
 
