@@ -37,7 +37,8 @@ const NAME = /^[A-Za-z0-9_.-]+$/;
 export function parseRepo(input: string): RepoRef | null {
   const text = input.trim().replace(/\.git$/, '');
   const m = text.match(/^(?:https?:\/\/github\.com\/)?([^/\s]+)\/([^/\s#?]+)/);
-  if (!m || !NAME.test(m[1]) || !NAME.test(m[2])) return null;
+  // A name of only dots would make URLs that leave the repository's place (`../evil`).
+  if (!m || !NAME.test(m[1]) || !NAME.test(m[2]) || /^\.+$/.test(m[1]) || /^\.+$/.test(m[2])) return null;
   return { owner: m[1], repo: m[2] };
 }
 
@@ -141,24 +142,72 @@ export async function getFirmwareHead(r: RepoRef, token: string): Promise<string
 /**
  * A public repository's file at a commit, from raw.githubusercontent.com: outside the API's limit of
  * 60 requests an hour without a token. What a commit names never changes, so the browser's cache may
- * keep it. Null when raw cannot say (a network error, or another failure), so the API is asked.
+ * keep it. A 404 is asked again past the cache before it counts, as raw caches 404s too. Null when
+ * raw cannot say (a network error, or another failure), so the API is asked.
  */
 async function getFromRaw(r: RepoRef, encoded: string, sha: string): Promise<Response | null> {
+  const url = `https://raw.githubusercontent.com/${r.owner}/${r.repo}/${sha}/${encoded}`;
   try {
-    const res = await fetch(`https://raw.githubusercontent.com/${r.owner}/${r.repo}/${sha}/${encoded}`, {
-      cache: 'force-cache',
-      credentials: 'omit',
-      redirect: 'error',
-    });
-    if (res.ok) return res;
-    // A file that is not there, or a private repository, which the API would not show without a
-    // token either.
-    if (res.status === 404) throw new GitHubError('gh.err.notFound', 404);
-    return null;
-  } catch (e) {
-    if (e instanceof GitHubError) throw e;
+    for (const cache of ['force-cache', 'reload'] as const) {
+      const res = await fetch(url, { cache, credentials: 'omit', redirect: 'error' });
+      if (res.ok) return res;
+      if (res.status !== 404) return null;
+    }
+  } catch {
     return null;
   }
+  // A file that is not there, or a private repository, which the API would not show without a
+  // token either.
+  throw new GitHubError('gh.err.notFound', 404);
+}
+
+/** Each file of a commit with its git blob hash, from one API request; null when GitHub cut the list short. */
+const trees = new Map<string, Promise<Map<string, string> | null>>();
+function treeOf(r: RepoRef, sha: string): Promise<Map<string, string> | null> {
+  const key = `${r.owner}/${r.repo}@${sha}`;
+  let tree = trees.get(key);
+  if (!tree) {
+    tree = (async () => {
+      const res = await request(`${repoPath(r)}/git/trees/${sha}?recursive=1`, '', 'application/vnd.github+json');
+      const body = (await res.json()) as { truncated?: boolean; tree?: { path?: unknown; type?: unknown; sha?: unknown }[] };
+      if (body.truncated !== false || !Array.isArray(body.tree)) return null;
+      const files = new Map<string, string>();
+      for (const e of body.tree) if (e.type === 'blob' && typeof e.path === 'string' && typeof e.sha === 'string') files.set(e.path, e.sha);
+      return files;
+    })();
+    // A failed request is asked again next time.
+    tree.catch(() => trees.delete(key));
+    trees.set(key, tree);
+  }
+  return tree;
+}
+
+/** git's hash of a file: SHA-1 over "blob <length>\0" and the bytes. */
+async function blobSha(bytes: Uint8Array): Promise<string> {
+  const header = new TextEncoder().encode(`blob ${bytes.length}\0`);
+  const all = new Uint8Array(header.length + bytes.length);
+  all.set(header);
+  all.set(bytes, header.length);
+  return [...new Uint8Array(await crypto.subtle.digest('SHA-1', all))].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * A file at a commit from raw, checked against the commit. raw splits `<sha>/a/b` into a ref and a
+ * path itself, so a branch named `<sha>/a` could stand for the commit's folder `a`. A file in a
+ * folder is therefore checked against the commit's tree from the API: one request tells which files
+ * exist and their hashes. A top-level file needs no check: a branch cannot be named as a commit
+ * (GitHub refuses 40-hex branch names). Null when the API should be asked instead.
+ */
+async function getCheckedFromRaw(r: RepoRef, path: string, encoded: string, sha: string): Promise<Response | null> {
+  if (!path.includes('/')) return getFromRaw(r, encoded, sha);
+  const tree = await treeOf(r, sha).catch(() => null);
+  if (!tree) return null;
+  const blob = tree.get(path);
+  if (!blob) throw new GitHubError('gh.err.notFound', 404);
+  const res = await getFromRaw(r, encoded, sha).catch(() => null);
+  if (!res) return null;
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  return (await blobSha(bytes)) === blob ? new Response(bytes) : null;
 }
 
 async function getRaw(r: RepoRef, path: string, ref: string, token: string): Promise<Response> {
@@ -168,7 +217,7 @@ async function getRaw(r: RepoRef, path: string, ref: string, token: string): Pro
   // Without a token, a file at a commit comes from raw. With one, from the API, which also reads
   // private repositories; the token is never sent to raw.
   if (!token && isCommitSha(ref)) {
-    const res = await getFromRaw(r, encoded, ref);
+    const res = await getCheckedFromRaw(r, path, encoded, ref);
     if (res) return res;
   }
   return request(
