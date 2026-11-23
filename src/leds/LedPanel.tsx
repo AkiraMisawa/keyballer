@@ -153,7 +153,14 @@ export function LedPanel({ edit, build, builtFrom }: Props) {
               <input id="led-val" type="range" min={0} max={now.limit} value={Math.min(now.val, now.limit)} disabled={disabled} onChange={(e) => set('ledVal', Number(e.target.value))} />
               <span className="note">{Math.min(now.val, now.limit)}</span>
             </div>
-            {now.limit < 255 && <p className="note">{t('led.limitNote', { limit: now.limit })}</p>}
+          </div>
+          <div className="field">
+            <label htmlFor="led-limit">{t('led.limit')}</label>
+            <div className="range">
+              <input id="led-limit" type="range" min={10} max={255} value={now.limit} disabled={disabled} onChange={(e) => set('ledLimit', Number(e.target.value))} />
+              <span className="note">{now.limit}</span>
+            </div>
+            <p className="note">{t('led.limitHelp')}</p>
           </div>
 
           <label className="check">

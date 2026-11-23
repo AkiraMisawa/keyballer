@@ -16,7 +16,7 @@ import {
   setKey,
   setScrollLayers,
 } from '../config/keymap';
-import { readDefine, readFlag, setBallMm, setBuildValue, setDefine, setFlag, setRule } from '../config/source';
+import { readDefine, readFlag, setBallMm, setBuildValue, setDefine, setFlag, setOverride, setRule } from '../config/source';
 import { EFFECTS, modeText, readMode, variantCount, type EffectId, type LedMode } from '../leds/leds';
 import type { MessageKey } from '../i18n/messages';
 import { readCustomKeycodes } from '../config/keymap';
@@ -41,7 +41,7 @@ export interface SessionBase {
 
 /** The settings a session can change: the trackball's, and the LEDs' (docs/plans/led-settings.md). */
 export type TrackballSetting = 'cpi' | 'divider' | 'ballMm';
-export type LedSetting = 'leds' | 'ledMode' | 'ledHue' | 'ledSat' | 'ledVal' | 'ledStartOn' | 'ledEffects';
+export type LedSetting = 'leds' | 'ledMode' | 'ledHue' | 'ledSat' | 'ledVal' | 'ledLimit' | 'ledStartOn' | 'ledEffects';
 export type Setting = TrackballSetting | LedSetting;
 
 export type BallMode = 'cursor' | 'scroll';
@@ -66,7 +66,7 @@ export type Edit =
 
 const isSetting = (e: Edit): e is { type: Setting; value: number } => Object.hasOwn(SETTINGS, e.type);
 
-const SLIDERS = new Set<string>(['cpi', 'divider', 'ballMm', 'ledHue', 'ledSat', 'ledVal']);
+const SLIDERS = new Set<string>(['cpi', 'divider', 'ballMm', 'ledHue', 'ledSat', 'ledVal', 'ledLimit']);
 
 export interface Session {
   base: SessionBase;
@@ -306,6 +306,12 @@ const SETTINGS: Record<
     read: (b, f) => readNumber(readDefine(config(b, f), ledDefine('VAL')), ledLimit(b, f)),
     write: (b, f, v) => writeConfig(b, f, (text) => setDefine(text, ledDefine('VAL'), String(v))),
     clause: (to) => `the LED brightness to ${to}`,
+  },
+  // The highest brightness the firmware allows, over Keyball's own (150, for power).
+  ledLimit: {
+    read: (b, f) => ledLimit(b, f),
+    write: (b, f, v) => writeConfig(b, f, (text) => setOverride(text, 'RGBLIGHT_LIMIT_VAL', String(v))),
+    clause: (to) => `the LED brightness limit to ${to}`,
   },
   ledStartOn: {
     read: (b, f) => (readFlag(config(b, f), LEDS_OFF) ? 0 : 1),

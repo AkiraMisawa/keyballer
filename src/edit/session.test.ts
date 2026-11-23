@@ -235,5 +235,17 @@ describe('LED settings in a session (docs/plans/led-settings.md)', () => {
     // What rules.mk says, whatever keyballer.json says: what a build made before builds[].leds had.
     expect(ledsFromRules(apply(withRules('RGBLIGHT_ENABLE = yes\n'), { type: 'leds', value: 0 }))).toBe(true);
   });
+
+  it('sets the brightness limit over Keyball’s own, and the brightness follows it', () => {
+    // Keyball's config.h defines RGBLIGHT_LIMIT_VAL 150 first, so the keymap's must #undef it.
+    const s = apply(withRules('RGBLIGHT_ENABLE = yes\n'), { type: 'ledLimit', value: 90 });
+    expect(configOf(s).endsWith('#undef RGBLIGHT_LIMIT_VAL\n#define RGBLIGHT_LIMIT_VAL 90\n')).toBe(true);
+    expect(leds(s)).toMatchObject({ limit: 90 });
+    expect(review(s).message).toBe('Set the LED brightness limit to 90');
+    // Changing it again changes the value only.
+    const again = apply(apply(s, { type: 'ledHue', value: 1 }), { type: 'ledLimit', value: 120 });
+    expect(configOf(again).match(/RGBLIGHT_LIMIT_VAL/g)).toHaveLength(2);
+    expect(configOf(again)).toContain('#define RGBLIGHT_LIMIT_VAL 120\n');
+  });
 });
 

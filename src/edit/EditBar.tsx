@@ -258,6 +258,7 @@ const SETTING_LABEL: Record<Setting, MessageKey> = {
   ledHue: 'setting.ledHue',
   ledSat: 'setting.ledSat',
   ledVal: 'setting.ledVal',
+  ledLimit: 'setting.ledLimit',
   ledStartOn: 'setting.ledStartOn',
   ledEffects: 'setting.ledEffects',
 };
